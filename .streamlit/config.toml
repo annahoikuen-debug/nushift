@@ -1,0 +1,33 @@
+# shiftai — Streamlit 既定設定
+#
+# 参照: streamlit_app.py が呼ぶ shiftai.ui.theme.apply_page_config()
+# このファイルは「ページ設定（layout やタイトル）」には触らず、テーマと
+# サーバー既定だけをここで決める。set_page_config() 側が優先される。
+#
+# 秘密情報はここに書かない。GAS 連携の SECRET は .streamlit/secrets.toml に置くが、
+# 同ファイルは .gitignore 済み（.gitignore / gas/README.md 参照）。本書では作らない。
+
+[browser]
+# Streamlit の使用統計を外部に送信しない。社内利用で製品改善データを送り出したくないため。
+# （既定は true = 送信する）
+gatherUsageStats = false
+
+[theme]
+# ライト固定。shiftai.ui.theme.inject_css() が注入する CSS は
+# 背景を #ffffff / #fbfcfe / #f1f3f5 とハードコードしており、
+# ダークテーマだと本文が白字のまま明るい背景に重なって読めなくなる。
+base = "light"
+
+# アクセント色（ボタン・リンク・フォーカス枠・実行中インジケータ）。
+# src/shiftai/config.py の COLOR_WORK（勤務 = 正常 = 主状態）と同じ緑に揃える。
+# 既定の赤 #FF4B4B は本アプリの「人員不足」色 COLOR_SHORTFALL と混同するため使わない。
+primaryColor = "#2E7D32"
+
+# 背景。shiftai.ui.theme の CSS が #ffffff を前提にしているため、白で固定する。
+backgroundColor = "#FFFFFF"
+
+# サイドバーや expander の背景。CSS 側の #fbfcfe / #f1f3f5 と齟齬のない薄グレー。
+secondaryBackgroundColor = "#F7F9FB"
+
+# 本文の文字色。CSS 側の rgba(49, 51, 63, ...) 系（= #31333F）とほぼ同系。
+textColor = "#31333F"

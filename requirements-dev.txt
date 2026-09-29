@@ -1,0 +1,47 @@
+# shiftai — 開発・テスト用依存（dev dependencies）
+#
+# 実行時依存は requirements.txt から取り込む。実体を二重管理しないため。
+#   pip install -r requirements-dev.txt
+#   pip install -e . && pip install -r requirements-dev.txt   # 手元で開発する場合
+#
+# バージョンは「実際にこのリポジトリで検証した範囲」だけを許す。
+# pytest プラグインは互換性が静かに壊れがち（pytest 9.x は plugin の
+# フック API を整理した）ため、下限・上限の両方を明示する。
+#
+# tests/ を grep して実際に使われているものを確認した結果:
+#   pytest.mark.timeout(...)      -> 11 ファイルで使用        => pytest-timeout は必須
+#   pytest.mark.slow              -> pyproject の markers 宣言 / test_e2e.py, test_cli.py, test_solver.py
+#   pytest.mark.xfail             -> test_data_loader.py
+#   pytest.mark.parametrize        -> 複数
+#   pytest.mark.filterwarnings    -> pyproject addopts / test_solver.py
+#   tmp_path / monkeypatch / capsys -> ビルトイン（プラグイン不要）
+#   --cov                          -> Makefile の cov ターゲット（プラグイン経由）
+#   -n auto                        -> Makefile の test-parallel ターゲット（プラグイン経由）
+# したがって pytest-benchmark / pytest-mock / pytest-asyncio は「使われていない」ので
+# 意図的に入れていない（入れても害はないが、壊れたときに原因を掴みづらくする）。
+#
+# 検証環境の実測（2026-09-28 / Python 3.12.3）:
+#   pytest 9.1.1 / pytest-cov 7.1.0 / pytest-timeout 2.4.0 / pytest-xdist 3.8.0 / ruff 0.16.9
+
+-r requirements.txt
+
+# pytest — テストランナー本体。>=9（pyproject の dev 依存と揃える）。
+# 9.x 以降は plugin のフックが整理されるため、10 へは上げない。
+pytest>=9,<10
+
+# pytest-cov — カバレッジ計測（make cov / --cov=shiftai 用）。
+pytest-cov>=4,<8
+
+# pytest-timeout — 個別テストの実行時間制限。
+# tests/ の 11 ファイルが pytest.mark.timeout(300) を付けており、
+# pyproject の addopts にも --timeout=600 がある。**これ無しはテストが回らない**。
+# 2.x 系で検証済み。3.0 は未検証なので上限は付けない。
+pytest-timeout>=2,<3
+
+# pytest-xdist — 並列実行（make test-parallel の -n auto 用）。
+# テスト本体は並列に依存していないが、ソルバ実行が重くコア数に比例して効く。
+pytest-xdist>=3,<4
+
+# ruff — lint と format。設定は pyproject.toml の [tool.ruff]（line-length 100 / E,F,I,UP,B）。
+# 0.x 系で検証済み。1.0 で設定キーが変わる可能性があるので上限を付ける。
+ruff>=0.16,<1

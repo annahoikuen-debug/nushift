@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shiftai"
+version = "0.1.0"
+description = "配置基準連動型 シフト自動作成AI（保育所の職員配置基準に紐づくシフト自動作成）"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "shiftai maintainers" }]
+keywords = ["保育", "シフト", "配置基準", "MILP", "PuLP", "Streamlit"]
+classifiers = [
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "streamlit>=1.63,<2",
+    "pandas>=3.0,<4",
+    "numpy>=2.4",
+    "pulp>=2.9,<3",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9,<10",
+    "pytest-cov>=4,<8",
+    "pytest-timeout>=2,<3",
+    "pytest-xdist>=3,<4",
+    "ruff>=0.16,<1",
+]
+
+[project.scripts]
+shiftai = "shiftai.__main__:main"
+
+[project.urls]
+Homepage = "https://example.invalid/shiftai"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+# サマリ行を常に出し、`-q` を重ねても `-qq` になって消えないようにする。
+# （`-q` を addopts に入れていると、利用側が `-q` を付けた瞬間に
+#   サマリが出力されず、テスト結果の最終行が見えなくなる。）
+addopts = "--timeout=600"
+markers = [
+    "slow: 時間が長い統合テスト（-m 'not slow' で除外）",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# UP042: `class X(str, Enum)` は `enum.StrEnum` へ移行しない。
+# 本プロジェクトは `enum.value` をそのまま JSON/CSV に出力しており、
+# StrEnum 化すると `str(Role.HOIKUSHI)` が "Role.HOIKUSHI" から "保育士" へ変わる等、
+# 観測可能な挙動が変化するため意図的に無効化する。
+ignore = ["E501", "B008", "UP042"]
+
+[tool.coverage.run]
+branch = false
+source = ["shiftai"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

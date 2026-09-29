@@ -1,0 +1,33 @@
+# shiftai — 実行時依存（runtime dependencies）
+#
+# 本ファイルは pyproject.toml の [project].dependencies を写した運用用の写し。
+# pyproject.toml が唯一の真実（single source of truth）であり、両者を直すときは必ず同時に直す。
+# pulp の下限だけは pyproject 側 2.8 → 2.9 へ追従済み（2.9 系で回帰確認済み）。
+#
+# どちらの経路でも同じ結果になる:
+#   pip install -e .                 # pyproject.toml から解決（配布・本番向け）
+#   pip install -r requirements.txt  # 本ファイルから解決（バージョン固定の確認用）
+#
+# 検証環境の実測（2026-09-28 / Python 3.12.3）:
+#   streamlit 1.63.0 / pandas 3.0.5 / numpy 2.4.6 / PuLP 2.9.0 / openpyxl 3.1.5
+# すべて「実際にこの環境で動いたバージョン」を下限 pin にしてある。
+# 上限は「次のメジャーで API が壊れるもの」だけに保守的に付けている。
+
+# Streamlit — Web UI（5 タブ・サイドバー・CSV/Excel アップロード・表・グラフ）。
+streamlit>=1.63,<2   # 2.x は設定キーや widgets API の破壊的変更が多いため、<2 で頭打ち
+
+# pandas — 園児・職員・希望休の表計算と、出力 CSV / Excel の生成。
+pandas>=3.0,<4       # 3.x で copy-on-write などの挙動が変わったため <4 で頭打ち
+
+# numpy — 時間帯配列・交差積集合など数値計算の下支え（pandas / PuLP からも依存される）。
+numpy>=2.4           # 2.4 系で検証済み。3.0 は未検証なので下限のみ
+
+# PuLP — MILP（混合整数線形計画）のモデリングと CBC ソルバ呼び出し。
+pulp>=2.9,<3         # <3 は厳守すること。3.x / 4.x は LpVariable の仕様が大きく変わり
+                     # cat="Binary" / "Integer" の指定が壊れる。solver.py は
+                     # LpVariable(..., cat=...) と LpProblem(cat=LpMinimize) に
+                     # 直接依存しているため、3.x へ上げると解のデコードが全滅する。
+                     # 下限は 2.8 ではなく 2.9（実際に検証した系列）。
+
+# openpyxl — .xlsx の読み書き（入力の Excel 取り込みと成果物の Excel 出力）。
+openpyxl>=3.1        # 3.1 系で検証済み。上限は不要なため付けない
