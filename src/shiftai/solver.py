@@ -23,7 +23,7 @@ one-hot の o を変数化しないことで変数数を 1/3 に抑えている�
   在勤ブロック1つ / 休憩ブロック1つ / 配置基準（必須行）/ UI による手動確定セル
 * ソフト: 最低休憩時間 / 同時休憩の集中回避 / 連続勤務日数 / 週の勤務日数 /
   希望休・勤務希望 / 早朝・延長の回避 / 勤務時間の偏り / 月間時間 /
-  未使用職員 / 長時間勤務（1日9時間・週44時間）/ 勤務間の休息時間
+  未使用職員 / 長時間勤務（1日9時間・週44時間の内部目安）/ 勤務間の休息時間
 
 PuLP 4.0 以降は API が変わるため、古典的な
 ``LpVariable(name, lowBound, upBound, cat)`` を前提とした実装（pulp 2.9 系）である。
@@ -59,6 +59,8 @@ from shiftai.domain import (
     Violation,
     ViolationSeverity,
     to_minutes,
+    weekly_periods,
+    weekly_windows,
 )
 
 _DAILY_LEGAL_CAP_MIN = 600
@@ -677,15 +679,17 @@ def _add_consecutive(
                 ctx.prob += _linear(z_terms) <= maxc - 1 + slack
                 obj.append(weights.consecutive_day_penalty * slack)
         if st.contract.max_weekly_days > 0:
-            y_items = [
-                (ctx.day_var[(sid, d)], 1)
-                for d in days
-                if (sid, d) in ctx.day_var
-            ]
-            if y_items:
-                slack = pulp.LpVariable(f"weekly_{sid}", lowBound=0)
-                ctx.prob += _linear(y_items) <= st.contract.max_weekly_days + slack
-                obj.append(weights.consecutive_day_penalty * slack)
+            cap = st.contract.max_weekly_days
+            for wi, window in enumerate(weekly_windows(days)):
+                y_items = [
+                    (ctx.day_var[(sid, d)], 1)
+                    for d in window
+                    if (sid, d) in ctx.day_var
+                ]
+                if y_items:
+                    slack = pulp.LpVariable(f"weekly_{sid}_{wi}", lowBound=0)
+                    ctx.prob += _linear(y_items) <= cap + slack
+                    obj.append(weights.consecutive_day_penalty * slack)
 
 
 def _add_preferences(
@@ -887,6 +891,9 @@ def _build_problem(
     罰変数にし、他のハード制約はそのまま保つ（ベストエフォート用）。
     """
     ctx = _ModelCtx(prob=pulp.LpProblem("shift_scheduling", pulp.LpMinimize))
+    # 園長・主任（配置対象外）は保育基準の充填に使わない。模型的入口で除外する
+    # ことで、配置・休憩・時間拘束・週上限のすべての制約から外れる。
+    staff = [member for member in staff if member.is_placeable]
     slots = tuple(requirements.slots)
     if standard is not None:
         kinds = [standard.slot_kind(slot) for slot in slots]
@@ -984,7 +991,7 @@ def solve_shift(
         "elapsed_sec": 0.0,
         "num_variables": 0,
         "num_constraints": 0,
-        "num_staff": len(payload.staff),
+        "num_staff": sum(1 for s in payload.staff if s.is_placeable),
         "num_children": len(children),
         "num_days": len(days),
         "num_slots": len(slots),
@@ -1282,11 +1289,12 @@ def _staffing_advice(payload: _SolveInput, rows: Sequence[tuple]) -> list[str]:
             ]
         return []
     staff = payload.staff
-    q_total = sum(1 for s in staff if s.is_qualified)
-    se = sum(1 for s in staff if s.primary_role is Role.HOIKUSHI
+    placeable = [s for s in staff if s.is_placeable]
+    q_total = sum(1 for s in placeable if s.is_qualified)
+    se = sum(1 for s in placeable if s.primary_role is Role.HOIKUSHI
              and s.contract.employment_type is not None and _is_sei(s))
     part_q = q_total - se
-    support = sum(1 for s in staff if s.has_role(Role.SHIENSHIIN))
+    support = sum(1 for s in placeable if s.has_role(Role.SHIENSHIIN))
     if supply_h <= 0:
         # 契約時間帯が園の開所時間と 1 分も重なっていない入力では除算が 0 割になる
         ratio_line = (
@@ -1374,17 +1382,20 @@ def supply_hours(
     算出根拠:
       * 必要人員の行がある日（＝休園日を除く）だけを数える
       * 契約時間帯・希望休のどちらにも該当しない時間帯しか無い職員は 0
-      * 実際に在勤できる日数と ``max_weekly_days`` の小さい方を日数とし、
-        1日の上限時間（法定10時間を超えない範囲）を掛ける
-      * ``max_weekly_days`` が 0 のときは「上限なし」と解釈する
+      * ``max_weekly_days`` は「任意の連続した 1 週間あたりの出勤日数」の上限なので、
+        :func:`~shiftai.domain.weekly_periods` の週ごとに在勤可能な日数を数え、
+        契約上限と小さい方を合計する
+      * ``max_weekly_days`` が 0 のときは「週あたりの上限なし」と解釈する
     """
     prefs = dict(preferences or {})
     fac = settings or FacilitySettings()
     days = [d for d in requirements.all_days() if requirements.for_day(d)]
     total = 0.0
     for member in staff:
-        workable = sum(
-            1
+        if not member.is_placeable:
+            continue
+        workable = {
+            d
             for d in days
             if _day_is_workable(member, d, fac)
             and any(
@@ -1392,11 +1403,14 @@ def supply_hours(
                 and not _is_unavailable(prefs.get(member.staff_id), d, s)
                 for s in requirements.slots
             )
-        )
-        if workable <= 0:
+        }
+        if not workable:
             continue
         weekly_cap = member.contract.max_weekly_days
-        cap_days = workable if weekly_cap <= 0 else min(workable, weekly_cap)
+        cap_days = 0
+        for window in weekly_periods(days):
+            in_window = workable & set(window)
+            cap_days += len(in_window) if weekly_cap <= 0 else min(len(in_window), weekly_cap)
         total += cap_days * _daily_cap_minutes(member.contract) / 60.0
     return total
 
@@ -1429,6 +1443,8 @@ def _shortfall_supply(payload: _SolveInput) -> list[tuple]:
             continue
         sup_all = sup_q = sup_qualified_only = 0
         for member in payload.staff:
+            if not member.is_placeable:
+                continue
             if not _day_is_workable(member, day, payload.settings):
                 continue
             if not _slot_is_contractible(member, slots[idx]):
@@ -1578,7 +1594,8 @@ def solve_shift_greedy(
     :returns: status は常に ``PARTIAL``（貪欲法のため最適ではない）
     """
     started = perf_counter()
-    staff_list = list(staff)
+    # 園長・主任（配置対象外）は MILP 側と同じく充填に使わない
+    staff_list = [member for member in staff if member.is_placeable]
     prefs = dict(preferences or {})
     fixed = dict(fixed_assignments or {})
     # 園設定（休園日・祝日）は MILP 側と同じものを渡さないと挙動がずれる

@@ -397,3 +397,53 @@ def test_export_bundle_zipはrequirements無しでも動く(solved, slots_of, sm
         names = set(archive.namelist())
         assert "requirements.csv" not in names
         assert "配置基準" not in set(load_workbook(io.BytesIO(archive.read("shift.xlsx"))).sheetnames)
+
+
+# ---------------------------------------------------------------------------
+# bandle 中の gap.csv / violations.csv（T-15）
+# ---------------------------------------------------------------------------
+
+
+def test_export_bundle_zipにgap_csvが含まれる(solved, small_requirements, slots_of, small_staff, facility):
+    """``gap_report`` を渡すと gap.csv と gap_daily.csv が同梱されること。"""
+    from shiftai.gap_analysis import analyze_gap
+
+    report = analyze_gap(small_requirements, solved, small_staff)
+    data = export_bundle_zip(
+        solved, small_requirements, slots_of, small_staff, facility, gap_report=report
+    )
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        names = set(archive.namelist())
+    assert "gap.csv" in names
+    assert "gap_daily.csv" in names
+
+
+def test_export_bundle_zipにviolations_csvが含まれる(solved, small_requirements, slots_of, small_staff, facility):
+    """``violations`` を渡すと violations.csv が同梱されること。"""
+    from shiftai.domain import Violation, ViolationSeverity
+
+    violations = [
+        Violation(
+            severity=ViolationSeverity.WARNING,
+            code="SPLIT_SHIFT",
+            message="勤務が 2 ブロックに分かれています。",
+            staff_id="S001",
+        )
+    ]
+    data = export_bundle_zip(
+        solved, small_requirements, slots_of, small_staff, facility, violations=violations
+    )
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        names = set(archive.namelist())
+        payload = archive.read("violations.csv").decode("utf-8-sig")
+    assert "violations.csv" in names
+    assert "SPLIT_SHIFT" in payload
+
+
+def test_violationsが空でも列を持つ(solved, small_requirements, slots_of, small_staff, facility):
+    """違反が無くても ``violations.csv`` を書けること。"""
+    data = export_bundle_zip(
+        solved, small_requirements, slots_of, small_staff, facility, violations=[]
+    )
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        assert "violations.csv" not in archive.namelist(), "空のときは同梱しない"

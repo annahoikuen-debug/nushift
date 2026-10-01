@@ -93,7 +93,7 @@ test: ## 全テストを走らせる（slow を含む / 数十秒〜数分かか
 	$(PY) -m pytest
 
 .PHONY: test-fast
-test-fast: ## 速いテストだけ走らせる（-m "not slow" / 基準は約 412 passed・2 分前後）
+test-fast: ## 速いテストだけ走らせる（-m "not slow"）
 	$(PY) -m pytest -m "not slow"
 
 .PHONY: test-slow
@@ -160,7 +160,7 @@ help: ## この一覧を表示する（既定ターゲット）
 	@echo ""
 	@echo "例:"
 	@echo "  make install-dev              # venv を作って開発環境を整える"
-	@echo "  make test-fast                # 速いテストだけ（基準 約412 passed / 2分）"
+	@echo "  make test-fast                # 速いテストだけ（-m 'not slow'）"
 	@echo "  make lint                     # ruff check"
 	@echo "  make run                      # Streamlit アプリを起動"
 	@echo ""

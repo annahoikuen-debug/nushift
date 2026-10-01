@@ -579,3 +579,77 @@ def test_write_template_csvs_既存ディレクトリでも動く(tmp_path: Path
     write_template_csvs(target)
     out = write_template_csvs(target)
     assert all(p.exists() for p in out.values())
+
+
+# ---------------------------------------------------------------------------
+# 出勤日数の上限（T-03）
+# ---------------------------------------------------------------------------
+
+
+def _cap_staff_frame(**overrides):
+    """職員1行分の DataFrame を作る。"""
+    row = {
+        "職員ID": "S001",
+        "氏名": "山田",
+        "資格（主）": "保育士",
+        "雇用形態": "正職員",
+        "週契約時間": "40",
+        "1日契約時間": "8",
+    }
+    row.update(overrides)
+    return pd.DataFrame([row])
+
+
+def test_週最大出勤日数が0なら0のまま残る():
+    """``0`` は「週あたりの上限なし」なので 5 に丸めずそのまま保持すること。
+
+    修正前は ``_parse_int(..., 5) or 5`` のため 0 が 5 になっていた。
+    ソルバ側は ``max_weekly_days > 0`` を「上限あり」の判定に使っており、
+    読み込み層だけがその意味を打ち消していた。
+    """
+    members, _ = load_staff(_cap_staff_frame(週最大出勤日数=0, 最大連続勤務日数=0))
+    assert members[0].contract.max_weekly_days == 0
+    assert members[0].contract.max_consecutive_days == 0
+
+
+def test_列が無ければ既定5になる():
+    """列自体が無い場合は従来どおり 5 日になること。"""
+    members, _ = load_staff(_cap_staff_frame())
+    assert members[0].contract.max_weekly_days == 5
+    assert members[0].contract.max_consecutive_days == 5
+
+
+def test_空文字と欠損なら既定5になる():
+    """空文字と欠損値（NaN）も「未入力」として 5 日にすること。"""
+    for value in ("", None, "   "):
+        members, _ = load_staff(_cap_staff_frame(週最大出勤日数=value))
+        assert members[0].contract.max_weekly_days == 5, value
+
+
+def test_指定された値はそのまま反映される():
+    """0 以外の値は変更されずに反映されること。"""
+    members, _ = load_staff(_cap_staff_frame(週最大出勤日数=3, 最大連続勤務日数=4))
+    assert members[0].contract.max_weekly_days == 3
+    assert members[0].contract.max_consecutive_days == 4
+
+
+def test_負値はエラーとして積み上げられる():
+    """負値は行を黙って捨てずにエラーとして記録すること。"""
+    members, issues = load_staff(_cap_staff_frame(週最大出勤日数=-1))
+    assert members == []
+    errors = [i for i in issues if i.level == "error"]
+    assert errors, "エラーとして記録されること"
+    assert "週最大出勤日数" in str(errors[0])
+
+
+def test_副資格が複数あっても例外にならない():
+    """資格（副）に複数の資格が入っても例外にならないこと。
+
+    修正前は ``roles.append(extra)`` をタプルに対して行っており
+    ``AttributeError`` で読み込み全体が落ちていた。
+    """
+    frame = _cap_staff_frame()
+    frame["資格（副）"] = "看護師|栄養教諭"
+    members, issues = load_staff(frame)
+    assert [i.level for i in issues if i.level == "error"] == []
+    assert members[0].roles == (Role.HOIKUSHI, Role.KANGSHI, Role.EIYOU)

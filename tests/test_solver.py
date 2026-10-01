@@ -434,7 +434,8 @@ def test_objective_weightsは正の既定値を持つ():
 def test_時間制限0でも動く(small_children, small_staff, small_requirements):
     """``time_limit_sec`` が 0 でも 2 秒に切り上げて動作すること。"""
     result = _solve(small_children, small_staff, small_requirements, time_limit_sec=0)
-    assert result.status in set(SolveStatus)
+    # 上限 0 秒は内部で 2 秒に丸められ、求解可能な結果になること
+    assert result.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE, SolveStatus.PARTIAL)
     assert result.stats["elapsed_sec"] >= 0.0
 
 

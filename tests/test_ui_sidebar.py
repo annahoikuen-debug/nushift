@@ -34,8 +34,23 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 APP_FILE = ROOT / "streamlit_app.py"
 
-#: テスト中に GAS 連携を有効にするための環境変数（``conftest.GAS_ENV_NAMES`` と同じ）。
+
+def _load_root_conftest():
+    """リポジトリ直下の ``conftest.py`` を読み込む。"""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_shiftai_root_conftest", ROOT / "conftest.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_root_conftest = _load_root_conftest()
+
+#: テスト中に GAS 連携を有効にするための環境変数。
 GAS_URL = "https://example.invalid/exec"
+#: -gas 連携を無効化する環境変数の名前は conftest と一箇所で共有する。
+GAS_ENV_NAMES: tuple[str, ...] = _root_conftest.GAS_ENV_NAMES
 
 app_test = pytest.importorskip("streamlit.testing.v1", reason="AppTest が無い環境ではスキップ")
 
@@ -46,7 +61,7 @@ def _sidebar_script(tmp_path: Path, body: str, *, gas_on: bool = False) -> Path:
         f"import os\nos.environ['SHIFTAI_GAS_URL'] = {GAS_URL!r}\n"
         "os.environ['SHIFTAI_GAS_SHEET'] = 'attendance'\n"
         if gas_on
-        else "import os\nfor _k in ('SHIFTAI_GAS_URL', 'SHIFTAI_GAS_SHEET'):\n"
+        else f"import os\nfor _k in {GAS_ENV_NAMES!r}:\n"
         "    os.environ.pop(_k, None)\n"
     )
     script = tmp_path / "sidebar_driver_app.py"

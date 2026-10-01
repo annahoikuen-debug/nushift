@@ -17,17 +17,16 @@ import pandas as pd
 
 from shiftai.domain import (
     CellState,
-    EmploymentType,
     FacilitySettings,
     RequirementTable,
     ShiftDay,
     Slot,
     SolveResult,
     StaffMember,
+    cost_coefficient,
     format_jp_date,
     format_jp_date_full,
     japanese_weekday,
-    to_minutes,
 )
 
 SHIFT_DF_COLUMNS: list[str] = [
@@ -65,12 +64,7 @@ LATE_BOUNDARY = time(18, 0)
 EARLY_WINDOW = (time(7, 15), time(8, 30))
 LATE_WINDOW = (time(17, 15), time(19, 30))
 
-COST_COEFFICIENT: dict[EmploymentType, float] = {
-    EmploymentType.SEI: 1.25,
-    EmploymentType.UKEIYOU: 1.15,
-    EmploymentType.PART: 1.0,
-    EmploymentType.BUNKIN: 1.0,
-}
+
 
 BOM = "﻿"
 
@@ -248,8 +242,9 @@ def payroll_dataframe(
                         late_days.add(shift_day.day)
                 elif state is CellState.BREAK:
                     break_min += slot.minutes
-        net_hours = max((worked_min - break_min) / 60.0, 0.0)
-        coefficient = COST_COEFFICIENT.get(member.contract.employment_type, 1.0)
+        # worked_min には休憩が含まれない（BREAK は別の変数に分けている）
+        net_hours = max(worked_min / 60.0, 0.0)
+        coefficient = cost_coefficient(member.contract.employment_type)
         records.append(
             {
                 "職員ID": member.staff_id,
@@ -349,7 +344,7 @@ def to_ics(result: SolveResult, slots: Sequence[Slot], staff: Sequence[StaffMemb
                 end_dt = datetime.combine(day, last.end)
                 if end_dt <= start_dt:
                     end_dt = datetime.combine(day, last.end) + timedelta(days=1)
-                minutes = to_minutes(last.end) - to_minutes(first.start)
+                minutes = last.end_minutes - first.start_minutes
                 if minutes <= 0:
                     minutes += 24 * 60
                 uid = _UID_SAFE.sub("-", f"{member.staff_id}-{day:%Y%m%d}-{first.start:%H%M}-{last.end:%H%M}")
@@ -456,7 +451,7 @@ def summary_markdown(
     out.append(f"- 配置基準の不足セル: **{shortfall}** 件")
     out.append(f"- 法令違反（ブロッカー）: **{blockers}** 件 / 要調整: {warnings} 件")
     out.append(f"- 総実働時間: {total_hours:,.2f} 時間")
-    out.append(f"- 推定人件費合計: **{total_cost:,}** 円")
+    out.append(f"- 推定人件費合計: **{total_cost:,}** 円（実働時間ベース。休憩は含まない）")
     out.append("")
 
     if result.violations:
@@ -506,14 +501,43 @@ def summary_markdown(
     return "\n".join(out)
 
 
+def violations_dataframe(violations: Sequence[Any]) -> pd.DataFrame:
+    """制約違反の一覧表。
+
+    ``__main__`` からも UI からも使うため出力側に置く。空でも列を持つ
+    DataFrame を返し、列が増減しない_table とする。
+    """
+    return pd.DataFrame.from_records(
+        [
+            {
+                "区分": v.severity.value,
+                "コード": v.code,
+                "日付": v.day.isoformat() if v.day else "",
+                "職員ID": v.staff_id or "",
+                "内容": v.message,
+            }
+            for v in violations
+        ],
+        columns=["区分", "コード", "日付", "職員ID", "内容"],
+    )
+
+
 def export_bundle_zip(
     result: SolveResult,
     requirements: RequirementTable | None,
     slots: Sequence[Slot],
     staff: Sequence[StaffMember],
     settings: FacilitySettings | None = None,
+    gap_report: Any = None,
+    violations: Sequence[Any] = (),
 ) -> bytes:
-    """CSV 群 + Excel + サマリーを 1 つの ZIP にまとめる。"""
+    """CSV 群 + Excel + サマリーを 1 つの ZIP にまとめる。
+
+    ``gap_report`` を渡すと ``gap.csv`` と ``gap_daily.csv`` が、
+    ``violations`` を渡すと ``violations.csv`` が同梱される。
+    CLI（``__main__``）と UI（``tab_export``）のどちらからも同じ内容を
+    得られるようにするため、バンドルの中身はここで一元化する。
+    """
     shift_df = shift_to_dataframe(result, slots, staff)
     payroll = payroll_dataframe(result, slots, staff, settings)
     matrices = shift_matrices(result, slots, staff)
@@ -538,6 +562,11 @@ def export_bundle_zip(
         archive.writestr("shift_matrix.csv", to_csv_bytes(matrices))
         if requirements is not None:
             archive.writestr("requirements.csv", to_csv_bytes(requirements_dataframe(requirements)))
+        if gap_report is not None:
+            archive.writestr("gap.csv", to_csv_bytes(gap_report.to_dataframe()))
+            archive.writestr("gap_daily.csv", to_csv_bytes(gap_report.daily_dataframe()))
+        if violations:
+            archive.writestr("violations.csv", to_csv_bytes(violations_dataframe(violations)))
         archive.writestr("shift.ics", to_ics(result, slots, staff))
         archive.writestr("summary.md", summary.encode("utf-8"))
         archive.writestr("shift.xlsx", to_excel_bytes(sheets))

@@ -181,7 +181,11 @@ def _zip_bytes() -> bytes:
     table = state.get(state.KEY_REQUIREMENTS)
     slots = state.current_slots()
     staff = state.get(state.KEY_STAFF) or []
-    return exporter.export_bundle_zip(result, table, slots, staff, state.current_settings())
+    return exporter.export_bundle_zip(
+        result, table, slots, staff, state.current_settings(),
+        gap_report=state.get(state.KEY_GAP_REPORT),
+        violations=state.get(state.KEY_VIOLATIONS) or [],
+    )
 
 
 def _summary_markdown() -> str:

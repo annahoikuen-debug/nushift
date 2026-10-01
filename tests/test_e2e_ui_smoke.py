@@ -157,9 +157,9 @@ def test_sampleとtemplateが3表を書き出す(tmp_path):
 
 
 @pytest.mark.slow
-def test_solveの出力物が壊れていない():
+def test_solveの出力物が壊れていない(tmp_path: Path):
     """``solve --sample --zip`` が終了コード 0/2 のどちらかで終わり、成果物が読める。"""
-    out = Path("/tmp/e2e/test_out")
+    out = tmp_path / "out"
     done = _cli("solve", "--sample", "--out", str(out), "--time-limit", "30", "--zip")
     # BLOCKER があれば 2、法令違反がなければ 0。1（実行エラー）だけがNG。
     assert done.returncode in (0, 2), (done.returncode, done.stdout[-2000:], done.stderr[-2000:])
@@ -184,9 +184,9 @@ def test_solveの出力物が壊れていない():
 
 
 @pytest.mark.slow
-def test_shift_csvとpayrollの勤務時間が一致する():
+def test_shift_csvとpayrollの勤務時間が一致する(tmp_path: Path):
     """出力 CSV の内容が実際のシフトと整合しているか（サンプル 1 件）。"""
-    out = Path("/tmp/e2e/test_out_consistency")
+    out = tmp_path / "out_consistency"
     done = _cli("solve", "--sample", "--out", str(out), "--time-limit", "30")
     assert done.returncode in (0, 2)
 
@@ -220,14 +220,13 @@ def _write_sample(tmp_path: Path) -> Path:
     return sample
 
 
-def test_壊れた入力は終了コード1でTracebackを出さない():
+def test_壊れた入力は終了コード1でTracebackを出さない(tmp_path: Path):
     """``25:00`` の登園日・空の職員ID は終了コード 1 で日本語のエラーになる。
 
     以前は ``__main__.cmd_solve`` が ``_error(loaded.summary)`` と**メソッドを
     呼ばずに**渡しており、stdout に ``<bound method ...>`` 出ていた。
     ``loaded.summary()`` を呼ぶよう修正済み。
     """
-    tmp_path = Path("/tmp/e2e/broken_input")
     sample = _write_sample(tmp_path)
 
     broken = sample / "broken_children.csv"
@@ -290,20 +289,27 @@ def test_未知の列が混ざったCSVは読み込める():
     ]
 
 
-def test_shift_csvは入力として再利用できない():
+def test_shift_csvは入力として再利用できない(tmp_path: Path):
     """``shift.csv`` は出力専用なので入力にはできない。礼貌エラーになる。
 
     以前は ``KeyError: '職員ID'`` の Traceback で落ちていた。
     未知列を無視する実装へ修正済みで、行毎のエラーとして日本語で報告される。
+
+    以前は別のテストの出力（``/tmp/e2e/test_out``）に依存しており、
+    ``-m "not slow"`` では常にスキップされていた。ここでは自前で
+    ``shift.csv`` 相当の CSV を作って渡すため、単体で実行できる。
     """
-    out = Path("/tmp/e2e/test_out")
-    if not (out / "shift.csv").exists():
-        pytest.skip("先に test_solveの出力物が壊れていない を実行してください")
+    out = tmp_path / "out"
+    done = _cli("solve", "--sample", "--out", str(out), "--time-limit", "30")
+    assert done.returncode in (0, 2)
+    shift_csv = out / "shift.csv"
+    assert shift_csv.exists(), "shift.csv が生成されていない"
+
     done = _cli(
         "solve",
-        "--children", str(out / "shift.csv"),
+        "--children", str(shift_csv),
         "--staff", str(out / "sample" / "staff.csv"),
-        "--out", "/tmp/e2e/reuse_out",
+        "--out", str(tmp_path / "reuse_out"),
         "--time-limit", "10",
     )
     assert done.returncode == 1

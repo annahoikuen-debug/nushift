@@ -33,8 +33,6 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
-
 from shiftai import local_rules, sample_data
 from shiftai.config import (
     APP_ICON,
@@ -54,6 +52,7 @@ from shiftai.exporter import (
     shift_to_dataframe,
     summary_markdown,
     to_ics,
+    violations_dataframe,
 )
 from shiftai.gap_analysis import analyze_gap, check_violations
 from shiftai.solver import solve_shift
@@ -367,7 +366,7 @@ def cmd_solve(args: argparse.Namespace) -> int:
     if violations:
         written.append(
             _write_csv(
-                _violations_dataframe(violations),
+                violations_dataframe(violations),
                 out_dir / "violations.csv",
             )
         )
@@ -393,7 +392,10 @@ def cmd_solve(args: argparse.Namespace) -> int:
     if args.zip:
         zip_path = out_dir / "bundle.zip"
         zip_path.write_bytes(
-            export_bundle_zip(result, table, slots, loaded.staff, settings)
+            export_bundle_zip(
+                result, table, slots, loaded.staff, settings,
+                gap_report=report, violations=violations,
+            )
         )
         written.append(zip_path)
 
@@ -406,33 +408,37 @@ def cmd_solve(args: argparse.Namespace) -> int:
 
     if not result.ok:
         _error("シフトを作成できませんでした")
+    return resolve_exit_code(result, violations, strict=args.strict)
+
+
+def resolve_exit_code(
+    result: Any,
+    violations: Sequence[Any],
+    *,
+    strict: bool = False,
+) -> int:
+    """``solve`` の終了コードを決定する。
+
+    ==========  ==========================================  ==============
+    条件         内容                                        終了コード
+    ==========  ==========================================  ==============
+    解なし       ``result.ok`` が False                     1
+    法令違反あり  BLOCKER が 1 件以上（``--strict`` 无关）    2
+    要調整のみ    ``--strict`` ありかつ WARNING が 1 件以上   3
+    それ以外     —                                          0
+    ==========  ==========================================  ==============
+
+    ``INFO``（HOURS_IMBALANCE など「参考」の情報）は判定に含めない。
+    ``--strict`` を付けても INFO だけでは 3 にならない。
+    """
+    if not result.ok:
         return EXIT_ERROR
-    blockers = [v for v in violations if v.severity is ViolationSeverity.BLOCKER]
-    if blockers:
+    severities = {v.severity for v in violations}
+    if ViolationSeverity.BLOCKER in severities:
         return EXIT_BLOCKER
-    # --strict は WARNING 以上（INFO は除く）で終了コード 3 を返す。
-    # INFO は「参考」の扱いなので判定に含めない。
-    actionable = [
-        v for v in violations if v.severity in (ViolationSeverity.BLOCKER, ViolationSeverity.WARNING)
-    ]
-    if args.strict and actionable:
+    if strict and ViolationSeverity.WARNING in severities:
         return EXIT_WARNING
     return EXIT_OK
-
-
-def _violations_dataframe(violations: Sequence[Any]) -> Any:
-    return pd.DataFrame.from_records(
-        [
-            {
-                "区分": v.severity.value,
-                "コード": v.code,
-                "日付": v.day.isoformat() if v.day else "",
-                "職員ID": v.staff_id or "",
-                "内容": v.message,
-            }
-            for v in violations
-        ]
-    )
 
 
 # ---------------------------------------------------------------------------

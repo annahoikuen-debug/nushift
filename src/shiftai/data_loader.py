@@ -497,6 +497,21 @@ def _parse_int(value: Any, default: int | None = None) -> int | None:
         return default
 
 
+def _parse_day_cap(value: Any, column: str) -> int:
+    """出勤日数の上限を読む。``0`` は「上限なし」としてそのまま保つ。
+
+    列が無い・空のときは既定の 5 日を返す。``0`` と「未入力」を区別するため
+    ``_parse_int(...) or 5`` の形では書かない。``0`` はソルバ側で
+    「週あたりの上限なし」と解釈される。
+    """
+    parsed = _parse_int(value, None)
+    if parsed is None:
+        return 5
+    if parsed < 0:
+        raise ValueError(f"{column} は 0 以上の整数で指定してください（入力: {parsed}）")
+    return parsed
+
+
 def _parse_age_class(value: Any) -> AgeClass | None:
     text = _text(value)
     if not text:
@@ -781,8 +796,8 @@ def load_staff(df: pd.DataFrame) -> tuple[list[StaffMember], list[LoadIssue]]:
                 employment_type=employment,
                 min_monthly_hours=min_monthly,
                 max_monthly_hours=max_monthly,
-                max_weekly_days=_parse_int(view.get("週最大出勤日数"), 5) or 5,
-                max_consecutive_days=_parse_int(view.get("最大連続勤務日数"), 5) or 5,
+                max_weekly_days=_parse_day_cap(view.get("週最大出勤日数"), "週最大出勤日数"),
+                max_consecutive_days=_parse_day_cap(view.get("最大連続勤務日数"), "最大連続勤務日数"),
                 earliest_start=earliest,
                 latest_end=latest,
             )

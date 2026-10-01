@@ -73,6 +73,26 @@ class EmploymentType(str, Enum):
     BUNKIN = "アルバイト"
 
 
+COST_COEFFICIENT: dict[str, float] = {
+    EmploymentType.SEI.value: 1.25,
+    EmploymentType.UKEIYOU.value: 1.15,
+    EmploymentType.PART.value: 1.0,
+    EmploymentType.BUNKIN.value: 1.0,
+}
+"""雇用形態ごとの人件費係数。
+
+人件費の概算は UI 指標（``gap_analysis.compute_cost``）と給与 CSV
+（``exporter.payroll_dataframe``）の双方から使う。定義を二重に持つと
+同じ人件費が画面と CSV で食い違うため、ここに一箇所だけ置く。
+"""
+
+
+def cost_coefficient(employment: object) -> float:
+    """雇用形態に対応する人件費係数を返す（未知の種別は 1.0）。"""
+    value = getattr(employment, "value", employment)
+    return COST_COEFFICIENT.get(str(value), 1.0)
+
+
 class SlotKind(str, Enum):
     """時間帯の性質。延長緩和措置などの判定に使う。"""
 
@@ -119,18 +139,24 @@ def to_time(minutes: int) -> time:
 
 @dataclass(frozen=True, order=True)
 class Slot:
-    """一つの作業時間帯（既定は30分）。"""
+    """一つの作業時間帯（既定は30分）。
+
+    終端の ``00:00`` は「24時」を意味する番兵として扱う。深夜に閉所する園で
+    最後の時間帯が 23:30〜24:00 になる場合に対応するため。
+    """
 
     start: time
     end: time
 
     def __post_init__(self) -> None:
+        if self.end == time(0, 0) and to_minutes(self.start) > 0:
+            return
         if self.end <= self.start:
             raise ValueError(f"Slot の end は start より後にしてください: {self!r}")
 
     @property
     def minutes(self) -> int:
-        return to_minutes(self.end) - to_minutes(self.start)
+        return self.end_minutes - self.start_minutes
 
     @property
     def hours(self) -> float:
@@ -142,17 +168,35 @@ class Slot:
 
     @property
     def end_minutes(self) -> int:
-        return to_minutes(self.end)
+        """終端の分。終日（00:00 表記）は 1440 とする。"""
+        minutes = to_minutes(self.end)
+        if minutes == 0 and self.start_minutes > 0:
+            return 24 * 60
+        return minutes
+
+    @property
+    def is_midnight_end(self) -> bool:
+        """終端が 00:00 表記（24時）かどうか。"""
+        return to_minutes(self.end) == 0
 
     @property
     def label(self) -> str:
+        if self.is_midnight_end:
+            return f"{self.start.strftime('%H:%M')}-24:00"
         return f"{self.start.strftime('%H:%M')}-{self.end.strftime('%H:%M')}"
 
     def overlaps(self, start: time, end: time) -> bool:
         """[start, end) と重なるか（境界は重なりとみなさない）。"""
+        if self.is_midnight_end:
+            # [start_minutes, 1440) として比較する
+            return to_minutes(end) > self.start_minutes and to_minutes(start) < 24 * 60
         return self.start < end and start < self.end
 
     def contains(self, start: time, end: time) -> bool:
+        """時間帯が [start, end) を完全に覆うか。"""
+        if self.is_midnight_end:
+            stop = to_minutes(end) or 24 * 60
+            return self.start_minutes <= to_minutes(start) and stop <= 24 * 60
         return self.start <= start and end <= self.end
 
     def shifted(self, delta_minutes: int) -> Slot:
@@ -267,7 +311,9 @@ class Contract:
     min_monthly_hours: float = 0.0
     max_monthly_hours: float = 200.0
     max_weekly_days: int = 5
+    """週あたりの最大出勤日数。``0`` は「週あたりの上限なし」を意味する。"""
     max_consecutive_days: int = 5
+    """最大連続勤務日数。``0`` は「上限なし」を意味する。"""
     min_rest_hours: float = 11.0
     """勤務間の最低休息時間（労働基準法第9条に対応）。"""
     granularity_min: int = 30
@@ -281,6 +327,11 @@ class Contract:
             raise ValueError("契約時間は正である必要があります")
         if self.max_monthly_hours < self.min_monthly_hours:
             raise ValueError("max_monthly_hours は min_monthly_hours 以上にしてください")
+        if self.max_weekly_days < 0 or self.max_consecutive_days < 0:
+            raise ValueError(
+                "max_weekly_days と max_consecutive_days は 0 以上にしてください"
+                "（0 は上限なしを意味します）"
+            )
 
 
 @dataclass(frozen=True)
@@ -310,6 +361,17 @@ class StaffMember:
     @property
     def is_qualified(self) -> bool:
         """保育士資格を持つか（限定的な時間帯の可否判定に使う）。"""
+        return self.has_role(Role.HOIKUSHI)
+
+    @property
+    def is_placeable(self) -> bool:
+        """保育室への配置対象か。
+
+        園長・主任（``Role.ENJOGAKUIN``）は保育基準の人数に計上しない。
+        副資格に保育士がある場合は配置**可能**とみなす（保育室の補助ができるため）。
+        """
+        if not self.has_role(Role.ENJOGAKUIN):
+            return True
         return self.has_role(Role.HOIKUSHI)
 
 
@@ -688,7 +750,7 @@ class ObjectiveWeights:
     monthly_hours_penalty: float = 3.0
     rest_violation_penalty: float = 40.0
     max_shift_length_penalty: float = 6.0
-    """1勤務あたりの長時間超過（1日9時間・週44時間など）。"""
+    """1勤務あたりの長時間超過（1日9時間・週44時間の内部目安など）。"""
 
 
 # ---------------------------------------------------------------------------
@@ -722,6 +784,41 @@ def daterange(start: date, end: date):
     while cur <= end:
         yield cur
         cur += timedelta(days=1)
+
+
+WEEKLY_WINDOW_DAYS = 7
+"""週の判定に使う窓の日数。"""
+
+
+def weekly_windows(
+    days: Sequence[date], size: int = WEEKLY_WINDOW_DAYS
+) -> list[list[date]]:
+    """連続する size 日ごとの窓を返す。末尾も重複する窓で覆う。
+
+    週の上限は「任意の連続した 1 週間の勤務量」で判定するため、
+    週の区切りで切らず 1 日ずつずらした窓を返す。計画期間が size 日未満の
+    ときは全体を 1 つの窓として扱う。1 週間未満の計画は合計で判定する。
+    """
+    ordered = sorted(days)
+    if not ordered:
+        return []
+    if len(ordered) <= size:
+        return [ordered]
+    return [ordered[i : i + size] for i in range(len(ordered) - size + 1)]
+
+
+def weekly_periods(
+    days: Sequence[date], size: int = WEEKLY_WINDOW_DAYS
+) -> list[list[date]]:
+    """``days`` を size 日ずつに区切った窓を返す（窓どうしは重複しない）。
+
+    出勤可能日数のように「合計を数える」用途では、重ねた窓を足すと
+    同じ日を重複して数えてしまうためこちらを使う。
+    """
+    ordered = sorted(days)
+    if not ordered:
+        return []
+    return [ordered[i : i + size] for i in range(0, len(ordered), size)]
 
 
 def is_workday(day: date, settings: FacilitySettings) -> bool:

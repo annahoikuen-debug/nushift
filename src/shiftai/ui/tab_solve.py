@@ -153,7 +153,7 @@ def _render_kpis(result: SolveResult) -> None:
     report = state.get(state.KEY_GAP_REPORT)
     staff = state.get(state.KEY_STAFF) or []
     settings = state.current_settings()
-    summary = gap_analysis.summarize(result, report, staff) if report else {}
+    summary = gap_analysis.summarize(result, report, staff, settings) if report else {}
     cost = gap_analysis.compute_cost(result, staff, settings)
     coverage = float(report.coverage_ratio) if report else 0.0
     components.metric_row(
@@ -176,9 +176,9 @@ def _render_kpis(result: SolveResult) -> None:
                 f"要調整 {summary.get('要調整件数', 0.0):.0f} 件",
             ),
             (
-                "推定人件費",
+                "人件費（実働基準）",
                 f"{cost:,.0f} 円",
-                f"1時間 {settings.labor_cost_per_hour:,.0f} 円 × 雇用形態係数",
+                f"実働 × 1時間 {settings.labor_cost_per_hour:,.0f} 円 × 雇用形態係数",
             ),
             (
                 "対象期間の総人時",
@@ -296,8 +296,10 @@ def _render_staffing_curve(result: SolveResult) -> None:
                 },
             )
             st.caption(
-                "労働基準法の週法定労働時間は 44 時間。個人별로 40 時間前後に収まっているか"
-                "必ず確認してください（法定は週 45 時間・月 360 時間の上限）。"
+                "週 44 時間は本アプリが使う内部の目安です（法定の枠組みは"
+                "月45時間・年360時間。旧来の週44時間は2019年の改正で"
+                "法定の上限ではなくなっています）。個人別に 40 時間前後に"
+                "収まっているかは必ず確認してください。"
             )
 
 

@@ -12,6 +12,10 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
+import pathlib
+import textwrap
 import warnings
 from datetime import date, time
 
@@ -47,7 +51,6 @@ DAY_CLOSE = time(14, 0)
 STANDARD_KEY = "全国基準（厚労省）"
 FQ_KEY = "福岡市"
 
-TIMEOUT = pytest.mark.timeout(300)
 
 
 def sei_contract(**overrides) -> Contract:
@@ -247,13 +250,142 @@ def solved_week(week_inputs):
     )
 
 
+
+# ---------------------------------------------------------------------------
+# CBC を起動するテストの自動マーク（T-06）
+# ---------------------------------------------------------------------------
+
+CBC_ENTRYPOINTS = frozenset({"solve_shift", "solve_shift_greedy", "check_violations"})
+"""CBC（MILP ソルバ）を起動しうる関数名。"""
+
+
+def _called_names(node: ast.AST) -> set[str]:
+    """AST 内で呼び出されている関数名をすべて集める。"""
+    found: set[str] = set()
+    for child in ast.walk(node):
+        if isinstance(child, ast.Call):
+            if isinstance(child.func, ast.Attribute):
+                found.add(child.func.attr)
+            elif isinstance(child.func, ast.Name):
+                found.add(child.func.id)
+    return found
+
+
+def _fixture_uses_cbc() -> set[str]:
+    """CBC を起動する（あるいは thereof に依存する）フィクスチャ名を集める。"""
+    here = pathlib.Path(__file__).resolve()
+    by_name: dict[str, ast.FunctionDef] = {}
+    for candidate in sorted(here.parent.glob("conftest*.py")):
+        tree = ast.parse(candidate.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                by_name[node.name] = node
+
+    def resolve(name: str, seen: frozenset[str]) -> bool:
+        if name in seen or name not in by_name:
+            return False
+        node = by_name[name]
+        if _called_names(node) & CBC_ENTRYPOINTS:
+            return True
+        args = [a.arg for a in node.args.args]
+        return any(resolve(a, seen | {name}) for a in args)
+
+    return {name for name in by_name if resolve(name, frozenset())}
+
+
+def _cbc_fixtures() -> set[str]:
+    global _CBC_FIXTURES
+    if _CBC_FIXTURES is None:
+        _CBC_FIXTURES = _fixture_uses_cbc()
+    return _CBC_FIXTURES
+
+
+_CBC_FIXTURES: set[str] | None = None
+
+
+CLI_ENTRYPOINTS = frozenset({"main", "_cli", "cmd_solve"})
+"""CLI を起動する関数名。``shiftai.__main__.main`` とテスト内のラッパ。"""
+
+
+def _calls_cli_solve(node: ast.AST) -> bool:
+    """CLI の ``solve`` サブコマンドを呼んでいないか（CBC を起動する）。
+
+    3つの形に対応する。
+
+    * ``main(["solve", ...])`` — リストリテラルの第 1 要素
+    * ``_cli("solve", ...)`` — 第 1 引数が文字列定数の ``solve``
+    * ``main(build("out", []))`` — 第 1 引数がリテラルでないため、
+      保守的に CBC を起動するとみなす（``presets`` / ``sample`` の呼び出しは
+      リストリテラルなので誤検出しない）
+    """
+    for child in ast.walk(node):
+        if not isinstance(child, ast.Call):
+            continue
+        if isinstance(child.func, ast.Attribute):
+            name = child.func.attr
+        elif isinstance(child.func, ast.Name):
+            name = child.func.id
+        else:
+            continue
+        if name not in CLI_ENTRYPOINTS or not child.args:
+            continue
+        first = child.args[0]
+        if isinstance(first, ast.Constant):
+            # _cli("solve", ...)
+            if first.value == "solve":
+                return True
+            continue
+        elements = getattr(first, "elts", None)
+        if elements is None:
+            # リテラルでない引数は conservatively に CBC とみなす
+            return True
+        if any(isinstance(el, ast.Constant) and el.value == "solve" for el in elements):
+            return True
+    return False
+
+
+def _item_uses_cbc(item: pytest.Item) -> bool:
+    """収集済みのテストが CBC を起動しうるか。
+
+    呼び出しの直接検出に加えて、(1) CBC を使うフィクスチャを要求している場合、
+    (2) CLI の ``solve`` サブコマンドを呼んでいる場合も対象とする。
+    """
+    func = getattr(item, "function", None)
+    if func is None:
+        return False
+    try:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+    except (OSError, TypeError, SyntaxError):
+        return False
+    if _called_names(tree) & CBC_ENTRYPOINTS or _calls_cli_solve(tree):
+        return True
+    cbc_fixtures = _cbc_fixtures()
+    return any(
+        arg in cbc_fixtures
+        for arg in inspect.signature(func).parameters
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """CBC を起動するテストに ``slow`` を自動的に付ける。
+
+    ``make test-fast`` は ``-m "not slow"`` でCBC を起動するテストを除外する。
+    手動の ``@pytest.mark.slow`` への依存をなくし、開始時点で対象が漏れないようにする。
+    検証は ``tests/test_static_guards.py::test_slow未付与のCBCテストは存在しない`` で行う。
+    """
+    for item in items:
+        if "slow" in item.keywords:
+            continue
+        if _item_uses_cbc(item):
+            item.add_marker(pytest.mark.slow)
+
+
 __all__ = [
     "DAY",
     "DAY_CLOSE",
     "DAY_OPEN",
     "FQ_KEY",
     "STANDARD_KEY",
-    "TIMEOUT",
     "WEEK_END",
     "WEEK_START",
     "CellState",

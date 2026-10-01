@@ -25,7 +25,15 @@ STATUTORY_BREAK_THRESHOLDS = ((8 * 60, 60), (6 * 60, 45))
 
 # 労働基準法（法定要件）
 STATUTORY_DAILY_WORK_HOURS = 8
+
 STATUTORY_WEEKLY_WORK_HOURS = 44
+"""週あたりの上限として用いる内部の目安値。
+
+労働基準法第32条の4 は 2019-04-01 の改正で「月45時間・年360時間」に変更され、
+旧来の「週44時間」は法定の上限ではなくなった。本定数は**厳しい方（古い方）**を
+使うため法令違反を生じないが、UI で「法定の週労働時間」と断定して表示しては
+ならない。法定の枠組みは「月45時間・年360時間」である。
+"""
 STATUTORY_OVERTIME_LIMIT_HOURS = 45
 STATUTORY_MIN_REST_HOURS = 11
 

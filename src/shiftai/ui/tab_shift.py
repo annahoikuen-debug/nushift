@@ -211,7 +211,7 @@ def _render_weekday_pivot(result: SolveResult, slots: Any) -> None:
         st.info("集計できるデータがありません。")
         return
     st.dataframe(frame, width="stretch", key="weekday_pivot", height=400)
-    st.caption("各曜日の合計を労働基準法の週 44 時間制限と照らし合わせてください。")
+    st.caption("各曜日の合計を、本アプリが使う週 44 時間の内部目安と照らし合わせてください。")
 
 
 def _render_coverage_matrix(result: SolveResult) -> None:

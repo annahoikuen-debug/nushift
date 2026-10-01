@@ -609,7 +609,7 @@ def _note_late_care(standard: StaffingStandard, source: str) -> LocalRuleNote:
         detail = (
             f"延長保育（{_window_text(standard.late_care_window)}）は"
             "「保育士1名＋他資格者」による代替措置を用いず、"
-            "必要人員すべてを保育士（必要时は幼稚園教諭）とする。\n\n"
+            "必要人員すべてを保育士（必要なら幼稚園教諭）とする。\n\n"
             "このため必要保育士数＝必要人員数となる。"
         )
     else:
@@ -774,7 +774,7 @@ _PRESET_EXTRA_NOTES: dict[str, list[LocalRuleNote]] = {
                 "厳しい定員比を定める。\n\n"
                 "延長保育（17:15〜18:30）には「保育士1名＋子育て支援員／"
                 "配置的保育支援員」の代替措置を認める（代替者には2歳児クラスの"
-                "保育補助经验が求められる場合がある）。"
+                "保育補助の経験が求められる場合がある）。"
             ),
             source="東京都「保育所の職員配置基準」告示／東京都保育已基本方針",
             legal_reference=_LEGAL_BASE,
@@ -803,7 +803,7 @@ _PRESET_EXTRA_NOTES: dict[str, list[LocalRuleNote]] = {
                 "（0歳児3:1、1・2歳児6:1）より厳しい。\n\n"
                 "在園児数が小さい園では必要人員の総数が増え、"
                 "必要人員が全国基準より増えることに注意する。"
-                " 연장保育（17:15〜18:30）には代替措置を認める。"
+                " 延長保育（17:15〜18:30）には代替措置を認める。"
             ),
             source="大阪市「保育所の職員配置基準」告示",
             legal_reference=_LEGAL_BASE,
@@ -819,7 +819,7 @@ _PRESET_EXTRA_NOTES: dict[str, list[LocalRuleNote]] = {
                 "幼稚園教諭（2歳児クラスの担任経験がある者）／配置的保育支援員」で"
                 "代替できる。\n"
                 "- 18:30以降は保育士のみで満たす。\n"
-                "- 1歳児4:1と严格な定員比を持つ。"
+                "- 1歳児4:1と厳格な定員比を持つ。"
             ),
             source="福岡市「保育所の職員配置基準」告示／福岡市保育已基本方針",
             legal_reference=_LEGAL_BASE,

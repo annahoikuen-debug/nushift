@@ -562,12 +562,19 @@ def test_大規模でも貪欲法は冪等(_large_case):
 
 
 @pytest.mark.slow
-def test_大規模貪欲法のカバレッジは80分以上(_large_case):
-    """貪欲法の結果が配置基準を 80% 以上カバーすること（壊れた品質 0.371 にならないこと）。"""
+def test_大規模貪欲法のカバレッジは78分以上(_large_case):
+    """貪欲法の結果が配置基準を 78% 以上カバーすること（壊れた品質 0.371 にならないこと）。
+
+    閾値を 0.80 から 0.78 に下げている。園長・主任（配置対象外）を保育基準の
+    充填に使わないよう修正した結果、28 名中 1 名が 配置可能から外れ、
+    カバレッジは 0.8118 から 0.7921 になった。0.80 の閾値は「園長を
+    誤って配置していた挙動」を基準に較正されていたため、基準を見直す。
+    かつて発生していた壊れた品質 0.371 を検出できる水準は維持している。
+    """
     children, staff, prefs, table = _large_case
     result = solve_shift_greedy(children, staff, table, prefs, standard=STANDARD)
     report = gap_analysis.analyze_gap(table, result, staff, standard=STANDARD)
-    assert report.coverage_ratio >= 0.80, f"カバレッジ {report.coverage_ratio:.3f} が不足"
+    assert report.coverage_ratio >= 0.78, f"カバレッジ {report.coverage_ratio:.3f} が不足"
 
 
 # ===========================================================================
@@ -588,7 +595,8 @@ def test_供給人時が0でも例外を投げない(small_children):
     assert result.status is SolveStatus.PARTIAL
     assert any("配置できる人時が 0 です" in m for m in result.messages)
     assert any("契約時間帯" in m for m in result.messages)
-    assert all("充足率は算定不可" in m or True for m in result.messages)
+    # 供給 0 のときは比率の算出を諦めて「算定不可」と明示すること
+    assert any("充足率は算定不可" in m for m in result.messages)
     assert not any("/ 0" in m or "ZeroDivision" in m for m in result.messages)
 
 
@@ -714,7 +722,8 @@ def test_極端な重みでも握り潰さない(small_children):
         max_shift_length_penalty=-1e3,
     )
     result = _solve(small_children, pool, table, weights=weights, time_limit_sec=5)
-    assert result.status in set(SolveStatus)
+    # 0 や負の重みを与えても求解不能扱いにならないこと
+    assert result.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE, SolveStatus.PARTIAL)
     assert result.messages
     assert result.stats["elapsed_sec"] >= 0.0
 
@@ -1775,7 +1784,7 @@ def test_負の時間上限や0でも例外を投げない(small_children):
     table = _tiny_requirements(small_children, slots_count=2, need=1, qualified=1)
     for limit in (0, -1, -100000):
         result = _solve(small_children, pool, table, time_limit_sec=limit)
-        assert result.status in set(SolveStatus), limit
+        assert result.status is not SolveStatus.ERROR, limit
         assert result.messages
         assert result.stats["elapsed_sec"] >= 0.0
 
@@ -1805,7 +1814,7 @@ def test_重みを全部巨大にしても解が返る(small_children):
     huge = ObjectiveWeights(**{name: value * 1e6 for name, value in
                               vars(ObjectiveWeights()).items()})
     result = _solve(small_children, pool, table, weights=huge, time_limit_sec=10)
-    assert result.status in set(SolveStatus)
+    assert result.status is not SolveStatus.ERROR
     assert result.assignments
     assert result.messages
 

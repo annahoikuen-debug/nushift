@@ -285,8 +285,12 @@ def test_compute_costは人件費単価に比例(facility, solved_day, small_sta
     assert doubled == pytest.approx(base * 2, rel=0.01)
 
 
-def test_compute_costは正職員に1_6倍かかる():
-    """同じ 1 時間でも正職員はパート（1.0 倍）より 1.6 倍の人件費になること。"""
+def test_compute_costは正職員に1_25倍かかる():
+    """同じ 1 時間でも正職員はパート（1.0 倍）より 1.25 倍の人件費になること。
+
+    係数は ``exporter.COST_COEFFICIENT``（``domain`` に一元化）に従う。
+    旧実装の 1.6 倍は給与 CSV の 1.25 倍と食い違っていた。
+    """
     from shiftai.domain import (
         CellState,
         EmploymentType,
@@ -312,12 +316,19 @@ def test_compute_costは正職員に1_6倍かかる():
     part = StaffMember("S002", "パート", (Role.SHIENSHIIN,),
                        part_contract(employment_type=EmploymentType.PART))
     settings = FacilitySettings(labor_cost_per_hour=1000.0)
-    assert compute_cost(one_staff_result("S001"), [sei], settings) == pytest.approx(1600.0)
+    # 係数は exporter.COST_COEFFICIENT（domain に一元化）に従う。
+    # 旧実装は正職員 1.6 倍・パート 1.0 倍と exporter 側（1.25 倍）と
+    # 食い違っていたため、実働基準への統一に合わせて 1.25 倍に改めた。
+    assert compute_cost(one_staff_result("S001"), [sei], settings) == pytest.approx(1250.0)
     assert compute_cost(one_staff_result("S002"), [part], settings) == pytest.approx(1000.0)
 
 
-def test_compute_costは休憩も在勤として計上する():
-    """休憩（BREAK）も在勤時間として人件費に算入されること。"""
+def test_compute_costは休憩を算入しない():
+    """休憩（BREAK）は人件費に算入しないこと。
+
+    実働基準（勤務 − 休憩）へ統一した。旧実装は休憩を在勤として算入していた
+    ため、給与 CSV（payroll_dataframe の「実働時間」）と金額がずれていた。
+    """
     from shiftai.domain import (
         CellState,
         EmploymentType,
@@ -335,7 +346,9 @@ def test_compute_costは休憩も在勤として計上する():
     )
     part = StaffMember("S002", "パート", (Role.SHIENSHIIN,),
                        part_contract(employment_type=EmploymentType.PART))
-    assert compute_cost(result, [part], FacilitySettings(labor_cost_per_hour=1000.0)) == pytest.approx(1000.0)
+    assert compute_cost(
+        result, [part], FacilitySettings(labor_cost_per_hour=1000.0)
+    ) == pytest.approx(0.0), "休憩だけの日は人件費にならないこと"
 
 
 def test_summarizeのキー(solved_day, day_report, small_staff):

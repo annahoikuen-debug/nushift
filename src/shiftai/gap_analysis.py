@@ -25,7 +25,6 @@ from shiftai.config import (
 from shiftai.domain import (
     CellState,
     Contract,
-    EmploymentType,
     FacilitySettings,
     RequirementTable,
     Slot,
@@ -37,11 +36,12 @@ from shiftai.domain import (
     StaffPreferences,
     Violation,
     ViolationSeverity,
+    cost_coefficient,
+    weekly_periods,
 )
 from shiftai.solver import staff_work_hours
 
 _BREAK_CONCURRENT_SHARE = 0.25
-_SE_FULL_TIME_FACTOR = 1.6
 _STATUS_CODE: dict[SolveStatus, float] = {
     SolveStatus.OPTIMAL: 1.0,
     SolveStatus.FEASIBLE: 0.75,
@@ -243,6 +243,9 @@ def analyze_gap(
             actual = 0
             actual_q = 0
             for s in staff:
+                if not s.is_placeable:
+                    # 園長・主任は保育基準の人数に計上しない
+                    continue
                 state = lookup.get((s.staff_id, day, slot.label), CellState.OFF)
                 if state is CellState.WORK:
                     actual += 1
@@ -381,6 +384,8 @@ def _is_contiguous(indices: Sequence[int]) -> bool:
         return True
     ordered = sorted(indices)
     return ordered[-1] - ordered[0] + 1 == len(ordered)
+
+
 
 
 def check_violations(
@@ -646,19 +651,29 @@ def check_violations(
                     },
                 )
             )
-        if total_hours > STATUTORY_WEEKLY_WORK_HOURS + 1e-6:
-            out.append(
-                Violation(
-                    severity=ViolationSeverity.WARNING,
-                    code="WEEKLY_HOURS_EXCEEDED",
-                    message=(
-                        f"{sid} の対象期間の勤務が {total_hours:.2f} 時間で"
-                        "週44時間を超えています。"
-                    ),
-                    staff_id=sid,
-                    detail={"hours": round(total_hours, 2)},
+        sid_worked = worked_days.get(sid, set())
+        for window in weekly_periods(days):
+            window_hours = sum(daily_hours.get(d, 0.0) for d in window)
+            if window_hours > STATUTORY_WEEKLY_WORK_HOURS + 1e-6:
+                out.append(
+                    Violation(
+                        severity=ViolationSeverity.WARNING,
+                        code="WEEKLY_HOURS_EXCEEDED",
+                        message=(
+                            f"{sid} は {window[0].isoformat()} から {window[-1].isoformat()} の"
+                            f"1 週間で {window_hours:.2f} 時間勤務し、"
+                            f"週{STATUTORY_WEEKLY_WORK_HOURS:.0f}時間を超えています。"
+                        ),
+                        day=window[0],
+                        staff_id=sid,
+                        detail={
+                            "hours": round(window_hours, 2),
+                            "window_start": window[0].isoformat(),
+                            "window_end": window[-1].isoformat(),
+                            "window_days": len(window),
+                        },
+                    )
                 )
-            )
 
         streak = 0
         worst_streak = 0
@@ -689,19 +704,30 @@ def check_violations(
                     detail={"streak": worst_streak, "cap": c.max_consecutive_days},
                 )
             )
-        if days and len(worked_days.get(sid, set()) & set(days)) > c.max_weekly_days > 0:
-            out.append(
-                Violation(
-                    severity=ViolationSeverity.WARNING,
-                    code="WEEKLY_DAYS_EXCEEDED",
-                    message=(
-                        f"{sid} の勤務日数が {len(worked_days.get(sid, set()) & set(days))} 日で"
-                        f"契約上限（{c.max_weekly_days} 日）を超えています。"
-                    ),
-                    staff_id=sid,
-                    detail={"days": len(worked_days.get(sid, set()) & set(days))},
-                )
-            )
+        if c.max_weekly_days > 0:
+            for window in weekly_periods(days):
+                worked_in_window = len(sid_worked & set(window))
+                if worked_in_window > c.max_weekly_days:
+                    out.append(
+                        Violation(
+                            severity=ViolationSeverity.WARNING,
+                            code="WEEKLY_DAYS_EXCEEDED",
+                            message=(
+                                f"{sid} は {window[0].isoformat()} から {window[-1].isoformat()} の"
+                                f"1 週間で {worked_in_window} 日出勤し、"
+                                f"契約上限（週 {c.max_weekly_days} 日）を超えています。"
+                            ),
+                            day=window[0],
+                            staff_id=sid,
+                            detail={
+                                "days": worked_in_window,
+                                "cap": c.max_weekly_days,
+                                "window_start": window[0].isoformat(),
+                                "window_end": window[-1].isoformat(),
+                                "window_days": len(window),
+                            },
+                        )
+                    )
 
         for a, b in zip(days, days[1:], strict=False):
             prev = [i for i in range(n) if lookup.get((sid, a, slots[i].label)) is CellState.WORK]
@@ -858,8 +884,8 @@ VIOLATION_CODE_LABELS: dict[str, str] = {
     "OUTSIDE_CONTRACT_HOURS": "契約の勤務時間帯外で勤務しています。",
     "MONTHLY_HOURS_EXCEEDED": "対象期間の勤務時間が契約基準の上限を超えています。",
     "MONTHLY_HOURS_SHORT": "対象期間の勤務時間が契約基準の下限に届いていません。",
-    "WEEKLY_HOURS_EXCEEDED": "対象期間の勤務時間が週44時間を超えています。",
-    "WEEKLY_DAYS_EXCEEDED": "勤務日数が契約の週所定労働日数を超えています。",
+    "WEEKLY_HOURS_EXCEEDED": "週の勤務時間が内部目安の週44時間を超えている週があります。",
+    "WEEKLY_DAYS_EXCEEDED": "週の勤務日数が契約の週最大出勤日数を超えている週があります。",
     "CONSECUTIVE_DAYS": "連続勤務日数が契約上限を超えています。",
     "REST_HOURS_SHORT": "勤務間の休息時間が11時間を下回っています。",
     "BREAK_INSUFFICIENT": "勤務に対する休憩時間が不足しています（45分/60分）。",
@@ -870,11 +896,6 @@ VIOLATION_CODE_LABELS: dict[str, str] = {
     "AVOID_LATE_CONFLICT": "延長保育を希望しない職員が延長保育に配置されています。",
     "HOURS_IMBALANCE": "職員間の勤務時間の偏りが大きいです。",
 }
-
-
-def violation_code_label(code: str) -> str:
-    """違反コードの日本語説明（UI の凡例表示用）。未知のコードは空文字。"""
-    return VIOLATION_CODE_LABELS.get(code, "")
 
 
 def _minutes(t) -> int:
@@ -916,24 +937,33 @@ def compute_cost(
 ) -> float:
     """人件費（円相当）の概算を返す。
 
-    勤務中の在勤時間（勤務 + 休憩）に、人件費目安と雇用形態別の係数を掛ける。
-    正職員は 1.6 倍（その他は 1.0）。
+    **実働基準**（勤務した時間帯のみ。休憩 ``CellState.BREAK`` は除く）で計算する。
+    給与 CSV（``exporter.payroll_dataframe``）と同じ式・同じ係数を使うため、
+    画面と ``payroll.csv`` の合計が一致する。旧実装は休憩を在勤時間として
+    扱っていたため CSV とはずれており、係数も 1.6 / 1.25 と異なっていた。
     """
     fac = settings or FacilitySettings()
     weight_by_staff = {
-        s.staff_id: (_SE_FULL_TIME_FACTOR if s.contract.employment_type is EmploymentType.SEI else 1.0)
-        for s in staff
+        s.staff_id: cost_coefficient(s.contract.employment_type) for s in staff
     }
     total = 0.0
     for a in result.assignments:
-        if a.state is CellState.OFF:
+        if a.state is not CellState.WORK:
             continue
         total += a.slot.hours * weight_by_staff.get(a.staff_id, 1.0) * fac.labor_cost_per_hour
     return round(total, 1)
 
 
-def summarize(result: SolveResult, report: GapReport, staff: Sequence[StaffMember]) -> dict[str, float]:
-    """UI のサマリーカード用に、状態と主要指標を数値の辞書で返す。"""
+def summarize(
+    result: SolveResult,
+    report: GapReport,
+    staff: Sequence[StaffMember],
+    settings: FacilitySettings | None = None,
+) -> dict[str, float]:
+    """UI のサマリーカード用に、状態と主要指標を数値の辞書で返す。
+
+    :param settings: 人件費の単価に用いる園設定。省略時は既定の単価になる。
+    """
     hours = staff_work_hours(result, staff)
     values = list(hours.values())
     days = {a.day for a in result.assignments}
@@ -954,7 +984,7 @@ def summarize(result: SolveResult, report: GapReport, staff: Sequence[StaffMembe
         "不足保育士時間": report.total_qualified_shortfall_hours,
         "過剰時間": report.total_overstaff_hours,
         "充足率": report.coverage_ratio,
-        "人件費": compute_cost(result, staff),
+        "人件費": compute_cost(result, staff, settings),
         "勤務セル数": float(worked),
         "目的関数": float(result.objective_value or 0.0),
         "所要秒数": float(result.stats.get("elapsed_sec", 0.0) or 0.0),

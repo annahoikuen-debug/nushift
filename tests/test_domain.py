@@ -521,3 +521,65 @@ def test_is_workdayは休園日判定():
     settings = FacilitySettings(closed_days=frozenset({date(2026, 9, 29)}))
     assert is_workday(date(2026, 9, 28), settings) is True
     assert is_workday(date(2026, 9, 29), settings) is False
+
+
+# ---------------------------------------------------------------------------
+# 深夜閉所（T-02）
+# ---------------------------------------------------------------------------
+
+
+def test_build_slotsは24時閉所を許可する():
+    """深夜に閉所する園で最後の時間帯が 23:30〜24:00 になっても例外にしないこと。
+
+    修正前は ``to_time(1440)`` が ``00:00`` へ折り返し、``end <= start`` で
+    ``ValueError`` になっていた（24時閉所の園が計算できなかった）。
+    """
+    slots = build_slots(time(7, 0), time(23, 45), 30)
+    assert len(slots) == 34
+    assert slots[-1].start == time(23, 30)
+    assert slots[-1].end == time(0, 0)
+
+
+def test_終端00時の区間長は正しい():
+    """``00:00`` 表記の終端は 1440 分として扱うこと。"""
+    slot = Slot(time(23, 30), time(0, 0))
+    assert slot.minutes == 30
+    assert slot.end_minutes == 1440
+    assert slot.start_minutes == 1410
+    assert slot.hours == 0.5
+    assert slot.is_midnight_end is True
+
+
+def test_全時間帯の合計が開所から24時まで一致する():
+    """隙間も重複もなく、合計が開所から 24 時までの長さになること。"""
+    slots = build_slots(time(7, 0), time(23, 45), 30)
+    assert sum(s.minutes for s in slots) == 17 * 60
+    assert all(slots[i].end == slots[i + 1].start for i in range(len(slots) - 1))
+    assert slots[0].start == time(7, 0)
+    assert slots[-1].end_minutes == 1440
+
+
+def test_深夜閉所でも時間境界の判定が正しい():
+    """``overlaps`` / ``contains`` が 00:00 終端でも破綻しないこと。"""
+    slot = Slot(time(23, 30), time(0, 0))
+    assert slot.overlaps(time(23, 0), time(23, 59)) is True
+    assert slot.overlaps(time(0, 0), time(1, 0)) is False
+    assert slot.overlaps(time(23, 0), time(23, 30)) is False
+    assert slot.contains(time(23, 30), time(0, 0)) is True
+
+
+def test_深夜以外の時間帯は従来どおり():
+    """00:00 始業など通常の一覧は变化的ないこと。"""
+    assert Slot(time(0, 0), time(0, 30)).minutes == 30
+    assert Slot(time(0, 0), time(0, 30)).end_minutes == 30
+    assert Slot(time(0, 0), time(0, 30)).is_midnight_end is False
+    labels = [s.label for s in build_slots(time(9, 0), time(10, 0), 30)]
+    assert labels == ["09:00-09:30", "09:30-10:00"]
+
+
+def test_長さ0と逆順の時間帯は引き続き拒否する():
+    """番兵の緩和で既存のエラーが緩まないこと。"""
+    with pytest.raises(ValueError):
+        Slot(time(9, 0), time(9, 0))
+    with pytest.raises(ValueError):
+        Slot(time(14, 0), time(9, 0))
