@@ -1,7 +1,7 @@
 """出力（``shiftai.exporter``）のテスト。
 
 CSV（UTF-8 BOM）/ Excel（.xlsx）/ iCalendar / ZIP / マークダウンサマリーが
-「 실제로開ける」「形式が正しい」ことを保証する。
+「 実際に開ける」「形式が正しい」ことを保証する。
 """
 
 from __future__ import annotations

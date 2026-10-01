@@ -314,6 +314,7 @@ def _render_ratio_summary() -> None:
 
 def render() -> None:
     """タブ2 の本体。"""
+    theme.step_indicator(1)
     st.markdown("### 2. 必要人員")
     if not state.data_ready():
         theme.empty_state()
@@ -367,3 +368,4 @@ def render() -> None:
     st.divider()
     _render_preset_comparison()
     theme.caveat_box()
+    theme.next_step_hint(1)

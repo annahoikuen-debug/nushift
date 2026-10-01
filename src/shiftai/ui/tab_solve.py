@@ -6,8 +6,14 @@ from typing import Any
 
 import streamlit as st
 
-from shiftai import gap_analysis, solver, standards
+from shiftai import diagnostics, gap_analysis, solver, standards
 from shiftai.domain import SolveResult
+from shiftai.relaxation import (
+    RELAX_LEVELS,
+    relax_level_index,
+    relaxation_options,
+    relaxed_constraint_labels,
+)
 from shiftai.ui import components, state, theme
 
 PROGRESS_STEPS: tuple[tuple[float, str], ...] = (
@@ -16,6 +22,7 @@ PROGRESS_STEPS: tuple[tuple[float, str], ...] = (
     (0.25, "最適化モデルを構築しています（変数・制約の生成）…"),
     (0.35, "PuLP（CBC）で最適化しています。この処理は数十秒かかることがあります…"),
     (0.80, "解をデコードしてシフト表にしています…"),
+    (0.88, "勤務パターンの境界へ整列しています…"),
     (0.90, "過不足と法令違反を検証しています…"),
     (1.00, "完了しました。"),
 )
@@ -28,10 +35,12 @@ def build_requirements() -> Any:
     return tab_requirements.build_requirements()
 
 
-def run_solve(*, force: bool = False) -> SolveResult | None:
+def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveResult | None:
     """最適化を実行して結果を session_state に保存する。
 
-    ``force`` が True のときは再計算を強制する。例外は呼び出し側で表示する。
+    ``force`` が True のときは再計算を強制する。
+    ``relaxation`` を渡すと、その緩和段階（上から缓める）で実行する。
+    例外は呼び出し側で表示する。
     """
     settings = state.current_settings()
     standard = state.current_standard()
@@ -40,6 +49,8 @@ def run_solve(*, force: bool = False) -> SolveResult | None:
     preferences = state.get(state.KEY_PREFERENCES) or {}
     weights = state.sync_weights()
     fixed = state.normalize_fixed(state.get(state.KEY_FIXED_ASSIGNMENTS))
+    patterns = state.current_patterns()
+    level = state.get(state.KEY_RELAXATION) if relaxation is None else relaxation
     if not children:
         raise ValueError("園児データが未投入です。")
     if not staff:
@@ -65,20 +76,36 @@ def run_solve(*, force: bool = False) -> SolveResult | None:
                 time_limit_sec=limit,
                 msg=False,
                 standard=standard,
+                patterns=patterns,
+                relaxation=level,
             )
         progress.progress(PROGRESS_STEPS[4][0], text=PROGRESS_STEPS[4][1])
+        snap_changes: tuple = ()
+        if patterns and state.get(state.KEY_PATTERN_SNAP):
+            progress.progress(PROGRESS_STEPS[5][0], text=PROGRESS_STEPS[5][1])
+            result, snap_changes = solver.snap_to_patterns(
+                result,
+                patterns,
+                requirements=table,
+                preferences=preferences,
+                staff=staff,
+                standard=standard,
+                settings=settings,
+            )
         report = gap_analysis.analyze_gap(table, result, staff, standard=standard)
-        progress.progress(PROGRESS_STEPS[5][0], text=PROGRESS_STEPS[5][1])
+        progress.progress(PROGRESS_STEPS[6][0], text=PROGRESS_STEPS[6][1])
         violations = gap_analysis.check_violations(
             table, result, staff, preferences, standard=standard, settings=settings
         )
-        progress.progress(PROGRESS_STEPS[6][0], text=PROGRESS_STEPS[6][1])
+        progress.progress(PROGRESS_STEPS[7][0], text=PROGRESS_STEPS[7][1])
     finally:
         progress.empty()
 
     state.set(state.KEY_SOLVE_RESULT, result)
     state.set(state.KEY_GAP_REPORT, report)
     state.set(state.KEY_VIOLATIONS, violations)
+    state.set(state.KEY_PATTERN_SNAP_REPORT, snap_changes or None)
+    state.set(state.KEY_RELAXATION, level)
     st.session_state.pop("shift_editor", None)
     st.session_state.pop("gap_editor", None)
     return result
@@ -89,6 +116,209 @@ def _ratio_text(ratio: float) -> str:
     if ratio == float("inf"):
         return "∞"
     return f"{ratio:.2f}"
+
+
+def _render_diagnosis(table: Any, result: SolveResult | None) -> None:
+    """「なぜ解けないのか」を説明し、緩和モードでの再実行を提供する。"""
+    staff = state.get(state.KEY_STAFF) or []
+    preferences = state.get(state.KEY_PREFERENCES) or {}
+    report = diagnostics.diagnose(
+        table, staff, preferences, state.current_settings()
+    )
+    state.set(state.KEY_DIAGNOSIS, report)
+    level = int(state.get(state.KEY_RELAXATION))
+
+    with st.expander("🔍 なぜ解けないのか（原因の特定と緩和モード）", expanded=False):
+        st.write(report.headline())
+        if report.rows:
+            st.dataframe(
+                diagnostics.shortfall_dataframe(report),
+                hide_index=True,
+                width="stretch",
+                key="diagnosis_shortfall",
+            )
+            st.caption(
+                "「供給人員」は契約時間帯内で希望休でもない職員数です。"
+                "この数が「必要人員」を下回っている行は、職員を増やさない限り埋まりません。"
+            )
+        for reason in report.reasons:
+            st.warning(f"**{reason.label}**: {reason.message}\n\n対応: {reason.advice}")
+        if not report.rows and not report.reasons:
+            st.info(report.note)
+
+        st.divider()
+        st.markdown("**緩め方（緩和モード）**")
+        options = relaxation_options()
+        chosen = st.selectbox(
+            "どこまで緩めて解けば解けるか",
+            options=options,
+            index=relax_level_index(level),
+            key="relaxation_select",
+            help=RELAX_LEVELS[level].description,
+        )
+        chosen_level = RELAX_LEVELS[options.index(chosen)].value
+        st.caption(RELAX_LEVELS[chosen_level].description)
+        if chosen_level > 0:
+            st.warning(
+                "緩めた制約: "
+                + "、".join(relaxed_constraint_labels(chosen_level))
+                + "。法令の上限時間（1日10時間）は緩めません。"
+            )
+        if st.button(
+            "この設定で再実行する",
+            key="rerun_with_relaxation",
+            width="stretch",
+        ):
+            try:
+                with st.spinner("緩和モードで最適化しています…"):
+                    run_solve(force=True, relaxation=chosen_level)
+                st.success(
+                    f"L{chosen_level}（{RELAX_LEVELS[chosen_level].label}）で再実行しました。"
+                )
+            except Exception as exc:  # noqa: BLE001 - 最適化失敗で画面を落とさない
+                st.error(f"再実行に失敗しました: {exc}")
+
+        if st.button(
+            "どの段階で解けるかを調べる（時間を要します）",
+            key="run_relaxation_ladder",
+            width="stretch",
+            help="L0 から順に解いていき、初めて解けた段階を報告します。"
+            "ソルバを複数回起動するため数十秒〜数分かかります。",
+        ):
+            ladder = _run_ladder(table)
+            state.set(state.KEY_DIAGNOSIS_LADDER, ladder)
+            for line in ladder.messages():
+                st.caption(f"- {line}")
+
+        with st.expander("制約グループを 1 つずつ外して原因を絞る（IIS）", expanded=False):
+            st.caption(
+                "各制約グループを 1 つだけ無効化して解き直し、"
+                "「外しても解けないもの」を捨てます。残ったものが矛盾の当事者です。"
+                "ソルバを制約グループ数だけ起動するため数分かかる場合があります。"
+            )
+            if st.button("原因を絞り込む", key="run_iis", width="stretch"):
+                with st.spinner("制約グループを 1 つずつ外して検証しています…"):
+                    core = diagnostics.conflict_core_report(
+                        state.get(state.KEY_CHILDREN) or [],
+                        staff,
+                        table,
+                        preferences,
+                        settings=state.current_settings(),
+                        standard=state.current_standard(),
+                        time_limit_sec=max(8, int(state.get(state.KEY_TIME_LIMIT_SEC)) // 3),
+                    )
+                if len(core) == len(diagnostics.CONSTRAINT_GROUPS):
+                    st.warning(
+                        "どの制約グループを 1 つ外しても解けませんでした。"
+                        "1 つの制約ではなく、**複数の制約の組合せ**が矛盾を作っています。"
+                    )
+                else:
+                    st.error(f"矛盾の当事者は {len(core)} 件の制約グループです。")
+                st.dataframe(
+                    [
+                        {"制約": g.label, "確認のしかた": g.detail} for g in core
+                    ],
+                    hide_index=True,
+                    width="stretch",
+                    key="iis_result",
+                )
+
+    _render_pattern_panel(result)
+
+
+def _run_ladder(table: Any) -> Any:
+    """緩和ラダーを実行する（利用者がボタンを押したときだけ呼ぶ）。"""
+    staff = state.get(state.KEY_STAFF) or []
+    children = state.get(state.KEY_CHILDREN) or []
+    preferences = state.get(state.KEY_PREFERENCES) or {}
+    with st.spinner("緩和モードを順に検証しています…"):
+        return diagnostics.relaxation_ladder(
+            children,
+            staff,
+            table,
+            preferences,
+            settings=state.current_settings(),
+            standard=state.current_standard(),
+            time_limit_sec=max(10, int(state.get(state.KEY_TIME_LIMIT_SEC)) // 2),
+        )
+
+
+def _render_pattern_panel(result: SolveResult | None) -> None:
+    """勤務パターンの設定状況と整列結果を示す。"""
+    patterns = state.current_patterns()
+    with st.expander("⏰ 勤務パターンへの整列（早番・日勤・遅番）", expanded=False):
+        if not patterns:
+            st.info(
+                "勤務パターンは無効です。サイドバー「勤務パターン（早番・中班・遅番）」で"
+                "有効にすると、勤務ブロックの開始・終了をその境界へ引き寄せます。"
+            )
+            return
+        st.markdown("**定義中のパターン**")
+        st.dataframe(
+            [
+                {
+                    "パターン": p.label,
+                    "時間帯": p.span(),
+                    "長さ": f"{p.hours:.1f} h",
+                }
+                for p in patterns
+            ],
+            hide_index=True,
+            width="stretch",
+            key="pattern_defs",
+        )
+        if result is None:
+            return
+        counts = solver.pattern_breakdown(result, patterns)
+        if not counts:
+            return
+        st.markdown("**生成結果の内訳（勤務日数）**")
+        st.dataframe(
+            [{"区分": k, "日数": v} for k, v in sorted(counts.items())],
+            hide_index=True,
+            width="stretch",
+            key="pattern_counts",
+        )
+        aligned = sum(v for k, v in counts.items() if k != "その他")
+        total = sum(counts.values())
+        ratio = (aligned / total) if total else 0.0
+        components.metric_row(
+            [
+                ("パターン一致", f"{aligned} 日", f"全 {total} 勤務日中"),
+                ("整列率", f"{ratio * 100:.0f}%", "早番・日勤・遅番の枠と一致した日数"),
+                ("その他", f"{counts.get('その他', 0)} 日", "契約や希望休のため枠に寄せられなかった日"),
+            ]
+        )
+        snap = state.get(state.KEY_PATTERN_SNAP_REPORT)
+        if snap:
+            moved = [c for c in snap if c.applied]
+            st.caption(
+                f"境界の整列を {len(moved)} 日分適用しました"
+                f"（{len(snap) - len(moved)} 日分は契約・希望休・配置基準のため据え置き）。"
+            )
+            with st.expander("整列の内訳", expanded=False):
+                st.dataframe(
+                    [c.to_dict() for c in snap],
+                    hide_index=True,
+                    width="stretch",
+                    key="pattern_snap_detail",
+                )
+        days = components.days_of(result)
+        if days:
+            day = st.selectbox(
+                "勤務枠の内訳を見る日",
+                options=days,
+                format_func=theme.format_day,
+                key="pattern_detail_day",
+            )
+            rows = []
+            for sid in sorted({a.staff_id for a in result.assignments}):
+                text = solver.describe_shift_pattern(result, sid, day, patterns)
+                if text == "オフ":
+                    continue
+                rows.append({"職員ID": sid, "勤務枠": text})
+            if rows:
+                st.dataframe(rows, hide_index=True, width="stretch", key="pattern_detail")
 
 
 def _render_precheck(table: Any) -> None:
@@ -134,7 +364,7 @@ def _render_precheck(table: Any) -> None:
         elif ratio > 1.0:
             st.error(
                 f"必要人時 {required:,.1f} h ＞ 供給可能人時 {supply:,.1f} h（比 {shown}）。"
-                "**職員数・契約時間・園児数のいずれか进行调整しないと"
+                "**職員数・契約時間・園児数のいずれかを調整しないと"
                 "配置基準を満たすシフトは作成できません。**"
             )
         else:
@@ -145,7 +375,8 @@ def _render_precheck(table: Any) -> None:
         st.caption(
             f"セル変数 {len(state.get(state.KEY_STAFF) or []) * len(table.slots) * len(table.all_days()):,} 個"
             f" 程度。人数×日数×時間帯に比例するため、"
-            "職員数や日数を増やすと最適化時間が大きく伸びます。"        )
+            "職員数や日数を増やすと最適化時間が大きく伸びます。"
+        )
 
 
 def _render_kpis(result: SolveResult) -> None:
@@ -303,18 +534,32 @@ def _render_staffing_curve(result: SolveResult) -> None:
             )
 
 
-def render() -> None:
-    """タブ3 の本体。"""
+def render(*, auto_requirements: bool = False) -> None:
+    """タブ3 の本体。
+
+    ``auto_requirements=True``（シンプルモード）は、タブ2「必要人員」が
+    画面上に無い代わりに、必要人員を自動的に計算してから実行ボタンを出す。
+    """
+    theme.step_indicator(2)
     st.markdown("### 3. シフト自動作成")
     if not state.data_ready():
         theme.empty_state()
         return
     table = state.get(state.KEY_REQUIREMENTS)
+    if table is None and auto_requirements:
+        try:
+            with st.spinner("必要人員を計算しています…"):
+                table = build_requirements()
+            state.set(state.KEY_REQUIREMENTS, table)
+        except Exception as exc:  # noqa: BLE001 - 計算失敗で画面を落とさない
+            st.error(f"必要人員の計算に失敗しました: {exc}")
+            return
     if table is None:
         st.warning("先にタブ2「必要人員」で「必要人員を再計算」を押してください。")
         return
 
     _render_precheck(table)
+    _render_diagnosis(table, state.get(state.KEY_SOLVE_RESULT))
 
     if st.button(
         "🚀 シフトを自動作成する",
@@ -357,6 +602,14 @@ def render() -> None:
     violations = state.get(state.KEY_VIOLATIONS) or result.violations
     components.render_violations(violations)
     st.divider()
+    components.render_fairness_panel(
+        result,
+        state.get(state.KEY_STAFF) or [],
+        state.current_slots(),
+        standard=state.current_standard(),
+        patterns=state.current_patterns(),
+    )
+    st.divider()
     _render_staffing_curve(result)
 
     with st.expander("🧾 最適化の詳細（変数・制約・目的関数）", expanded=False):
@@ -370,3 +623,4 @@ def render() -> None:
             f"利用可能ソルバ: {', '.join(state.get(state.KEY_SOLVER_NAMES)) or 'なし'}"
         )
     theme.caveat_box()
+    theme.next_step_hint(2)

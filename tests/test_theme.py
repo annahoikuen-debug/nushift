@@ -68,7 +68,7 @@ def test_format_ratioは算定不能を無限大の記号で示す() -> None:
     rendered = _ratio_text(float("inf"))
     assert "inf" not in rendered
     assert "nan" not in rendered
-    assert rendered  # 空文字ではなく何か 나오ること
+    assert rendered  # 空文字ではなく何か出ること
 
 
 # --- T-10-R5: 説明カード ----------------------------------------------------

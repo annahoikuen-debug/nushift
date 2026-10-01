@@ -1,6 +1,6 @@
 """ページ設定・CSS・共通ウィジェット。
 
-``apply_page_config`` はエントリポイントから最初 neutroph侭に呼ばれる必要がある。
+``apply_page_config`` はエントリポイントから最初に呼ばれる必要がある。
 """
 
 from __future__ import annotations
@@ -178,9 +178,56 @@ def render_footer() -> None:
     )
 
 
+STEP_NAMES: tuple[str, ...] = (
+    "① データ投入",
+    "② 必要人員",
+    "③ シフト作成",
+    "④ シフト表・微調整",
+    "⑤ 出力",
+)
+"""アプリの 5 ステップ。``step_indicator`` / ``next_step_hint`` で使う。"""
+
+
 def empty_state(message: str = "まずタブ1でデータを投入してください") -> None:
     """データ未投入時に呼び出す案内。"""
     st.info(message)
+
+
+def step_indicator(current: int) -> None:
+    """タブ上部に「今どのステップか」を示すパンくずを表示する。
+
+    ``current`` は 0 始まりのステップ番号（タブ1 = 0）。
+    """
+    if not (0 <= current < len(STEP_NAMES)):
+        return
+    chips = []
+    for index, name in enumerate(STEP_NAMES):
+        if index == current:
+            chips.append(
+                f'<span class="shiftai-chip" style="background:#1f6feb;color:#ffffff;'
+                f'font-weight:700">{name}</span>'
+            )
+        else:
+            chips.append(
+                f'<span class="shiftai-chip" style="background:#f1f3f5;'
+                f'color:rgba(49,51,63,0.55)">{name}</span>'
+            )
+    st.markdown(
+        '<div class="shiftai-legend">' + "".join(chips) + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def next_step_hint(current: int) -> None:
+    """タブ末尾に「次にやること」を示す導線を表示する。"""
+    if current >= len(STEP_NAMES) - 1:
+        st.success(
+            "🎉 これで全ステップ完了です。シフト表と出力ファイルを確認し、"
+            "運用前に園長・設置責任者の承認を受けてください。"
+        )
+        return
+    nxt = STEP_NAMES[current + 1]
+    st.info(f"👉 次のステップ: 上のタブ **{nxt}** を開いてください。")
 
 
 def format_day(day: Any) -> str:

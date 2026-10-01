@@ -21,7 +21,12 @@ from shiftai.config import (
     DEFAULT_RANGE_START,
     STATUTORY_WEEKLY_WORK_HOURS,
 )
-from shiftai.domain import AgeClass, FacilitySettings, daterange
+from shiftai.domain import AgeClass, FacilitySettings, daterange, to_minutes, to_time
+from shiftai.shift_patterns import (
+    DEFAULT_PATTERNS,
+    ShiftPattern,
+    default_patterns,
+)
 from shiftai.ui import state, theme
 
 GRANULARITIES: tuple[int, ...] = (15, 30, 60)
@@ -263,6 +268,19 @@ def _render_weights() -> None:
             "配置不足のペナルティが大きいほど「基準を割らない」ことを優先します。"
             "過剰配置のペナルティが大きいほど「無駄な人件」を避けます。"
         )
+        if all(
+            float(getattr(state.get(state.KEY_WEIGHTS), name, 0.0)) > 0
+            for name in state.FAIRNESS_WEIGHT_NAMES
+        ):
+            st.caption(
+                "公平性のペナルティは「職員ごとの早番・遅番・土曜出勤の回数の最大と最小の差」"
+                "を縮める方向に働きます。0 のまま無効にしておけば変数は作られません。"
+            )
+        else:
+            st.caption(
+                "早番・遅番・土曜出勤の公平配分は既定では無効です。"
+                "気になる場合は上のスライダーを上げます（0 なら変数は作られません）。"
+            )
         state.sync_weights()
         limit = int(
             st.slider(
@@ -344,19 +362,154 @@ def _push_tables() -> None:
         st.error(f"送信に予期しないエラーが発生しました: {exc}")
 
 
-def render() -> None:
-    """サイドバー全体をレンダリングして session_state に反映する。"""
+def _render_patterns() -> None:
+    """勤務パターン（早番・日勤・遅番）の定義（優先2）。
+
+    有効にすると、勤務ブロックの開始・終了時刻を aquí の境界へ引き寄せる。
+    """
+    st.markdown("#### ⏰ 勤務パターン（早番・日勤・遅番）")
+    settings = state.current_settings()
+    if not state.get(state.KEY_PATTERNS_ENABLED):
+        st.checkbox(
+            "勤務パターンを有効にする",
+            value=False,
+            key=state.KEY_PATTERNS_ENABLED,
+            help=(
+                "MILP に「勤務ブロックの境界をパターンへ引き寄せる」目的関数を"
+                "追加し、生成後に境界の整列も行います。ハード制約ではないので、"
+                "揃う職員がいても解が消えることはありません。"
+            ),
+        )
+    if not state.get(state.KEY_PATTERNS_ENABLED):
+        return
+
+    presets = _pattern_presets(settings)
+    preset_keys = list(presets)
+    chosen = st.selectbox(
+        "プリセット",
+        options=preset_keys,
+        index=0,
+        key="pattern_preset",
+        help="選ぶと下の一覧をその内容で上書きします。個別に編集もできます。",
+    )
+    if st.button("プリセットを適用", key="pattern_apply_preset"):
+        state.set_patterns(presets[chosen])
+        st.rerun()
+
+    current = state.current_patterns()
+    defaults = presets[chosen] if chosen in presets else presets[preset_keys[0]]
+    if not current:
+        state.set_patterns(defaults)
+        current = defaults
+
+    rows: list[ShiftPattern] = []
+    for i, base in enumerate(defaults):
+        label = st.text_input(f"枠{i + 1} の名前", value=base.label, key=f"pattern_name_{i}")
+        cols = st.columns(2)
+        with cols[0]:
+            start = st.time_input(
+                f"枠{i + 1} の開始", value=base.start, step=900, key=f"pattern_start_{i}"
+            )
+        with cols[1]:
+            end = st.time_input(
+                f"枠{i + 1} の終了", value=base.end, step=900, key=f"pattern_end_{i}"
+            )
+        if end > start:
+            rows.append(
+                ShiftPattern(key=f"p{i}", label=label or f"枠{i + 1}", start=start, end=end)
+            )
+        else:
+            st.warning(f"枠{i + 1} は終了が始業と同じか後のため無視されます。")
+
+    if st.button("追加", key="pattern_add", help="新しい枠を末尾に追加します。"):
+        open_min = to_minutes(settings.day_open)
+        last_end = max((to_minutes(p.end) for p in rows), default=open_min)
+        base_start = min(
+            max(last_end - 540, to_minutes(settings.day_close) - 540),
+            to_minutes(settings.day_close) - 60,
+        )
+        base_start = max(base_start, to_minutes(settings.day_open))
+        new_end = min(base_start + 540, to_minutes(settings.day_close))
+        rows.append(
+            ShiftPattern(
+                key=f"p{len(rows)}",
+                label=f"枠{len(rows) + 1}",
+                start=to_time(base_start),
+                end=to_time(new_end),
+            )
+        )
+        state.set_patterns(rows)
+        st.rerun()
+
+    state.set_patterns(rows)
+    if rows:
+        st.caption(" / ".join(f"{p.label} {p.span()}" for p in rows))
+        st.checkbox(
+            "生成後に境界を丸める（スナップ）",
+            value=bool(state.get(state.KEY_PATTERN_SNAP)),
+            key=state.KEY_PATTERN_SNAP,
+            help=(
+                "ソルバのペナルティで揃わなかったブロックを、配置基準を破らない範囲で"
+                "パターン境界へ移動します。"
+            ),
+        )
+        if st.button("パターンを削除", key="pattern_clear"):
+            state.set_patterns(())
+            st.rerun()
+
+
+def _pattern_presets(settings: FacilitySettings) -> dict[str, tuple[ShiftPattern, ...]]:
+    """勤務パターンのプリセット集。"""
+    return {
+        "園の開所・閉所から自動生成（9時間）": default_patterns(
+            settings.day_open, settings.day_close, shift_hours=9.0
+        ),
+        "標準（7:30-16:30 / 8:30-17:30 / 10:30-19:30）": DEFAULT_PATTERNS,
+        "8時間枠（早番・日勤・遅番）": default_patterns(
+            settings.day_open, settings.day_close, shift_hours=8.0
+        ),
+        "10時間枠（早番・日勤・遅番）": default_patterns(
+            settings.day_open, settings.day_close, shift_hours=10.0
+        ),
+    }
+
+
+def render(*, simple: bool = False) -> None:
+    """サイドバー全体をレンダリングして session_state に反映する。
+
+    ``simple=True``（既定のシンプルモード）のときは、はじめに必要な
+    「園設定」と「計画期間」だけを目立つ位置に出し、残りの詳細設定
+    （配置基準プリセット・最適化オプション・GAS 連携）は閉じた
+    expander の中に畳む。**expander は閉じていても中身は描画される**ため、
+    上級者モードとの切り替えで設定が消えることはない。
+    """
     with st.sidebar:
         st.markdown(f"## {APP_ICON} 設定")
         _render_facility()
         st.divider()
-        _render_standard()
-        st.divider()
         _render_period()
-        st.divider()
-        _render_weights()
-        st.divider()
-        _render_gas()
+        if simple:
+            with st.expander("⚙️ 詳細設定（上級者向け）", expanded=False):
+                st.caption(
+                    "所轄自治体の配置基準・勤務パターン・目的関数の重み・シート連携など。"
+                    "通常は変更する必要はありません。"
+                )
+                _render_standard()
+                st.divider()
+                _render_patterns()
+                st.divider()
+                _render_weights()
+                st.divider()
+                _render_gas()
+        else:
+            st.divider()
+            _render_standard()
+            st.divider()
+            _render_patterns()
+            st.divider()
+            _render_weights()
+            st.divider()
+            _render_gas()
         st.divider()
         theme.legend(
             [

@@ -11,9 +11,10 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from shiftai import data_loader, sample_data
+from shiftai import data_loader, importers, sample_data
 from shiftai.domain import AgeClass, EmploymentType, Role
 from shiftai.ui import components, state, theme
+from shiftai.validation import ERROR, ValidationReport, validate_frames
 
 TABLE_KINDS: tuple[tuple[str, str, str], ...] = (
     (
@@ -195,6 +196,59 @@ def _read_uploads(kind: str, files: Sequence[Any]) -> list[pd.DataFrame]:
     return frames
 
 
+def _history_label(kind: str, title: str) -> str:
+    """履歴へ記録するときの表示名（例: 「園児 42 行」）。"""
+    frame = st.session_state.get(f"frame_{kind}", None)
+    rows = 0 if frame is None else len(frame)
+    return f"{title} {rows} 行"
+
+
+def _record_edit(kind: str, frame: pd.DataFrame) -> None:
+    """編集内容を履歴へ記録する（同一内容は取り込まない）。"""
+    state.edit_history(kind).record(kind, frame, _history_label(kind, _title_of(kind)))
+
+
+def _title_of(kind: str) -> str:
+    for _kind, title, _desc in TABLE_KINDS:
+        if _kind == kind:
+            return title
+    return kind
+
+
+def _render_history_controls(kind: str) -> None:
+    """Undo / Redo ボタンと履歴のキャプションを描く。"""
+    history = state.edit_history(kind)
+    cols = st.columns([1, 1, 2])
+    with cols[0]:
+        if st.button(
+            f"↩︎ {history.undo_label()}",
+            disabled=not history.can_undo,
+            key=f"undo_{kind}",
+            width="stretch",
+            help="直前の編集内容に戻します。",
+        ):
+            entry = history.undo()
+            if entry is not None:
+                st.session_state[f"frame_{kind}"] = entry.frame.copy()
+                st.session_state.pop(f"editor_{kind}", None)
+                st.rerun()
+    with cols[1]:
+        if st.button(
+            f"↪︎ {history.redo_label()}",
+            disabled=not history.can_redo,
+            key=f"redo_{kind}",
+            width="stretch",
+            help="元に戻した編集をもう一度適用します。",
+        ):
+            entry = history.redo()
+            if entry is not None:
+                st.session_state[f"frame_{kind}"] = entry.frame.copy()
+                st.session_state.pop(f"editor_{kind}", None)
+                st.rerun()
+    with cols[2]:
+        st.caption(history.trail())
+
+
 def _preview_table(kind: str, title: str, description: str) -> None:
     columns = data_loader.TABLE_COLUMNS[kind]
     days = state.current_days()
@@ -231,6 +285,8 @@ def _preview_table(kind: str, title: str, description: str) -> None:
                 kind, days, int(st.session_state.get(f"sample_seed_{kind}", 42))
             )
             st.session_state[f"frame_{kind}"] = frame
+            st.session_state.pop(f"editor_{kind}", None)
+            _record_edit(kind, frame)
             st.session_state[f"seed_{kind}"] = int(
                 st.session_state.get(f"sample_seed_{kind}", 42)
             )
@@ -247,9 +303,14 @@ def _preview_table(kind: str, title: str, description: str) -> None:
             frames = _read_uploads(kind, uploads)
             merged = pd.concat(frames, ignore_index=True)
             st.session_state[f"frame_{kind}"] = merged
+            st.session_state.pop(f"editor_{kind}", None)
+            _record_edit(kind, merged)
             st.success(f"{len(merged)} 行を読み込みました。")
         except Exception as exc:  # noqa: BLE001 - 取り込み失敗で画面を落とさない
             st.error(f"ファイルを読み込めませんでした: {exc}")
+
+    if kind == "children":
+        _render_importer()
 
     frame = st.session_state.get(f"frame_{kind}", None)
     if frame is None or frame.empty:
@@ -277,8 +338,116 @@ def _preview_table(kind: str, title: str, description: str) -> None:
         height=320,
         width="stretch",
     )
-    st.session_state[f"frame_{kind}"] = coerce_frame(kind, edited)
+    coerced = coerce_frame(kind, edited)
+    _record_edit(kind, coerced)
+    st.session_state[f"frame_{kind}"] = coerced
     st.caption(f"編集中 {len(edited)} 行。行を追加・削除できます。")
+
+    _render_table_validation(kind)
+
+
+def _render_table_validation(kind: str) -> None:
+    """その表だけの検証結果を表示する（行・列・理由を提示）。"""
+    report = _current_report()
+    issues = report.by_table(kind)
+    if not issues:
+        return
+    errors = [i for i in issues if i.level == ERROR]
+    if errors:
+        st.error(
+            f"❌ {len(errors)} 件の入力を直す必要があります"
+            "（下の「この内容で読み込む」は押せません）。"
+        )
+    else:
+        st.warning(f"⚠️ 注意 {len(issues)} 件があります。")
+    st.dataframe(
+        report.to_dataframe(),
+        hide_index=True,
+        width="stretch",
+        key=f"validation_{kind}",
+    )
+
+
+def _current_report() -> ValidationReport:
+    """3 表をまとめて検証した結果を取得し、session_state に保存する。"""
+    settings = state.current_settings()
+    report = validate_frames(
+        st.session_state.get("frame_children"),
+        st.session_state.get("frame_staff"),
+        st.session_state.get("frame_preferences"),
+        days=state.current_days(),
+        day_open=settings.day_open,
+        day_close=settings.day_close,
+    )
+    state.set(state.KEY_VALIDATION, report)
+    return report
+
+
+def _render_importer() -> None:
+    """園業務支援システム（CoDMON / キッズリー）の CSV 取り込み UI。"""
+    with st.expander("🔗 園業務支援システムから取り込む", expanded=False):
+        st.caption(
+            "CoDMON / キッズリー などで出力した園児の登降園予定 CSV を、"
+            "列名を自動で読み替えて取り込みます。"
+        )
+        uploaded = st.file_uploader(
+            "取り込む CSV / Excel", type=["csv", "xlsx"], key="import_children"
+        )
+        if uploaded is None:
+            st.info("CSV ファイルを選んでください。")
+            return
+        try:
+            raw = uploaded.getvalue() if hasattr(uploaded, "getvalue") else uploaded
+            source = data_loader.read_table(raw, "children")
+        except Exception as exc:  # noqa: BLE001 - 取り込み失敗で画面を落とさない
+            st.error(f"ファイルを読み込めませんでした: {exc}")
+            return
+        options = importers.profile_options()
+        labels = {key: label for key, label in options}
+        guessed = importers.detect_profile(source)
+        chosen = st.selectbox(
+            "取り込み元の形式",
+            options=[key for key, _label in options],
+            index=[key for key, _label in options].index(guessed),
+            format_func=lambda key: labels[key],
+            key="import_profile",
+        )
+        standard = state.current_standard()
+        result = importers.convert(
+            source, chosen, standard_time=standard.standard_time
+        )
+        st.caption(
+            f"取り込み元: {uploaded.name} ／ {len(source)} 行 "
+            f"→ 本アプリ形式 {len(result.frame)} 行"
+        )
+        if result.missing:
+            st.warning(
+                "対応する列が見つからず空欄にした列: "
+                f"{', '.join(result.missing)}。取り込み後に下表で確認してください。"
+            )
+        for note in result.notes:
+            st.caption(f"・{note}")
+        st.dataframe(
+            result.frame.head(20),
+            hide_index=True,
+            width="stretch",
+            key="import_preview",
+        )
+        st.dataframe(
+            importers.mapping_frame(result),
+            hide_index=True,
+            width="stretch",
+            key="import_mapping",
+        )
+        if st.button(
+            "✅ この内容で園児表に取り込む",
+            key="import_apply",
+            width="stretch",
+        ):
+            st.session_state["frame_children"] = result.frame
+            st.session_state.pop("editor_children", None)
+            _record_edit("children", result.frame)
+            st.toast(f"園児 {len(result.frame)} 行を取り込みました", icon="✅")
 
 
 def _offer_templates(kind: str, title: str) -> None:
@@ -361,8 +530,29 @@ def _render_result_panel() -> None:
             )
 
 
+def _render_validation_summary(report: ValidationReport) -> None:
+    """3 表ぶんの検証結果をまとめて表示する。"""
+    if not report.issues:
+        st.success("✅ 入力チェック: 指摘はありません。")
+        return
+    if report.has_errors:
+        st.error(
+            f"🚫 入力チェック: {report.summary()}。エラーがあるため読み込みできません。"
+            "下の表の「行」「列」を直してください。"
+        )
+    else:
+        st.warning(f"⚠️ 入力チェック: {report.summary()}（読み込みは続行できます）。")
+    st.dataframe(
+        report.to_dataframe(),
+        hide_index=True,
+        width="stretch",
+        key="validation_summary",
+    )
+
+
 def render() -> None:
     """タブ1 の本体。"""
+    theme.step_indicator(0)
     st.markdown("### 1. データ投入")
     st.caption(
         "園児の登降園予定・職員・希望休の 3 つを投入します。"
@@ -392,8 +582,11 @@ def render() -> None:
     for kind, title, description in TABLE_KINDS:
         with st.expander(title, expanded=kind == "children"):
             _preview_table(kind, title, description)
+            _render_history_controls(kind)
 
     st.divider()
+    report = _current_report()
+    _render_validation_summary(report)
     left, right = st.columns(2)
     with left:
         apply_clicked = st.button(
@@ -401,6 +594,12 @@ def render() -> None:
             type="primary",
             width="stretch",
             key="apply_load",
+            disabled=report.has_errors,
+            help=(
+                "修正が必要な入力があります。上の一覧の行・列を確認してください。"
+                if report.has_errors
+                else "3 表を配置基準エンジンへ読み込みます。"
+            ),
         )
     with right:
         if st.button("🗑 すべてクリア", width="stretch", key="clear_all"):
@@ -408,18 +607,22 @@ def render() -> None:
                 st.session_state.pop(f"frame_{kind}", None)
                 st.session_state.pop(f"editor_{kind}", None)
                 st.session_state.pop(f"upload_{kind}", None)
+            state.reset_edit_histories()
             state.reset_all()
             st.rerun()
     if apply_clicked:
         try:
             with st.spinner("設定を読み込んでいます…"):
                 _apply_load_result(_build_load_result())
-            st.success("読み込みました。タブ2「必要人員」で基準を計算できます。")
+            st.success(
+                "読み込みました。上のタブ「2️⃣ シフト作成」で自動作成できます。"
+            )
         except Exception as exc:  # noqa: BLE001 - 読み込み失敗で画面を落とさない
             st.error(f"読み込みに失敗しました: {exc}")
 
     _render_result_panel()
     theme.caveat_box()
+    theme.next_step_hint(0)
     st.caption(
         f"サンプルデータの規模: 園児 {sample_data.TOTAL_CHILDREN} 名 / "
         f"職員 {sample_data.TOTAL_STAFF} 名（seed={int(seed)} で毎回同じ内容になります）"

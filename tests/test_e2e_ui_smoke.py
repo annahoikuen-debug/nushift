@@ -21,12 +21,13 @@ AppTest で起動し、CLI を subprocess で最後まで通す**」层次を検
 from __future__ import annotations
 
 import subprocess
-import sys
 import zipfile
 from pathlib import Path
 
 import pandas as pd
 import pytest
+
+from tests._utf8_subprocess import run_module_utf8
 
 app_test = pytest.importorskip(
     "streamlit.testing.v1", reason="AppTest が無い環境ではスキップ"
@@ -39,15 +40,14 @@ pytestmark = pytest.mark.timeout(900)
 
 
 def _cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-    """``python -m shiftai`` を subprocess で実行する。"""
-    return subprocess.run(
-        [sys.executable, "-m", "shiftai", *args],
-        capture_output=True,
-        text=True,
-        timeout=600,
-        cwd=str(cwd or ROOT),
-        check=False,
-    )
+    """``python -m shiftai`` を subprocess で実行する。
+
+    出力は **UTF-8 固定** で読む。``text=True`` だけだとロケール
+    （Windows では cp932 / cp1252）で日本語の出力をデコードすることになり、
+    ``UnicodeDecodeError`` が内部リーダースレッドで起きて ``stdout`` が
+    ``None`` になり、原因が隠れる。共通実装は ``tests/_utf8_subprocess.py``。
+    """
+    return run_module_utf8("shiftai", *args, cwd=cwd or ROOT, timeout=600)
 
 
 def _exceptions(at) -> list[str]:
@@ -59,11 +59,17 @@ def _exceptions(at) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def test_アプリが5タブを例外なく描画する():
-    """素の状態（データ未投入）で ``streamlit_app.py`` 全体が 1 フレーム描画できる。"""
+def test_アプリが全タブを例外なく描画する():
+    """素の状態（データ未投入）で ``streamlit_app.py`` 全体が 1 フレーム描画できる。
+
+    既定は「シンプルモード」の 3 タブ（データ・シフト作成・出力）。
+    タブ数をハードコードせず、**タブが 1 つ以上ありすべて例外が無い**ことで
+    構成の妥当性を担保する。モードを切り替えた構成の確認は
+    ``test_ui_tabs.py::test_上級者モードで5タブ構成に戻る`` が担う。
+    """
     at = app_test.AppTest.from_file(str(APP), default_timeout=180).run()
     assert _exceptions(at) == []
-    assert len(at.tabs) == 5
+    assert at.tabs, "タブが 1 つも描画されていない"
     assert at.title
 
 
@@ -85,10 +91,15 @@ def test_データ未投入では最適化ボタンを出さない():
 
 @pytest.mark.slow
 def test_サンプル投入からシフト作成までUI上で通る():
-    """3 表サンプル投入 → 読み込み → 必要人員計算 → シフト作成を実操作で通す。
+    """3 表サンプル投入 → 読み込み → シフト作成を実操作で通す。
 
     ``AppTest`` のセッションは 1 プロセス内で維持されるため、同じ ``at`` に対して
     順にクリックする（``AppTest.from_file`` を作り直すと session_state が飛ぶ）。
+
+    既定の「シンプルモード」は 3 タブ構成で、タブ 2「シフト作成」の中で
+    必要人員を自動再計算するため、独立した「再計算」ボタンは出ない
+    （不要に手動手順を増やさないため）。上級者モードで現れる「再計算」は
+    あれば押すが、必須ではない。详见 ``test_ui_tabs.py``。
     """
     at = app_test.AppTest.from_file(str(APP), default_timeout=300).run()
     assert _exceptions(at) == []
@@ -102,13 +113,14 @@ def test_サンプル投入からシフト作成までUI上で通る():
     apply_btn[0].click().run()
     assert _exceptions(at) == [], "読み込みで例外"
 
+    # 上級者モードのときだけ出る「再計算」は、あれば押す。
     recompute = [b for b in at.button if "再計算" in b.label]
-    assert len(recompute) == 1, "職員データ投入後に必要人員再計算ボタンが出ること"
-    recompute[0].click().run()
-    assert _exceptions(at) == [], "必要人員計算で例外"
+    if recompute:
+        recompute[0].click().run()
+        assert _exceptions(at) == [], "必要人員計算で例外"
 
     run = [b for b in at.button if "自動作成する" in b.label]
-    assert len(run) == 1, "必要人員計算後にシフト作成ボタンが出ること"
+    assert len(run) == 1, "データ投入後にシフト作成ボタンが出ること"
     run[0].click().run()
     assert _exceptions(at) == [], "シフト作成で例外"
 

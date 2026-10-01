@@ -237,7 +237,7 @@ def test_shift_grid_frameは確定セルにロック記号を付ける(
 def test_shift_grid_frameは固定情報がなければ素の値を返す(
     day_shift, slots_list, small_staff, one_day
 ):
-    """``fixed`` 未指定 or 空でも値が Lock 되지 そのまま入ること。"""
+    """``fixed`` 未指定 or 空でも値がロックされず、そのまま入ること。"""
     day = one_day[0]
     plain = components.shift_grid_frame(day_shift, slots_list, small_staff, day=day)
     assert not any(

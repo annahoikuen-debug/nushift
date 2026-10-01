@@ -230,9 +230,22 @@ def export_app(tmp_path_factory, solved_payload):
 
 
 def test_アプリ起動で全タブ例外なく描画される():
-    """素の ``streamlit_app.py`` を 1 フレーム流して例外が無いこと。"""
+    """素の ``streamlit_app.py`` を 1 フレーム流して例外が無いこと。
+
+    既定は初心者向けの **シンプル 3 タブ**（データ・シフト作成・出力）。
+    """
     at = app_test.AppTest.from_file(str(APP_FILE), default_timeout=120)
     at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert len(at.tabs) == 3
+
+
+def test_上級者モードで5タブ構成に戻る():
+    """シンプルモードを OFF にすると従来の 5 タブ構成に戻ること。"""
+    at = app_test.AppTest.from_file(str(APP_FILE), default_timeout=120)
+    at.run()
+    assert len(at.tabs) == 3
+    at.toggle(key="ui_simple_mode").set_value(False).run()
     assert not at.exception, [str(e.value) for e in at.exception]
     assert len(at.tabs) == 5
 
@@ -376,6 +389,120 @@ def test_投入後のsession_stateがdomainの型になっている(input_app, s
 
 
 # --------------------------------------------------------------------------
+# 2-b. Undo/Redo と入力チェック（優先1）
+# --------------------------------------------------------------------------
+
+
+def test_データ投入タブはUndo_Historyボタンを出す(input_app):
+    """各表に「元に戻す」「やり直す」が出ること。"""
+    assert not input_app.exception, [str(e.value) for e in input_app.exception]
+    keys = {b.key for b in input_app.button}
+    for kind in ("children", "staff", "preferences"):
+        assert f"undo_{kind}" in keys
+        assert f"redo_{kind}" in keys
+
+
+def test_データ投入タブは入力を検証して読み込みを止める(
+    tmp_path, plan_widgets, one_day
+):
+    """降園時刻が登園時刻より前の入力はエラーとして指摘し、読み込みボタンが無効になること。"""
+    import pandas as pd
+
+    bad = pd.DataFrame(
+        [
+            {
+                "園児ID": "C001",
+                "氏名": "園児1",
+                "年齢": "3",
+                "登園日": one_day[0],
+                "登園時刻": time(15, 0),
+                "降園時刻": time(9, 0),
+                "短時間保育": "false",
+                "欠席": "false",
+                "欠席理由": "",
+                "早朝保育": "false",
+                "延長保育": "false",
+                "備考": "",
+            }
+        ]
+    )
+    payload = {
+        "widgets": dict(plan_widgets),
+        "state": {
+            state.KEY_DAYS: list(one_day),
+            "frame_children": bad,
+        },
+    }
+    at = _run_tabs(tmp_path, ("tab_data",), payload=payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    errors = " ".join(e.value for e in at.error)
+    assert "入力チェック" in errors
+    assert "降園時刻" in " ".join(
+        str(v) for df in at.dataframe for v in (df.value if hasattr(df, "value") else "")
+    ) or "降園時刻" in errors
+    apply_button = next(b for b in at.button if b.key == "apply_load")
+    assert apply_button.disabled is True
+    report = at.session_state[state.KEY_VALIDATION]
+    assert report is not None
+    assert report.has_errors is True
+
+
+def test_正常な入力なら読み込みボタンが押せる(tmp_path, plan_widgets, small_children,
+                                             small_staff, small_preferences, one_day):
+    """指摘が無ければ読み込みボタンは有効であること。"""
+    from shiftai.sample_data import sample_dataframes
+
+    frames = sample_dataframes(
+        one_day, children=small_children, staff=small_staff, preferences=small_preferences
+    )
+    payload = {
+        "widgets": dict(plan_widgets),
+        "state": {
+            state.KEY_DAYS: list(one_day),
+            "frame_children": frames["children"],
+            "frame_staff": frames["staff"],
+            "frame_preferences": frames["preferences"],
+        },
+    }
+    at = _run_tabs(tmp_path, ("tab_data",), payload=payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    apply_button = next(b for b in at.button if b.key == "apply_load")
+    assert apply_button.disabled is False
+    assert any("指摘はありません" in s.value for s in at.success)
+
+
+def test_入力を戻すと履歴が積み上がる(tmp_path, plan_widgets, one_day):
+    """表を書き換えると履歴が 1 件増えること。"""
+    import pandas as pd
+
+    frames = {
+        "園児ID": ["C001", "C002"],
+        "氏名": ["園児1", "園児2"],
+        "年齢": ["3", "4"],
+        "登園日": [one_day[0], one_day[0]],
+        "登園時刻": [time(9, 0), time(9, 0)],
+        "降園時刻": [time(15, 0), time(15, 0)],
+        "短時間保育": ["false", "false"],
+        "欠席": ["false", "false"],
+        "欠席理由": ["", ""],
+        "早朝保育": ["false", "false"],
+        "延長保育": ["false", "false"],
+        "備考": ["", ""],
+    }
+    payload = {
+        "widgets": dict(plan_widgets),
+        "state": {
+            state.KEY_DAYS: list(one_day),
+            "frame_children": pd.DataFrame(frames),
+        },
+    }
+    at = _run_tabs(tmp_path, ("tab_data",), payload=payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    history = at.session_state[state.KEY_EDIT_HISTORY]["children"]
+    assert history.size >= 1
+
+
+# --------------------------------------------------------------------------
 # 3. 必要人員タブ
 # --------------------------------------------------------------------------
 
@@ -451,7 +578,76 @@ def test_開園日がないとき必要人員タブは案内だけを出す(tmp_
 
 
 # --------------------------------------------------------------------------
-# 4. シフト作成タブ
+# 3-c. 勤務パターンと診断パネル（優先2・優先3）
+# --------------------------------------------------------------------------
+
+
+def test_サイドバーは勤務パターンを設定できる(tmp_path, plan_widgets):
+    """パターンを有効にすると、プリセットと枠ごとの時刻入力が出ること。"""
+    payload = {
+        "widgets": dict(plan_widgets),
+        "state": {state.KEY_PATTERNS_ENABLED: True},
+    }
+    at = _run_tabs(tmp_path, ("tab_data",), payload=payload, sidebar_on=True)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    labels = [s.label for s in at.selectbox]
+    assert any("プリセット" in label for label in labels)
+    keys = {w.key for w in at.time_input}
+    assert {"pattern_start_0", "pattern_end_0"} <= keys
+    patterns = at.session_state[state.KEY_PATTERNS]
+    assert patterns, "パターンが保存されていない"
+    assert all(p.end > p.start for p in patterns)
+
+
+def test_パターンが無効なら一期分は空になる(tmp_path, plan_widgets):
+    """無効のときはパターン定義を持たないこと（既存の挙動を変えない）。"""
+    payload = {"widgets": dict(plan_widgets), "state": {}}
+    at = _run_tabs(tmp_path, ("tab_data",), payload=payload, sidebar_on=True)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert at.session_state[state.KEY_PATTERNS] == ()
+    assert at.session_state[state.KEY_PATTERNS_ENABLED] is False
+
+
+def _expander_labels(at) -> list[str]:
+    """``AppTest`` から展开セクションの見出しを取り出す。"""
+    out: list[str] = []
+    for exp in at.expander:
+        for attr in ("label", "header", "title"):
+            value = getattr(exp, attr, None)
+            if isinstance(value, str):
+                out.append(value)
+                break
+    return out
+
+
+def test_シフト作成タブは不足理由の診断を出す(tmp_path, solved_payload):
+    """「なぜ解けないのか」パネルと緩和モードの選択肢が出ること。"""
+    at = _run_tabs(tmp_path, ("tab_solve",), payload=solved_payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert any("なぜ解けないのか" in label for label in _expander_labels(at))
+    labels = [s.label for s in at.selectbox]
+    assert any("どこまで緩めて" in label for label in labels)
+    assert at.session_state[state.KEY_DIAGNOSIS] is not None
+
+
+def test_シフト作成タブは勤務パターンの報告を出す(tmp_path, solved_payload):
+    """パターンを有効にした結果には、整列の内訳が出ること。"""
+    from shiftai.shift_patterns import DEFAULT_PATTERNS
+
+    payload = dict(solved_payload)
+    payload["state"] = {
+        **solved_payload["state"],
+        state.KEY_PATTERNS_ENABLED: True,
+        state.KEY_PATTERNS: DEFAULT_PATTERNS,
+        state.KEY_PATTERN_SNAP_REPORT: None,
+    }
+    at = _run_tabs(tmp_path, ("tab_solve",), payload=payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert any("勤務パターンへの整列" in label for label in _expander_labels(at))
+
+
+# --------------------------------------------------------------------------
+# 4. シフト表・微調整タブ
 # --------------------------------------------------------------------------
 
 
@@ -709,11 +905,11 @@ def test_サンプル投入からシフト作成まで一連が通る():
     assert at.session_state[state.KEY_STAFF]
     assert at.session_state[state.KEY_CHILDREN]
 
-    at.button(key="recompute_requirements").click().run()
+    # シンプルモード（既定）にはタブ2「必要人員」が無い。
+    # 最適化は内部で必要人員を自動再計算するため、そのまま実行できる。
+    at.button(key="run_solve").click().run()
     assert not at.exception, [str(e.value) for e in at.exception]
     assert isinstance(at.session_state[state.KEY_REQUIREMENTS], RequirementTable)
-
-    at.button(key="run_solve").click().run()
     assert not at.exception, [str(e.value) for e in at.exception]
     result = at.session_state[state.KEY_SOLVE_RESULT]
     assert isinstance(result, SolveResult)

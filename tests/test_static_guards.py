@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._utf8_subprocess import run_module_utf8
+
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "shiftai"
 TESTS = ROOT / "tests"
@@ -88,7 +90,13 @@ def _load_tests_conftest():
 
 
 def _cbc_nodes() -> set[str]:
-    """CBC を起動するテストの nodeid 集合。"""
+    """CBC を起動するテストの nodeid 集合。
+
+    nodeid のパス部分は必ず **POSIX 区切り** にする。pytest の nodeid は
+    ``tests/test_x.py::test_y`` の形（``/``）で、``str(Path)`` は Windows では
+    ``\\`` になる。両者をそのまま比較すると **全件が不一致** になり、
+    このガードは Windows で必ず落ちてしまう。
+    """
     cbc_fixtures = _load_tests_conftest()._fixture_uses_cbc()
     nodes: set[str] = set()
     for path in sorted(TESTS.rglob("test_*.py")):
@@ -98,7 +106,7 @@ def _cbc_nodes() -> set[str]:
                 continue
             args = [a.arg for a in node.args.args] + [a.arg for a in node.args.kwonlyargs]
             if _calls_any(node, CBC_ENTRYPOINTS) or any(a in cbc_fixtures for a in args):
-                nodes.add(f"{path.relative_to(ROOT)}::{node.name}")
+                nodes.add(f"{path.relative_to(ROOT).as_posix()}::{node.name}")
     return nodes
 
 
@@ -136,12 +144,9 @@ def _calls_any(node: ast.AST, names: frozenset[str]) -> bool:
 
 
 def test_slow対象が実際に集められること() -> None:
-    """``slow`` マークのテストが 0 件になっていないこと（マーカー失効の防止）。"""
-    import subprocess
-
-    proc = subprocess.run(
-        ["python", "-m", "pytest", "--collect-only", "-q", "-m", "slow"],
-        cwd=ROOT, capture_output=True, text=True, timeout=180,
+    """``slow`` マークのテストが 0 件になっていないこと（マーカーの付け忘れ）。"""
+    proc = run_module_utf8(
+        "pytest", "--collect-only", "-q", "-m", "slow", cwd=ROOT, timeout=180
     )
     assert proc.returncode == 0, proc.stdout[-2000:] + proc.stderr[-2000:]
     total = sum(

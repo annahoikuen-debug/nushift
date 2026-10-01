@@ -7,9 +7,13 @@ from __future__ import annotations
 
 from datetime import date, time
 
+from shiftai import __version__
+
 APP_TITLE = "配置基準連動型 シフト自動作成AI"
 APP_ICON = "🧸"
-APP_VERSION = "0.1.0"
+# バージョンの唯一の真実は ``pyproject.toml``。値は ``shiftai.__version__``
+# （ディストリビューションのメタデータ）から取る。ここにハードコードしない。
+APP_VERSION = __version__
 
 # 既定表示期間
 DEFAULT_RANGE_START = date.today()

@@ -8,7 +8,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from shiftai import gap_analysis
+from shiftai import gap_analysis, live_validation
 from shiftai.domain import CellState, SolveResult
 from shiftai.ui import components, state, theme
 
@@ -120,9 +120,11 @@ def _render_editor(
     fixed, changes = _apply_edits(edited, baseline, staff, slots, day)
     if not changes:
         st.caption("変更はありません。")
+        _render_live_check(baseline, day, slots, staff, key="base")
         return
 
     labels = [components.row_label(m.staff_id, m.name) for m in staff]
+    _render_live_check(edited, day, slots, staff, key="edited")
     st.warning(f"未確定の変更が {len(changes)} セルあります。")
     st.dataframe(
         pd.DataFrame.from_records(
@@ -157,6 +159,62 @@ def _render_editor(
         ):
             st.session_state.pop("shift_editor", None)
             st.rerun()
+
+
+def _render_live_check(
+    frame: pd.DataFrame,
+    day: date,
+    slots: Any,
+    staff: list[Any],
+    *,
+    key: str,
+) -> None:
+    """編集途中のグリッドを即時に検証して、セル色の付いた表と指摘一覧を出す。
+
+    ``st.data_editor`` は ``Styler`` を渡せないため、ここでは読み取り専用の
+    色付きビューを隣に出し、「確定前」に問題が見えるようにする。
+    """
+    table = state.get(state.KEY_REQUIREMENTS)
+    if table is None:
+        return
+    grid = components.editable_indexed_frame(frame, slots, staff)
+    report = live_validation.validate_day(
+        day,
+        table,
+        staff,
+        slots,
+        grid,
+        preferences=state.get(state.KEY_PREFERENCES) or {},
+        settings=state.current_settings(),
+        standard=state.current_standard(),
+        staff_name_map=state.staff_name_map(),
+    )
+    labels = {components.row_label(m.staff_id, m.name): m.staff_id for m in staff}
+    if report.issues:
+        with st.expander(
+            f"🔍 基準の即時チェック（{report.summary()}）", expanded=report.has_errors
+        ):
+            if report.has_errors:
+                st.error(
+                    "この変更のまま確定すると配置基準・契約に抵触します。"
+                    "赤い枠のセルを確認してください。"
+                )
+            else:
+                st.warning("運用上の注意があります（確定はできます）。")
+            st.dataframe(
+                live_validation.to_dataframe(report),
+                hide_index=True,
+                width="stretch",
+                key=f"live_issues_{key}_{day.isoformat()}",
+            )
+    st.markdown("##### 🔎 検証つきのビュー（確定前）")
+    st.dataframe(
+        components.style_live_grid(grid, report, row_labels=labels),
+        width="stretch",
+        height=420,
+        key=f"live_grid_{key}_{day.isoformat()}",
+    )
+    st.caption("赤枠＝配置基準・契約に抵触、橙枠＝運用上の注意、下線＝時間帯全体で人数が不足。")
 
 
 def _commit_edits(fixed: dict[tuple[str, date, str], CellState], count: int) -> None:
@@ -240,6 +298,7 @@ def _render_coverage_matrix(result: SolveResult) -> None:
 
 def render() -> None:
     """タブ4 の本体。"""
+    theme.step_indicator(3)
     st.markdown("### 4. シフト表・微調整")
     result = state.get(state.KEY_SOLVE_RESULT)
     if result is None or not result.shift_days:
@@ -268,4 +327,10 @@ def render() -> None:
     _render_weekday_pivot(result, slots)
     st.divider()
     _render_coverage_matrix(result)
-    components.cell_legend()
+    st.divider()
+    components.render_fairness_panel(
+        result, staff, slots, standard=state.current_standard(),
+        patterns=state.current_patterns(),
+    )
+    theme.caveat_box()
+    theme.next_step_hint(3)

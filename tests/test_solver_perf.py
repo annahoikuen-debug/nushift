@@ -21,7 +21,6 @@
 from __future__ import annotations
 
 import inspect
-import signal
 import sys
 from dataclasses import replace
 from datetime import date, time, timedelta
@@ -439,25 +438,22 @@ def _capped_greedy_case(*, slots_count=6, peak=3, daily_hours=1.0, tail=0):
 def test_日上限で伸長できなくても無限ループしない():
     """日上限に達した隣接時間帯を 2 回続けて試しても停止すること（修正前は無限ループ）。
 
-    スケジュールが返ってこないまま 10 秒を超えたら回帰として失敗させる。
+    スケジュールが 10 秒を超えて返ってこなければ回帰として失敗させる。
+
+    制限は ``signal.SIGALRM`` ではなく ``perf_counter`` で計る。
+    ``SIGALRM`` は POSIX 固有で **Windows には存在せず**
+    （``AttributeError: module 'signal' has no attribute 'SIGALRM'``）、
+    このリポジトリは Windows でも動かすため使えない。
+    同じファイルの後続テストも同じ方式に揃えてある。
     """
     children, staff, table, slots = _capped_greedy_case()
-    previous = signal.signal(signal.SIGALRM, _raise_timeout)
-    signal.alarm(10)
-    try:
-        result = solve_shift_greedy(children, staff, table, standard=STANDARD)
-    except TimeoutError:
-        pytest.fail("_put_block が無限ループしている")
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, previous)
+    started = perf_counter()
+    result = solve_shift_greedy(children, staff, table, standard=STANDARD)
+    elapsed = perf_counter() - started
+    assert elapsed < 10.0, f"貪欲法が {elapsed:.2f} 秒かかった（無限ループの疑い）"
     duty = [result.day(DAY).get("G001", s) is not CellState.OFF for s in slots]
     assert sum(duty) * 30 <= 60
     assert _block_count(duty) == 1
-
-
-def _raise_timeout(signum, frame):
-    raise TimeoutError("貪欲法が時間内に終わりませんでした")
 
 
 def test_短契約職員が日上限に達して伸びられなくても無限ループしない():
@@ -483,7 +479,7 @@ def test_短契約職員が日上限に達して伸びられなくても無限�
 def test_短契約職員が通常契約職員に混ざっていても無限ループしない():
     """短契約職員が通常の契約職員と同じ必要人員表に混ざっても停止すること。
 
-    職員ごとに日上限（cap）が違うため、同じ時間帯でも「片方は已达・片方は未达」
+    職員ごとに日上限（cap）が違うため、同じ時間帯でも「片方は到達済み・片方は未到達」
     という混在が起きる。修正前はこの混在の日に無限ループしていた。
     """
     children, staff, table, slots = _capped_greedy_case(

@@ -469,8 +469,11 @@ def test_weights_from_stateはスライダー無しでも既定を返す():
 
 
 def test_weights_from_stateはWEIGHT_WIDGETSの全項目を扱える():
-    """将来重みが増えてもウィジェット定義とずれないよう、5 項目すべて反映されること。"""
-    assert len(state.WEIGHT_WIDGETS) == 5
+    """将来重みが増えてもウィジェット定義とずれないよう、全項目が反映されること。
+
+    件数そのものは固定しない（公平性の重みなどが追加されるため）。
+    """
+    assert len(state.WEIGHT_WIDGETS) >= 5
     for name, _label, _lo, _hi, _step in state.WEIGHT_WIDGETS:
         st.session_state[f"weight_{name}"] = 7.0
     weights = state.weights_from_state()

@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import date, timedelta
 from typing import Any
@@ -31,6 +31,9 @@ from shiftai.domain import (
     build_slots,
     daterange,
 )
+from shiftai.relaxation import RelaxLevel
+from shiftai.shift_patterns import ShiftPattern
+from shiftai.ui.edit_history import EditHistory
 
 KEY_SETTINGS = "settings"
 KEY_STANDARD_KEY = "standard_key"
@@ -50,6 +53,19 @@ KEY_VIOLATIONS = "violations"
 KEY_FIXED_ASSIGNMENTS = "fixed_assignments"
 KEY_WEIGHTS = "weights"
 KEY_GAS_CLIENT = "gas_client"
+
+# 勤務パターンの整列（優先2: 早番・日勤・遅番へのスナップ）
+KEY_PATTERNS_ENABLED = "patterns_enabled"
+KEY_PATTERNS = "patterns"
+KEY_PATTERN_SNAP = "pattern_snap"
+KEY_PATTERN_SNAP_REPORT = "pattern_snap_report"
+# 緩和モードと原因診断（優先3: Infeasible の特定）
+KEY_RELAXATION = "relaxation"
+KEY_DIAGNOSIS = "diagnosis"
+KEY_DIAGNOSIS_LADDER = "diagnosis_ladder"
+# データ投入タブの Undo/Redo とバリデーション（優先1）
+KEY_EDIT_HISTORY = "edit_history"
+KEY_VALIDATION = "validation"
 
 KEY_PRESETS = "presets"
 KEY_SOLVER_NAMES = "solver_names"
@@ -81,6 +97,15 @@ DEFAULT_KEYS: dict[str, Any] = {
     KEY_SLOTS: (),
     KEY_SLOTS_ERROR: "",
     KEY_TIME_LIMIT_SEC: 60,
+    KEY_PATTERNS_ENABLED: False,
+    KEY_PATTERNS: (),
+    KEY_PATTERN_SNAP: True,
+    KEY_PATTERN_SNAP_REPORT: None,
+    KEY_RELAXATION: int(RelaxLevel.STRICT),
+    KEY_DIAGNOSIS: None,
+    KEY_DIAGNOSIS_LADDER: None,
+    KEY_EDIT_HISTORY: {},
+    KEY_VALIDATION: None,
 }
 
 WEIGHT_WIDGETS: tuple[tuple[str, str, float, float, float], ...] = (
@@ -89,7 +114,17 @@ WEIGHT_WIDGETS: tuple[tuple[str, str, float, float, float], ...] = (
     ("preference_miss_penalty", "希望を無視するペナルティ", 0.0, 50.0, 5.0),
     ("hours_imbalance_penalty", "勤務時間偏りのペナルティ", 0.0, 50.0, 4.0),
     ("consecutive_day_penalty", "連続勤務日数ペナルティ", 0.0, 50.0, 8.0),
+    ("fairness_early_penalty", "早番の偏りを減らすペナルティ", 0.0, 30.0, 1.0),
+    ("fairness_late_penalty", "遅番の偏りを減らすペナルティ", 0.0, 30.0, 1.0),
+    ("fairness_saturday_penalty", "土曜出勤の偏りを減らすペナルティ", 0.0, 30.0, 1.0),
 )
+
+FAIRNESS_WEIGHT_NAMES: tuple[str, ...] = (
+    "fairness_early_penalty",
+    "fairness_late_penalty",
+    "fairness_saturday_penalty",
+)
+"""公平性の重みスライダー名（サイドバーの説明と解禁ロジックが共有する）。"""
 
 WIDGET_KEYS: frozenset[str] = frozenset(
     {
@@ -341,4 +376,41 @@ def supply_demand_ratio(required_hours: float) -> float:
     if supply <= 0:
         return float("inf")
     return float(required_hours) / float(supply)
+
+
+# ---------------------------------------------------------------------------
+# 勤務パターン（優先2）
+# ---------------------------------------------------------------------------
+
+
+def current_patterns() -> tuple:
+    """有効化されている勤務パターンを返す（無効なら空タプル）。"""
+    if not get(KEY_PATTERNS_ENABLED):
+        return ()
+    return tuple(get(KEY_PATTERNS) or ())
+
+
+def set_patterns(patterns: Sequence[ShiftPattern]) -> None:
+    """勤務パターンを保存する（無効のままでも保持はする）。"""
+    set(KEY_PATTERNS, tuple(patterns))
+
+
+# ---------------------------------------------------------------------------
+# 編集履歴（優先1）
+# ---------------------------------------------------------------------------
+
+
+def edit_history(kind: str) -> EditHistory:
+    """その表の編集履歴を返す（未作成なら新規に作る）。"""
+    store = st.session_state.setdefault(KEY_EDIT_HISTORY, {})
+    history = store.get(kind)
+    if not isinstance(history, EditHistory):
+        history = EditHistory()
+        store[kind] = history
+    return history
+
+
+def reset_edit_histories() -> None:
+    """全表の編集履歴を破棄する（読み込み・サンプル投入のとき）。"""
+    st.session_state[KEY_EDIT_HISTORY] = {}
 

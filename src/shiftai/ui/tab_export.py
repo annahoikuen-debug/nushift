@@ -272,6 +272,7 @@ def _render_checklist() -> None:
 
 def render() -> None:
     """タブ5 の本体。"""
+    theme.step_indicator(4)
     st.markdown("### 5. 出力")
     result = state.get(state.KEY_SOLVE_RESULT)
     if result is None or not result.shift_days:
@@ -296,3 +297,4 @@ def render() -> None:
     st.divider()
     _render_gas_push(result)
     theme.caveat_box()
+    theme.next_step_hint(4)

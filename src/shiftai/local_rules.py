@@ -179,7 +179,7 @@ MUNICIPAL_PRESETS: dict[str, StaffingStandard] = {
         late_care_after_relax_time=_t(18, 30),
         is_short_time_only=False,
         remarks=(
-            "0歳児4:1、1歳児5:1、2歳児7:1と全国基準より厳しい年龄段がある。"
+            "0歳児4:1、1歳児5:1、2歳児7:1と全国基準より厳しい年齢クラスがある。"
             "延長保育（17:15〜18:30）は「保育士1名＋他資格者」による代替措置を認める。"
             "出典: 大阪市「保育所の職員配置基準」大阪市告示・大阪市保育已基本方針"
             + _DISCLAIM
@@ -734,7 +734,7 @@ def _note_caveat(standard: StaffingStandard) -> LocalRuleNote:
         detail=(
             "1. 本プリセットの数値は一般的な実務水準に基づく目安であり、"
             "自治体の告示・条例・要綱・運用と一致する保証はない。\n"
-            "2. 園ごとの上乗せ（定員の制限、年龄段の定員、共用保育室、"
+            "2. 園ごとの上乗せ（定員の制限、年齢クラスの定員、共用保育室、"
             "混合編成、行事日の一時的な人員確保）がある場合は、"
             "build_standard の overrides で上書きすること。\n"
             "3. 祝日・行事日は is_binding=False として超過配置を許容するが、"

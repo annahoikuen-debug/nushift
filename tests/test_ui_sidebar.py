@@ -461,10 +461,32 @@ def test_gas_pushは失敗をエラー表示に変える(tmp_path):
 # --------------------------------------------------------------------------
 
 
+def _session_state_keys(at) -> set[str]:
+    """``AppTest`` の session_state からキー一覧を取り出す。
+
+    Streamlit の版で公開 API が変わっているため、両方の候補を試す。
+
+    * 1.63 以前: ``at.session_state.filtered_state``（``dict``）
+    * 1.64 以降: ``filtered_state`` が廃止され、.mapping プロトコル
+      （``keys`` / ``items`` / ``values``）が提供される
+
+    どちらの版でも同じキー集合が得られることを保証する。
+    """
+    state = at.session_state
+    legacy = getattr(state, "filtered_state", None)
+    if legacy is not None:
+        return set(legacy)
+    if hasattr(state, "keys"):
+        return set(state.keys())
+    raise AssertionError(  # pragma: no cover - 未知の Streamlit 版
+        f"session_state からキーを取得できない: {type(state)!r}"
+    )
+
+
 def test_サイドバー描画後もWIDGET_KEYSがsession_stateに残る(tmp_path):
     """サイドバーはウィジェットを自分で作るので、対応するキーは生成済みであること。"""
     at = _run_sidebar(tmp_path, "sidebar.render()")
-    keys = set(at.session_state.filtered_state)
+    keys = _session_state_keys(at)
     for key in ("facility_name", "day_open", "day_close", "granularity_min", "range_start", "range_days"):
         assert key in keys, f"{key} が session_state に無い"
 

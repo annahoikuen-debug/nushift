@@ -128,3 +128,75 @@ def test_solve_サンプルで成果物が揃う(tmp_path, capsys):
     ):
         assert (out / name).is_file(), name
     assert (out / "shift.ics").read_text(encoding="utf-8").startswith("BEGIN:VCALENDAR")
+
+
+def test_勤務パターンの定義文字列は解釈できる(capsys):
+    """``--patterns`` が不正なら終了コード 1 で弾かれること。"""
+    code = main(["solve", "--sample", "--patterns", "壊れた定義", "--out", "out"])
+    assert code == EXIT_ERROR
+    assert "パターン" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "spec",
+    ["早番=09:00-14:00", "auto", "default"],
+)
+def test_勤務パターンの指定は通る(spec: str) -> None:
+    """代表的な定義がパースできること（求解は行わない）。"""
+    from shiftai.__main__ import _parse_patterns
+    from shiftai.domain import FacilitySettings
+
+    patterns = _parse_patterns(spec, FacilitySettings())
+    assert patterns
+    assert all(p.end_minutes > p.start_minutes for p in patterns)
+
+
+@SLOW
+def test_solve_勤務パターンを渡すと整列結果が出る(tmp_path, capsys):
+    """``--patterns`` ありなら整列の内訳が出力されること。"""
+    out = tmp_path / "out"
+    code = main(
+        [
+            "solve",
+            "--sample",
+            "--out", str(out),
+            "--start", "2026-09-28",
+            "--end", "2026-09-29",
+            "--open", "09:00",
+            "--close", "14:00",
+            "--granularity", "60",
+            "--time-limit", "20",
+            "--patterns", "早番=09:00-14:00,日勤=10:00-13:00",
+            "--diagnose",
+        ]
+    )
+    assert code in (EXIT_OK, 2, 3)
+    text = capsys.readouterr().out
+    assert "勤務パターン:" in text
+    assert "勤務パターンの整列:" in text
+    assert "なぜこの結果になったのか" in text
+
+
+@SLOW
+def test_solve_緩和モードは結果を返す(tmp_path, capsys):
+    """``--relax`` を指定しても成果物が揃い、緩和の内容が示されること。"""
+    out = tmp_path / "out"
+    code = main(
+        [
+            "solve",
+            "--sample",
+            "--out", str(out),
+            "--start", "2026-09-28",
+            "--end", "2026-09-29",
+            "--open", "09:00",
+            "--close", "14:00",
+            "--granularity", "60",
+            "--time-limit", "20",
+            "--relax", "1",
+        ]
+    )
+    assert code in (EXIT_OK, 2, 3)
+    text = capsys.readouterr().out
+    assert "緩和モード: L1" in text
+    assert "緩めた制約:" in text
+    assert (out / "shift.csv").is_file()

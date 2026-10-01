@@ -33,7 +33,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from shiftai import local_rules, sample_data
+from shiftai import diagnostics, local_rules, sample_data
 from shiftai.config import (
     APP_ICON,
     APP_TITLE,
@@ -55,7 +55,9 @@ from shiftai.exporter import (
     violations_dataframe,
 )
 from shiftai.gap_analysis import analyze_gap, check_violations
-from shiftai.solver import solve_shift
+from shiftai.relaxation import MAX_RELAX_LEVEL, RELAX_LEVELS, normalize_level
+from shiftai.shift_patterns import default_patterns, normalize_patterns, parse_pattern_spec
+from shiftai.solver import snap_to_patterns, solve_shift
 from shiftai.standards import build_requirements, peak_requirement, total_required_hours
 
 APP_FILE_NAME = "streamlit_app.py"
@@ -76,6 +78,30 @@ _SAMPLE_NAMES = {
 # ---------------------------------------------------------------------------
 # 共通ヘルパ
 # ---------------------------------------------------------------------------
+
+
+def _force_utf8_streams() -> None:
+    """``stdout`` / ``stderr`` を UTF-8  capable にし直す。
+
+    既定では Python は端末のロケール（Windows なら cp932 や cp1252）で
+    標準出力をエンコードする。本ツールは日本語を大量に出力するため、
+    ロケールが日本語でない環境では **全コマンドが traceback で死ぬ**::
+
+        UnicodeEncodeError: 'charmap' codec can't encode characters ...
+
+    ``sys.stdout`` は環境変数やリダイレクトで ``TextIOWrapper`` 以外の
+    オブジェクト（``pytest`` のキャプチャ、``StringIO`` 等）になることが
+    あるため、``reconfigure`` を持つかどうかを調べてから呼ぶ。
+    設定できない環境では何もしない。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (OSError, ValueError):  # pragma: no cover - 環境依存
+            pass
 
 
 def _echo(message: str = "") -> None:
@@ -113,6 +139,26 @@ def _parse_clock(value: str) -> Any:
     if parsed is None:
         raise argparse.ArgumentTypeError(f"時刻を解釈できません: {value!r}（例: 09:00）")
     return parsed
+
+
+def _parse_patterns(value: str, settings: FacilitySettings) -> tuple:
+    """``--patterns`` の文字列を勤務パターン定義へ変換する。
+
+    * ``early=07:30-16:30,day=09:00-18:00`` …（ラベル=開始-終了）
+    * ``auto`` …園の開所・閉所から 9 時間枠を自動生成する
+    """
+    raw = value.strip()
+    if raw.lower() in ("auto", "既定", "default"):
+        return default_patterns(settings.day_open, settings.day_close)
+    parts = [p for p in (item.strip() for item in raw.split(",")) if p]
+    if not parts:
+        raise argparse.ArgumentTypeError(
+            "--patterns が空です（例: 早番=07:30-16:30,日勤=09:00-18:00）"
+        )
+    try:
+        return normalize_patterns([parse_pattern_spec(part) for part in parts])
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _target_days(
@@ -329,6 +375,20 @@ def cmd_solve(args: argparse.Namespace) -> int:
         f"{total_required_hours(table):.1f} 人時（ピーク {peak_requirement(table)} 名）"
     )
 
+    try:
+        patterns = _parse_patterns(args.patterns, settings) if args.patterns else ()
+    except argparse.ArgumentTypeError as exc:
+        _error(str(exc))
+        return EXIT_ERROR
+    relaxation = normalize_level(args.relax)
+    if patterns:
+        _echo(
+            "勤務パターン: "
+            + " / ".join(f"{p.label} {p.span()}" for p in patterns)
+        )
+    if relaxation:
+        _echo(f"緩和モード: L{relaxation} {RELAX_LEVELS[relaxation].label}")
+
     result = solve_shift(
         loaded.children,
         loaded.staff,
@@ -337,12 +397,33 @@ def cmd_solve(args: argparse.Namespace) -> int:
         settings=settings,
         time_limit_sec=args.time_limit,
         standard=standard,
+        patterns=patterns,
+        relaxation=relaxation,
     )
     _echo(f"最適化: {result.status.value}（{result.stats.get('elapsed_sec', 0.0)} 秒）")
     for message in result.messages:
         _echo(f"  {message}")
 
     slots = tuple(table.slots)
+    snap_changes: tuple = ()
+    if patterns and not args.no_pattern_snap:
+        result, snap_changes = snap_to_patterns(
+            result,
+            patterns,
+            requirements=table,
+            preferences=loaded.preferences,
+            staff=loaded.staff,
+            standard=standard,
+            settings=settings,
+        )
+        moved = [c for c in snap_changes if c.applied]
+        _echo(
+            f"勤務パターンの整列: {len(moved)} 日分 / 全 {len(snap_changes)} 日分"
+        )
+        if args.verbose:
+            for change in snap_changes:
+                _echo(f"  {change.to_dict()}")
+
     report = analyze_gap(table, result, loaded.staff, standard=standard)
     violations = check_violations(
         table,
@@ -353,6 +434,26 @@ def cmd_solve(args: argparse.Namespace) -> int:
         settings=settings,
         period_days=len(days),
     )
+
+    diagnosis = diagnostics.diagnose(table, loaded.staff, loaded.preferences, settings)
+    if args.diagnose or not result.ok or report.total_shortfall_slots:
+        _echo("")
+        _echo("【なぜこの結果になったのか】")
+        for line in diagnosis.messages(top=args.diagnose_top):
+            _echo(f"  {line}")
+    if args.ladder:
+        _echo("")
+        ladder = diagnostics.relaxation_ladder(
+            loaded.children,
+            loaded.staff,
+            table,
+            loaded.preferences,
+            settings=settings,
+            standard=standard,
+            time_limit_sec=max(10, args.time_limit // 2),
+        )
+        for line in ladder.messages():
+            _echo(f"  {line}")
 
     out_dir = Path(args.out)
     written: list[Path] = [
@@ -502,6 +603,46 @@ def build_parser() -> argparse.ArgumentParser:
     solve.add_argument("--zip", action="store_true", help="成果物 ZIP も出力する")
     solve.add_argument("--strict", action="store_true", help="要調整があれば終了コード 3")
     solve.add_argument(
+        "--patterns",
+        default="",
+        help=(
+            "勤務パターンを指定する（例: 早番=07:30-16:30,日勤=09:00-18:00,遅番=10:30-19:30）。"
+            "auto を指定すると園の開所・閉所から 9 時間枠を自動生成します。"
+            "既定は無効です。"
+        ),
+    )
+    solve.add_argument(
+        "--no-pattern-snap",
+        action="store_true",
+        help="パターンをMILP へ渡すだけで、生成後の境界の整列は行わない",
+    )
+    solve.add_argument(
+        "--relax",
+        type=int,
+        default=0,
+        choices=range(0, MAX_RELAX_LEVEL + 1),
+        metavar="LEVEL",
+        help=(
+            "緩和モード（0=厳格 … "
+            f"{MAX_RELAX_LEVEL}=希望休・休園日を無視）。"
+            "既定は 0（厳格）。"
+        ),
+    )
+    solve.add_argument(
+        "--diagnose",
+        action="store_true",
+        help="不足時間帯と原因の診断を常時表示する",
+    )
+    solve.add_argument(
+        "--diagnose-top", type=int, default=5, help="不足時間帯を表示する行数（既定: 5）"
+    )
+    solve.add_argument(
+        "--ladder",
+        action="store_true",
+        help="L0 から順に緩めて、どこで解けるかを検証する（ソルバを複数回起動）",
+    )
+    solve.add_argument("--verbose", action="store_true", help="整列の内訳などを詳細に出す")
+    solve.add_argument(
         "--sample", action="store_true", help="入力の代わりにサンプルデータを使う（動作確認用）"
     )
     solve.add_argument("--seed", type=int, default=42, help="サンプル生成の乱数シード")
@@ -520,6 +661,7 @@ def _silence_broken_pipe() -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """エントリポイント。終了コードを返す。"""
+    _force_utf8_streams()
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
     if not getattr(args, "command", None):

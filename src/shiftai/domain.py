@@ -746,6 +746,12 @@ class ObjectiveWeights:
     break_conflict_penalty: float = 50.0
     consecutive_day_penalty: float = 8.0
     hours_imbalance_penalty: float = 4.0
+    fairness_early_penalty: float = 4.0
+    """早番回数の最大と最小の差（週レンジ）を縮めるペナルティ。"""
+    fairness_late_penalty: float = 4.0
+    """遅番回数の上限と最小の差（週レンジ）を縮めるペナルティ。"""
+    fairness_saturday_penalty: float = 4.0
+    """土曜出勤日数の上限と最小の差（週レンジ）を縮めるペナルティ。"""
     unused_staff_penalty: float = 0.5
     monthly_hours_penalty: float = 3.0
     rest_violation_penalty: float = 40.0

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any
 
@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from shiftai import gap_analysis, solver, standards
+from shiftai import fairness, gap_analysis, live_validation, solver, standards
 from shiftai.config import (
     COLOR_BREAK,
     COLOR_OFF,
@@ -288,6 +288,60 @@ def style_shift_grid(frame: pd.DataFrame) -> Any:
     )
 
 
+def style_live_grid(
+    frame: pd.DataFrame,
+    report: live_validation.LiveReport,
+    *,
+    row_labels: Mapping[str, str] | None = None,
+) -> Any:
+    """編集中のグリッドに、違反セルの色枠を付ける（:mod:`shiftai.live_validation`）。
+
+    ``row_labels`` は「index の値 -> 職員ID」の対応（index が「職員ID 氏名」、
+    列が時間帯ラベルの表を想定）。赤＝配置基準・契約違反、橙＝運用上の注意。
+    """
+    if frame.empty or not report.issues:
+        return style_shift_grid(frame)
+    labels = dict(row_labels or {})
+    error_cells = report.error_cells()
+    warning_cells = report.warning_cells()
+    error_cols = report.error_columns()
+    warning_cols = report.warning_columns()
+
+    def paint(key: tuple[str, str], value: Any) -> str:
+        text = str(value)
+        base = _cell_style(value)
+        if error_cols or warning_cols:
+            column = key[1]
+            if column in error_cols:
+                return base + "; border-bottom: 3px solid #C62828;"
+            if column in warning_cols:
+                return base + "; border-bottom: 3px solid #EF6C00;"
+        sid = labels.get(str(key[0]), "")
+        if (sid, str(key[1])) in error_cells:
+            return base + "; box-shadow: inset 0 0 0 2px #C62828;"
+        if (sid, str(key[1])) in warning_cells:
+            return base + "; box-shadow: inset 0 0 0 2px #EF6C00;"
+        _ = text
+        return base
+
+    return frame.style.map(paint, axis=None).set_table_styles(
+        [
+            {
+                "selector": "th",
+                "props": [("font-size", "0.72rem"), ("white-space", "nowrap")],
+            },
+            {
+                "selector": "td",
+                "props": [("font-size", "0.78rem"), ("text-align", "center")],
+            },
+            {
+                "selector": "th.row_heading",
+                "props": [("text-align", "left"), ("white-space", "nowrap")],
+            },
+        ]
+    )
+
+
 def editable_grid_frame(
     shift_day: ShiftDay | None, slots: Sequence[Slot], staff: Sequence[Any]
 ) -> pd.DataFrame:
@@ -307,6 +361,31 @@ def editable_grid_frame(
             row[slot.label] = shift_day.get(member.staff_id, slot).value
         records.append(row)
     return pd.DataFrame.from_records(records, columns=columns)
+
+
+def editable_indexed_frame(
+    frame: pd.DataFrame, slots: Sequence[Slot], staff: Sequence[Any]
+) -> pd.DataFrame:
+    """``editable_grid_frame`` を「職員ID+氏名」を index にした色付きビュー用表にする。
+
+    ``st.data_editor`` の返り値（index が 0 始まり、職員名が ``職員`` 列）は
+    :func:`style_live_grid` で色を付けるのに都合が悪い（index が数値のままになる）ため、
+    職員ラベルを index に移した複製をこの場で作る。
+    """
+    if frame is None or frame.empty:
+        return pd.DataFrame(columns=[s.label for s in slots])
+    labels = [row_label(m.staff_id, m.name) for m in staff]
+    out = frame.copy()
+    slot_labels = [s.label for s in slots]
+    # ``st.data_editor`` は「職員」列を先頭に足すため、列数が合わない。
+    # 位数だけが時間帯数なら「職員」列を落としてから列名を付け替える。
+    if len(out.columns) == len(slot_labels) + 1:
+        out = out.drop(columns=[out.columns[0]])
+    if len(out.columns) == len(slot_labels):
+        out.columns = slot_labels
+    if len(out) == len(labels):
+        out.index = pd.Index(labels, name="職員（ID 氏名）")
+    return out
 
 
 def editable_column_config(slots: Sequence[Slot]) -> dict[str, Any]:
@@ -343,6 +422,91 @@ def diff_edits(
             if left[row] != right[row]:
                 changes[(row, str(column))] = right[row]
     return changes
+
+
+def fairness_frame(
+    result: SolveResult | None,
+    staff: Sequence[Any],
+    slots: Sequence[Slot],
+    *,
+    standard: Any = None,
+    patterns: Sequence[Any] = (),
+) -> pd.DataFrame:
+    """職員ごとの早番・遅番・土曜出勤の回数表（:mod:`shiftai.fairness` を利用）。"""
+    if result is None or not slots:
+        return pd.DataFrame(columns=["職員ID", "氏名"])
+    return fairness.report_frame(
+        result, staff, slots, standard=standard, patterns=patterns
+    )
+
+
+def style_fairness_table(frame: pd.DataFrame, threshold: int = 2) -> Any:
+    """偏りの大きいセルを橙、既に大きいセルを赤にする。
+
+    ``threshold`` は「この値を超えたら偏りを疑う」という週内変動の目安。
+    """
+    if frame.empty:
+        return frame
+
+    cols = [c for c in frame.columns if c.endswith("の週内変動")]
+
+    def paint(value: Any) -> str:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return ""
+        if number <= threshold:
+            return ""
+        if number >= threshold * 2:
+            return "background-color: #E5393533; color: #8e0000; font-weight:600;"
+        return "background-color: #FB8C0040; color: #8a4b00; font-weight:600;"
+
+    if not cols:
+        return frame
+    return frame.style.map(paint, subset=cols).format({c: "{:.0f}" for c in cols})
+
+
+def render_fairness_panel(
+    result: SolveResult | None,
+    staff: Sequence[Any],
+    slots: Sequence[Slot],
+    *,
+    standard: Any = None,
+    patterns: Sequence[Any] = (),
+) -> None:
+    """公平性レポートを expander の中に描画する（タブ3・タブ4 共通）。"""
+    frame = fairness_frame(
+        result, staff, slots, standard=standard, patterns=patterns
+    )
+    if frame.empty:
+        return
+    with st.expander("⚖️ 公平性（早番・遅番・土曜出勤の配分）", expanded=False):
+        tally = fairness.counts(
+            result, staff, slots, standard=standard, patterns=patterns
+        )
+        stats = [fairness.spread_stats(tally, key) for key in fairness.CATEGORIES]
+        metric_row(
+            [
+                (
+                    f"{s.label}の最大差",
+                    ("!" if s.max_spread >= 2 else "") + f"{s.max_spread} 回/週",
+                    f"最多 {s.max_count} 回 / 最少 {s.min_count} 回",
+                )
+                for s in stats
+            ],
+            per_row=3,
+        )
+        st.dataframe(
+            style_fairness_table(frame),
+            hide_index=True,
+            width="stretch",
+            key="fairness_table",
+        )
+        st.caption(
+            "KPI の「◯の最大差」は職員間の偏り（週ごとの最大−最小）、"
+            "表の「◯の週内変動」はその職員自身の週ごとのばらつきです。"
+            "サイドバーの公平性ペナルティを上げると職員間の偏りが縮みます。"
+        )
 
 
 def staff_day_summary_frame(
