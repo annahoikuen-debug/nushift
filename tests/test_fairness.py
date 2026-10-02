@@ -63,10 +63,7 @@ def _result(states_by_day: dict[date, dict[str, list[CellState]]], slots) -> obj
         ShiftDay(
             day=day,
             assignments={
-                sid: {
-                    slot.label: state
-                    for slot, state in zip(slots, row, strict=False)
-                }
+                sid: {slot.label: state for slot, state in zip(slots, row, strict=False)}
                 for sid, row in rows.items()
             },
         )
@@ -135,9 +132,7 @@ def test_土曜出勤は土曜の日だけ数える():
     slots = _slots()
     row = [CellState.OFF] * len(slots)
     row[3] = CellState.WORK
-    result = _result(
-        {MONDAY: {"S001": list(row)}, SATURDAY: {"S001": list(row)}}, slots
-    )
+    result = _result({MONDAY: {"S001": list(row)}, SATURDAY: {"S001": list(row)}}, slots)
     tally = fairness.counts(result, [_member("S001")], slots, standard=STANDARD)
     assert tally["S001"].totals["saturday"] == 1
 
@@ -184,12 +179,8 @@ def test_週レンジは週ごとの最大と最小の差になる():
     midday = len(slots) // 2
     for row in rows_b:
         row[midday] = CellState.WORK
-    result = _result(
-        {day: {"A": rows_a[i], "B": rows_b[i]} for i, day in enumerate(days)}, slots
-    )
-    tally = fairness.counts(
-        result, [_member("A"), _member("B")], slots, standard=STANDARD
-    )
+    result = _result({day: {"A": rows_a[i], "B": rows_b[i]} for i, day in enumerate(days)}, slots)
+    tally = fairness.counts(result, [_member("A"), _member("B")], slots, standard=STANDARD)
     stats = fairness.spread_stats(tally, "early")
     assert stats.max_spread == 7
     assert stats.max_count == 7
@@ -270,9 +261,7 @@ def test_重みが0なら公平性の変数は作られない():
         fairness_late_penalty=0.0,
         fairness_saturday_penalty=0.0,
     )
-    ctx = solver._build_problem(
-        staff, table, prefs, {}, solver.FacilitySettings(), off, STANDARD
-    )
+    ctx = solver._build_problem(staff, table, prefs, {}, solver.FacilitySettings(), off, STANDARD)
     base, _constraints = ctx.counts()
     ctx_on = solver._build_problem(
         staff, table, prefs, {}, solver.FacilitySettings(), ObjectiveWeights(), STANDARD
@@ -288,9 +277,7 @@ def test_公平性の重みを上げると目的関数が反応する():
         fairness_late_penalty=0.0,
         fairness_saturday_penalty=0.0,
     )
-    ctx = solver._build_problem(
-        staff, table, prefs, {}, solver.FacilitySettings(), off, STANDARD
-    )
+    ctx = solver._build_problem(staff, table, prefs, {}, solver.FacilitySettings(), off, STANDARD)
     terms = {
         str(v.name): v.value()
         for v in ctx.prob.variables()

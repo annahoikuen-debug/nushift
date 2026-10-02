@@ -152,8 +152,15 @@ def test_to_minutesとto_timeは相互変換():
 
 @pytest.mark.parametrize(
     ("years", "expected"),
-    [(0, AgeClass.INFANT), (1, AgeClass.AGE_1), (2, AgeClass.AGE_2),
-     (3, AgeClass.AGE_3), (4, AgeClass.AGE_4), (5, AgeClass.AGE_5), (7, AgeClass.AGE_5)],
+    [
+        (0, AgeClass.INFANT),
+        (1, AgeClass.AGE_1),
+        (2, AgeClass.AGE_2),
+        (3, AgeClass.AGE_3),
+        (4, AgeClass.AGE_4),
+        (5, AgeClass.AGE_5),
+        (7, AgeClass.AGE_5),
+    ],
 )
 def test_age_class_from_years(years, expected):
     """5 歳以上はすべて ``AGE_5`` に丸めること。"""
@@ -163,8 +170,14 @@ def test_age_class_from_years(years, expected):
 def test_age_class_sort_keyは年齢順():
     """``sort_key`` が昇順に並ぶこと（表示順の土台）。"""
     ordered = sorted(AgeClass, key=lambda a: a.sort_key)
-    assert ordered == [AgeClass.INFANT, AgeClass.AGE_1, AgeClass.AGE_2,
-                       AgeClass.AGE_3, AgeClass.AGE_4, AgeClass.AGE_5]
+    assert ordered == [
+        AgeClass.INFANT,
+        AgeClass.AGE_1,
+        AgeClass.AGE_2,
+        AgeClass.AGE_3,
+        AgeClass.AGE_4,
+        AgeClass.AGE_5,
+    ]
 
 
 def test_age_class_yearsとsort_keyが一致():
@@ -279,8 +292,9 @@ def test_child_plan_在園時間():
 
 def test_child_plan_欠席は0分():
     """欠席日は在園時間を 0 として扱うこと。"""
-    child = ChildPlan("C001", "テスト", date(2026, 9, 28), AgeClass.INFANT,
-                      time(9, 0), time(17, 0), absent=True)
+    child = ChildPlan(
+        "C001", "テスト", date(2026, 9, 28), AgeClass.INFANT, time(9, 0), time(17, 0), absent=True
+    )
     assert child.stay_minutes == 0
     assert child.stay_hours == 0.0
 
@@ -295,12 +309,22 @@ def test_child_plan_降園が登園以下はValueError():
 
 def test_child_plan_早朝延長の実在園():
     """早朝/延長利用時だけ実登降園時刻が基準時間帯まで広がること。"""
-    child = ChildPlan("C001", "テスト", date(2026, 9, 28), AgeClass.INFANT,
-                      time(9, 0), time(16, 0), uses_early_care=True, uses_late_care=True)
+    child = ChildPlan(
+        "C001",
+        "テスト",
+        date(2026, 9, 28),
+        AgeClass.INFANT,
+        time(9, 0),
+        time(16, 0),
+        uses_early_care=True,
+        uses_late_care=True,
+    )
     window = (time(7, 15), time(19, 30))
     assert child.effective_arrive(window) == time(7, 15)
     assert child.effective_depart(window) == time(19, 30)
-    plain = ChildPlan("C002", "テスト2", date(2026, 9, 28), AgeClass.INFANT, time(9, 0), time(16, 0))
+    plain = ChildPlan(
+        "C002", "テスト2", date(2026, 9, 28), AgeClass.INFANT, time(9, 0), time(16, 0)
+    )
     assert plain.effective_arrive(window) == time(9, 0)
     assert plain.effective_depart(window) == time(16, 0)
 
@@ -446,13 +470,26 @@ def test_requirement_table_to_long_dataframe():
     day = date(2026, 9, 28)
     slot = Slot(time(9, 0), time(9, 30))
     table = RequirementTable(
-        time(9, 0), time(10, 0), 30, (slot,),
+        time(9, 0),
+        time(10, 0),
+        30,
+        (slot,),
         {day: [Requirement(day, slot, AgeClass.INFANT, 3, 1, 1, basis="3:1", is_binding=True)]},
     )
     frame = table.to_long_dataframe()
-    assert list(frame.columns) == ["日付", "時間帯", "開始", "終了", "年齢クラス",
-                                   "在園児数", "必要人員", "必要保育士数",
-                                   "時間帯区分", "根拠", "必須"]
+    assert list(frame.columns) == [
+        "日付",
+        "時間帯",
+        "開始",
+        "終了",
+        "年齢クラス",
+        "在園児数",
+        "必要人員",
+        "必要保育士数",
+        "時間帯区分",
+        "根拠",
+        "必須",
+    ]
     assert frame.loc[0, "根拠"] == "3:1"
 
 
@@ -468,7 +505,10 @@ def test_requirement_shortfall_critical():
     day = date(2026, 9, 28)
     slot = Slot(time(9, 0), time(9, 30))
     assert Requirement(day, slot, AgeClass.INFANT, 1, 1, 1).is_shortfall_critical is True
-    assert Requirement(day, slot, AgeClass.INFANT, 1, 1, 1, is_binding=False).is_shortfall_critical is False
+    assert (
+        Requirement(day, slot, AgeClass.INFANT, 1, 1, 1, is_binding=False).is_shortfall_critical
+        is False
+    )
     assert Requirement(day, slot, AgeClass.INFANT, 0, 0, 0).is_shortfall_critical is False
 
 

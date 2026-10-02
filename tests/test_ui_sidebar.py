@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import pickle
-from datetime import date, time
+from datetime import date, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +23,7 @@ import pytest
 from shiftai import local_rules
 from shiftai.config import DEFAULT_RANGE_DAYS
 from shiftai.domain import FacilitySettings
-from shiftai.ui import state
+from shiftai.ui import state, theme
 
 #: ヘッドレス実行時の「missing ScriptRunContext!」警告でテスト出力を濁さないようにする。
 logging.getLogger("streamlit").setLevel(logging.ERROR)
@@ -61,8 +61,7 @@ def _sidebar_script(tmp_path: Path, body: str, *, gas_on: bool = False) -> Path:
         f"import os\nos.environ['SHIFTAI_GAS_URL'] = {GAS_URL!r}\n"
         "os.environ['SHIFTAI_GAS_SHEET'] = 'attendance'\n"
         if gas_on
-        else f"import os\nfor _k in {GAS_ENV_NAMES!r}:\n"
-        "    os.environ.pop(_k, None)\n"
+        else f"import os\nfor _k in {GAS_ENV_NAMES!r}:\n    os.environ.pop(_k, None)\n"
     )
     script = tmp_path / "sidebar_driver_app.py"
     script.write_text(
@@ -104,7 +103,12 @@ def fresh_app():
 @pytest.fixture(autouse=True)
 def clean_gas_env(monkeypatch):
     """GAS 連携を「未設定」が出発点になるように毎テスト整える。"""
-    for name in ("SHIFTAI_GAS_URL", "SHIFTAI_GAS_SHEET", "SHIFTAI_GAS_SECRET", "SHIFTAI_GAS_TIMEOUT"):
+    for name in (
+        "SHIFTAI_GAS_URL",
+        "SHIFTAI_GAS_SHEET",
+        "SHIFTAI_GAS_SECRET",
+        "SHIFTAI_GAS_TIMEOUT",
+    ):
         monkeypatch.delenv(name, raising=False)
     yield
 
@@ -151,6 +155,155 @@ def test_計画期間がサイドバーから設定できる(tmp_path):
     assert len(days) == 3
     assert days[0] == at.date_input(key="range_start").value
     assert any(f"{len(days)} 日" in c.value for c in at.caption)
+
+
+# --------------------------------------------------------------------------
+# 1-b. 祝日・行事日（回帰防止）
+#
+# 修正前: ``_render_facility`` が毎回
+#     ``holiday_dates=frozenset()``
+# とハードコードしており、UI から祝日を**1 度も設定できなかった**。
+# ``standards.build_requirements`` は ``holiday_dates`` を受けると該当日を
+# ``is_binding=False`` にする（= 必要人員の基準が適用外になる）ため、
+# UI と CLI で同じ CSV から違う必要人数が出ていた。
+# CLI の ``--holiday`` に対応する操作が UI に欠けていた。
+# --------------------------------------------------------------------------
+
+
+def test_祝日設定のウィジェットがある(tmp_path):
+    """祝日・行事日を選べるウィジェットが出ること（CLI の --holiday 相当）。"""
+    at = _run_sidebar(tmp_path, "sidebar.render()")
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert "holiday_dates" in {w.key for w in at.multiselect}
+    labels = [w.label for w in at.multiselect if w.key == "holiday_dates"]
+    assert labels and "祝日" in labels[0]
+
+
+def test_祝日は既定で空のまま(tmp_path):
+    """選択しない限り祝日扱いは付かない（CLI の既定と同じ）。"""
+    at = _run_sidebar(tmp_path, "sidebar.render()")
+    assert not at.exception, [str(e.value) for e in at.exception]
+    settings = at.session_state[state.KEY_SETTINGS]
+    assert settings.holiday_dates == frozenset()
+
+
+def test_祝日を選ぶとsettingsに反映される(tmp_path):
+    """祝日を選ぶと ``FacilitySettings.holiday_dates`` に残り、re-run で消えないこと。
+
+    2 点注意:
+    * 候補日は ``date.today()`` から 365 日先まで（``sidebar._render_facility``）なので、
+      範囲内日付を使う。
+    * ``multiselect`` の **value** は生の ``date``、**options** は
+      ``format_func`` を通した文字列（``9/23(水)``）。``set_value`` には生の日付を渡す。
+    """
+    at = _run_sidebar(tmp_path, "sidebar.render()")
+    target = date.today() + timedelta(days=30)
+    assert theme.format_day(target) in at.multiselect(key="holiday_dates").options
+    at.multiselect(key="holiday_dates").set_value([target]).run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert at.session_state[state.KEY_SETTINGS].holiday_dates == frozenset({target})
+    # サイドバーを触るたびに消えないこと（修正前は毎回空に戻っていた）
+    at.run()
+    assert at.session_state[state.KEY_SETTINGS].holiday_dates == frozenset({target})
+
+
+def test_祝日と休業日は独立している(tmp_path):
+    """年間休業日と祝日・行事日は別の項目として選択できること。"""
+    at = _run_sidebar(tmp_path, "sidebar.render()")
+    holiday = date.today() + timedelta(days=30)
+    closed = date.today() + timedelta(days=34)
+    at.multiselect(key="holiday_dates").set_value([holiday]).run()
+    at.multiselect(key="closed_days").set_value([closed]).run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    settings = at.session_state[state.KEY_SETTINGS]
+    assert settings.holiday_dates == frozenset({holiday})
+    assert closed in settings.closed_days
+    assert holiday not in settings.closed_days
+
+
+def test_祝日と休業日の優先順位は休業日が勝つ():
+    """同一天を両方に入れても「年間休業日」が優先されることを固定する。
+
+    実装は 2 箇所で同じ順序になっている:
+      * ``standards.build_requirements`` … ``if day in closed`` を先に判定し、
+        その日は必要人員を算出しない（行が空）
+      * ``solver._day_is_workable`` … ``if day in settings.closed_days`` を先に判定し、
+        その日は誰にも出勤させない
+    どちらかを入れ替えると「休園なのに必要人員算出される」ような
+    矛盾した状態が生まれるため、順序をここで固定する。
+
+    **判定が意味を持つ入力**にする:
+      * 職員は `can_work_holiday` の真偽の両方（既定 True だと祝日分岐に到達しない）
+      * その日に在園児がいる（空だと休園判定の効き方を検証できない）
+    """
+    from shiftai import standards
+    from shiftai.domain import (
+        AgeClass,
+        ChildPlan,
+        FacilitySettings,
+        Role,
+        StaffMember,
+    )
+    from shiftai.solver import _day_is_workable
+    from tests.conftest import STANDARD_KEY, part_contract
+
+    day = date(2026, 9, 28)
+    common = dict(
+        day_open=time(9, 0),
+        day_close=time(14, 0),
+        granularity_min=30,
+        closed_days=frozenset({day}),
+        holiday_dates=frozenset({day}),
+    )
+    # 祝日勤務可 / 不可の両方で、休園日は出勤させてはならない。
+    # 特に「祝日勤務可」な職員でも判定する: 祝日分岐が short-circuit する
+    # 実装順序（祝日を先に見て return する）だと休園日を見逃すため、
+    # 順序が入れ替わっても検出できる入力になっている。
+    for can_work_holiday in (True, False):
+        member = StaffMember(
+            "S001",
+            "保育士",
+            (Role.HOIKUSHI,),
+            part_contract(can_work_holiday=can_work_holiday),
+        )
+        assert not _day_is_workable(member, day, FacilitySettings(**common)), (
+            f"休園なのに出勤可能と判定されている"
+            f"（can_work_holiday={can_work_holiday} / closed_days の優先が失われている）"
+        )
+
+    # 在園児がいる状態で、休園判定が「行を空にする」ことを確認する
+    children = [
+        ChildPlan(
+            "C001",
+            "園児A",
+            day,
+            AgeClass.AGE_3,
+            arrive=time(9, 0),
+            depart=time(14, 0),
+            is_short_time=False,
+            absent=False,
+            absent_reason="",
+            uses_early_care=False,
+            uses_late_care=False,
+            notes="",
+        )
+    ]
+    slots = dict(day_open=time(9, 0), day_close=time(14, 0), granularity_min=30)
+    standard = local_rules.get_standard(STANDARD_KEY)
+    closed_table = standards.build_requirements(
+        children, [day], standard, closed_days=[day], holiday_dates=[day], **slots
+    )
+    assert closed_table.rows[day] == [], (
+        "休園日に必要人員が算出されている（休園日が優先されていない）"
+    )
+    # 対照: 休園日を外せば同じ入力で行が立つ
+    # （= 上の「空の行」は休園判定によるものであり、園児が数えられていないわけではない）
+    open_table = standards.build_requirements(
+        children, [day], standard, holiday_dates=[day], **slots
+    )
+    assert open_table.rows[day], (
+        "休園日を外しても行が空（テストの前提が崩れている: 在園児が数えられていない）"
+    )
 
 
 # --------------------------------------------------------------------------
@@ -487,7 +640,14 @@ def test_サイドバー描画後もWIDGET_KEYSがsession_stateに残る(tmp_pat
     """サイドバーはウィジェットを自分で作るので、対応するキーは生成済みであること。"""
     at = _run_sidebar(tmp_path, "sidebar.render()")
     keys = _session_state_keys(at)
-    for key in ("facility_name", "day_open", "day_close", "granularity_min", "range_start", "range_days"):
+    for key in (
+        "facility_name",
+        "day_open",
+        "day_close",
+        "granularity_min",
+        "range_start",
+        "range_days",
+    ):
         assert key in keys, f"{key} が session_state に無い"
 
 

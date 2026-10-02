@@ -115,9 +115,7 @@ def test_build_standard_差分だけ反映():
 
 def test_build_standard_ratiosはマージ():
     """``ratios`` は差分だけ渡しても他年齢クラスの比を保つこと。"""
-    patched = build_standard(
-        "全国基準（厚労省）", {"ratios": {AgeClass.INFANT: 4.0}}
-    )
+    patched = build_standard("全国基準（厚労省）", {"ratios": {AgeClass.INFANT: 4.0}})
     assert patched.ratio_for(AgeClass.INFANT).children_per_staff == pytest.approx(4.0)
     assert patched.ratio_for(AgeClass.AGE_1).children_per_staff == pytest.approx(6.0)
 
@@ -200,8 +198,17 @@ def test_standard_to_dataframeの行数():
 def test_standard_to_dataframeの列():
     """UI の比較表が前提とする列が揃っていること。"""
     frame = standard_to_dataframe()
-    for column in ("キー", "名称", "保育標準時間", "早朝保育", "延長保育",
-                   "延長緩和措置", "最低配置人数", "出典", "備考"):
+    for column in (
+        "キー",
+        "名称",
+        "保育標準時間",
+        "早朝保育",
+        "延長保育",
+        "延長緩和措置",
+        "最低配置人数",
+        "出典",
+        "備考",
+    ):
         assert column in frame.columns
 
 
@@ -285,7 +292,8 @@ def test_preset_summaryとsource():
 def test_未登録の基準はremarksから生成():
     """プリセット以外の ``StaffingStandard`` でも summary/source が例外なく返ること。"""
     ad_hoc = StaffingStandard(
-        name="架空園", ratios={age: AgeRatio(age, 4.0, "ceil") for age in AgeClass},
+        name="架空園",
+        ratios={age: AgeRatio(age, 4.0, "ceil") for age in AgeClass},
         remarks="架空の基準",
     )
     assert "4:1" in preset_summary(ad_hoc)

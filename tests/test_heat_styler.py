@@ -9,7 +9,7 @@
 2. ``style.format("{:.0f}")`` が文字列列にも適用され、
    ``ValueError: Unknown format code 'f' for object of type 'str'`` になっていた。
    ``tab_requirements._render_gap_preview`` は日付列つきの ``gap_matrix`` を
-   ``subset`` 指定で渡しているため、优化後にタブを開き直すと必ず落ちていた
+   ``subset`` 指定で渡しているため、最適化後にタブを開き直すと必ず落ちていた
    （``format`` を数値列にだけ適用する形で修正）。
 
 一部が「例外を出さない」だけでなく「実際に色が付き、その色が正しい」ことを
@@ -130,7 +130,7 @@ def _case(
             pd.DataFrame({"x": ["a", "b"], "n": [1, 2]}),
             {},
             "subset を付けない運用では文字列列も format の対象候補になる。"
-            "文字列かどうかの判定が正しいことを到这里までの subset 指定だけに頼らず確認する",
+            "文字列かどうかの判定が正しいことをここまでまでの subset 指定だけに頼らず確認する",
         ),
         (
             "subsetが全NaN",
@@ -255,9 +255,7 @@ def test_heat_stylerはsubsetの中だけに色を付ける():
 
 def test_heat_stylerは文字列列を数値フォーマットにしない():
     """``'{:.0f}'`` の生文字列も ``nan`` の生文字列も出力に混ざらないこと。"""
-    frame = pd.DataFrame(
-        {"日付": ["2026-09-28", "2026-09-29"], "a": [3.0, float("nan")]}
-    )
+    frame = pd.DataFrame({"日付": ["2026-09-28", "2026-09-29"], "a": [3.0, float("nan")]})
     html, _ = _render(frame, subset=["a"])
     assert "{:.0f}" not in html
     assert "nan" not in html

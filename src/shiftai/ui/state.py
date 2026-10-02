@@ -256,9 +256,7 @@ def current_slots() -> tuple[Slot, ...]:
         return tuple(cached)
     settings = current_settings()
     try:
-        slots = build_slots(
-            settings.day_open, settings.day_close, settings.granularity_min
-        )
+        slots = build_slots(settings.day_open, settings.day_close, settings.granularity_min)
     except ValueError as exc:
         st.session_state[KEY_SLOTS_ERROR] = str(exc)
         st.session_state[KEY_SLOTS] = ()
@@ -357,9 +355,7 @@ def contract_hours() -> float:
     staff = get(KEY_STAFF) or []
     if not isinstance(table, RequirementTable) or not staff:
         return 0.0
-    return solver.supply_hours(
-        staff, table, get(KEY_PREFERENCES) or {}, current_settings()
-    )
+    return solver.supply_hours(staff, table, get(KEY_PREFERENCES) or {}, current_settings())
 
 
 def supply_demand_ratio(required_hours: float) -> float:
@@ -413,4 +409,3 @@ def edit_history(kind: str) -> EditHistory:
 def reset_edit_histories() -> None:
     """全表の編集履歴を破棄する（読み込み・サンプル投入のとき）。"""
     st.session_state[KEY_EDIT_HISTORY] = {}
-

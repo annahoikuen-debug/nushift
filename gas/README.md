@@ -31,7 +31,7 @@ Streamlit (shiftai)  ──HTTP(JSON)──▶  Apps Script Web App  ──Sprea
    | `shift`      | `シフト`    | 出力したシフトCSV        |
 
 4. シートを閉じる
-5. 刚从ブラウザの URL から **ID** を取り出す
+5. ブラウザの URL から **ID** を取り出す
 
    ```
    https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit#gid=0
@@ -158,8 +158,12 @@ curl -sS -X POST "$BASE" \
 ```python
 from shiftai.gas_client import GasConfig, GoogleAppsScriptClient
 
-cfg = GasConfig(base_url="https://script.google.com/macros/s/AKfycbXXXXXXXX/exec",
-                sheet="attendance", secret="手順3の値", timeout_sec=10)
+cfg = GasConfig(
+    base_url="https://script.google.com/macros/s/AKfycbXXXXXXXX/exec",
+    sheet="attendance",
+    secret="手順3の値",
+    timeout_sec=10,
+)
 client = GoogleAppsScriptClient(cfg)
 print(client.ping())
 print(client.fetch_table("attendance"))
@@ -189,7 +193,7 @@ export SHIFTAI_GAS_URL='https://script.google.com/macros/s/AKfycbXXXXXXXX/exec'
 export SHIFTAI_GAS_SHEET='attendance'
 export SHIFTAI_GAS_SECRET='手順3で設定した値'
 export SHIFTAI_GAS_TIMEOUT='10'
-streamlit run app.py
+streamlit run streamlit_app.py
 ```
 
 `.streamlit/secrets.toml` を使う場合（`secrets.toml` は `.gitignore` 必ずに入れてください）:
@@ -209,7 +213,7 @@ GAS 連携セクションの表示を出し分けます。
 ```python
 from shiftai.gas_client import available, is_configured, GasConfig, GoogleAppsScriptClient
 
-if is_configured():                       # UI の出し分け（通信はしない）
+if is_configured():  # UI の出し分け（通信はしない）
     cfg = GasConfig.from_env()
     client = GoogleAppsScriptClient(cfg)  # ここで初めて通信する
     st.button("GAS へ同期", on_click=lambda: client.sync_all(tables))

@@ -538,7 +538,10 @@ def relaxation_ladder(
     :param time_limit_sec: 各段階でソルバに与える時間上限（秒）
     :returns: :class:`RelaxationLadder`
     """
-    top = normalize_level(max_level)
+    # ``normalize_level(None)`` は 0（= L0）を返すため、
+    # 既定のままでは**最大段階まで一度も試されない**されていた。
+    # docstring の「L0 から順に試す」という説明と実装が矛盾していた。
+    top = len(RELAX_LEVELS) - 1 if max_level is None else normalize_level(max_level)
     budget = max(2, int(time_limit_sec))
     outcomes: list[LadderOutcome] = []
     for level in range(top + 1):
@@ -555,13 +558,17 @@ def relaxation_ladder(
             standard=standard,  # type: ignore[arg-type]
             relaxation=level,
         )
-        gaps = len(
-            [
-                g
-                for g in shortfall_rows(staff, requirements, preferences, settings)
-            ]
+        gaps = len([g for g in shortfall_rows(staff, requirements, preferences, settings)])
+        # ``PARTIAL`` は「ハード制約は満たすが配置基準に不足あり」で、
+        # ソフト制約化した 2 パス目が最適解を出すためこの状態になる。
+        # 修正前: OPTIMAL / FEASIBLE のみを「解けた」と判定していたため、
+        # 緩和ラダーが**まさにその目的だった**人員不足ケースを
+        # 「どの段階でも解けなかった」と誤報告していた。
+        solved = result.status in (
+            SolveStatus.OPTIMAL,
+            SolveStatus.FEASIBLE,
+            SolveStatus.PARTIAL,
         )
-        solved = result.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE)
         outcomes.append(
             LadderOutcome(
                 level=level,

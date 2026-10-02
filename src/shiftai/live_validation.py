@@ -8,7 +8,7 @@
 1. シフトを確定する
 2. 1 セルだけ動かす
 3. 「あれ、これ基準割ってないかも」と気づく
-4. 確定を取り消して、最初から准则を満たすまで調整し直す
+4. 確定を取り消して、最初から基準を満たすまで調整し直す
 
 という往復が発生する。ここで言う **その場（確定前）** の判定を、
 副作用のない純粋関数として提供する。
@@ -39,8 +39,10 @@ from shiftai.domain import (
     FacilitySettings,
     RequirementTable,
     Slot,
+    StaffingStandard,
     StaffMember,
     StaffPreferences,
+    qualified_count,
     to_minutes,
 )
 from shiftai.fairness import block_indices
@@ -65,6 +67,7 @@ _LEVEL_LABELS: dict[str, str] = {
     ERROR: "配置基準・契約違反",
     WARNING: "運用上の注意",
 }
+
 
 @dataclass(frozen=True)
 class LiveIssue:
@@ -119,11 +122,7 @@ class LiveReport:
 
     def warning_cells(self) -> set[tuple[str, str]]:
         """橙枠を付ける ``(職員ID, 時間帯ラベル)`` の集合。"""
-        return {
-            (i.staff_id, i.slot_label)
-            for i in self.warnings
-            if i.staff_id and i.slot_label
-        }
+        return {(i.staff_id, i.slot_label) for i in self.warnings if i.staff_id and i.slot_label}
 
     def error_columns(self) -> set[str]:
         """列側（時間帯全体）の指摘で赤くする時間帯ラベル。"""
@@ -170,13 +169,10 @@ def _row_states(row: Any, slots: Sequence[Slot]) -> list[CellState]:
     if isinstance(row, pd.Series):
         row = row.to_dict()
     if isinstance(row, Mapping):
-        return [
-            _coerce_state(row.get(slot.label)) for slot in slots
-        ]
+        return [_coerce_state(row.get(slot.label)) for slot in slots]
     values = list(row)
     return [
-        _coerce_state(values[i]) if i < len(values) else CellState.OFF
-        for i in range(len(slots))
+        _coerce_state(values[i]) if i < len(values) else CellState.OFF for i in range(len(slots))
     ]
 
 
@@ -220,7 +216,7 @@ def validate_day(
     *,
     preferences: Mapping[str, StaffPreferences] | None = None,
     settings: FacilitySettings | None = None,
-    standard: Any = None,
+    standard: StaffingStandard | None = None,
     staff_name_map: Mapping[str, str] | None = None,
 ) -> LiveReport:
     """編集途中の 1 日分を検証して :class:`LiveReport` を返す。
@@ -254,9 +250,7 @@ def validate_day(
                 )
             )
         if not contract.can_work_holiday and day.weekday() >= 5:
-            worked = [
-                slots[i].label for i, s in enumerate(row) if s is CellState.WORK
-            ]
+            worked = [slots[i].label for i, s in enumerate(row) if s is CellState.WORK]
             if worked:
                 out.append(
                     LiveIssue(
@@ -268,12 +262,8 @@ def validate_day(
                         worked[0],
                     )
                 )
-        work_minutes = sum(
-            slots[i].minutes for i, s in enumerate(row) if s is CellState.WORK
-        )
-        break_minutes = sum(
-            slots[i].minutes for i, s in enumerate(row) if s is CellState.BREAK
-        )
+        work_minutes = sum(slots[i].minutes for i, s in enumerate(row) if s is CellState.WORK)
+        break_minutes = sum(slots[i].minutes for i, s in enumerate(row) if s is CellState.BREAK)
         cap = _daily_cap_minutes(contract)
         if work_minutes > cap:
             out.append(
@@ -321,16 +311,13 @@ def validate_day(
                     "",
                 )
             )
-        duty_indices = [
-            i for i, s in enumerate(row) if s is not CellState.OFF
-        ]
+        duty_indices = [i for i, s in enumerate(row) if s is not CellState.OFF]
         if duty_indices and not _is_contiguous(duty_indices):
             out.append(
                 LiveIssue(
                     WARNING,
                     "DUTY_DISCONTIGUOUS",
-                    f"{who(sid)} の在勤が連続していません"
-                    "（勤務の合間にオフが入っています）。",
+                    f"{who(sid)} の在勤が連続していません（勤務の合間にオフが入っています）。",
                     sid,
                     "",
                 )
@@ -348,9 +335,10 @@ def validate_day(
                             slot.label,
                         )
                     )
-            if (
-                entry.avoid_early
-                and any(i in _early_indices(slots, standard) for i, s in enumerate(row) if s is CellState.WORK)
+            if entry.avoid_early and any(
+                i in _early_indices(slots, standard)
+                for i, s in enumerate(row)
+                if s is CellState.WORK
             ):
                 out.append(
                     LiveIssue(
@@ -414,15 +402,15 @@ def validate_day(
                 )
             )
         if need_q > 0:
-            actual_q = sum(
-                1
+            working_qualified = [
+                member
                 for member in staff
-                if member.is_qualified
-                and any(
+                if any(
                     slots[i] == slot and s is CellState.WORK
                     for i, s in enumerate(states.get(member.staff_id, []))
                 )
-            )
+            ]
+            actual_q = qualified_count(working_qualified, standard)
             if actual_q < need_q:
                 out.append(
                     LiveIssue(
@@ -445,7 +433,7 @@ def _daily_cap_minutes(contract: Any) -> int:
     return min(int(base * 1.25), 600)
 
 
-def _early_indices(slots: Sequence[Slot], standard: Any) -> set[int]:
+def _early_indices(slots: Sequence[Slot], standard: StaffingStandard | None) -> set[int]:
     """早朝保育時間帯の添字集合（基準が無くても動くよう境界時刻で判定）。"""
     if standard is None:
         return set()

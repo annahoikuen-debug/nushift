@@ -71,9 +71,7 @@ def category_label(key: str) -> str:
     return _CATEGORY_LABELS.get(str(key), str(key))
 
 
-def _pattern_window(
-    patterns: Sequence[ShiftPattern], key: str
-) -> tuple[int, int] | None:
+def _pattern_window(patterns: Sequence[ShiftPattern], key: str) -> tuple[int, int] | None:
     """``early`` / ``late`` パターンの ``(開始分, 終了分)`` を返す。"""
     for pattern in patterns or ():
         if pattern.key == key:
@@ -208,7 +206,12 @@ def counts(
         days = sorted(shift_days)
     periods = weekly_periods(list(days)) if days else []
     out: dict[str, FairnessCounts] = {}
-    for member in staff:
+    # 配置対象外の職員（園長・主任など ``is_placeable`` が False）は数えない。
+    # ソルバの公平性目的関数も配置対象職員のみを対象にしている
+    # （``_fairness_spread`` の ``placeable`` フィルタ）ため、
+    # ここで含むと「最小値」が構造的に 0 に固定され、
+    # UI が永远不会解消しない偏りを表示することになる。
+    for member in (m for m in staff if m.is_placeable):
         sid = member.staff_id
         totals = {key: 0 for key in CATEGORIES}
         weekly = {key: [0] * len(periods) for key in CATEGORIES}
@@ -275,15 +278,14 @@ def spread_stats(tally: dict[str, FairnessCounts], category: str) -> SpreadStats
     """
     entries = list(tally.values())
     if not entries:
-        return SpreadStats(category=category, max_spread=0, mean_spread=0.0,
-                          max_count=0, min_count=0)
+        return SpreadStats(
+            category=category, max_spread=0, mean_spread=0.0, max_count=0, min_count=0
+        )
     weeks = max((len(e.weekly.get(category, [])) for e in entries), default=0)
     spreads: list[int] = []
     for w in range(weeks):
         values = [
-            e.weekly.get(category, [])[w]
-            for e in entries
-            if w < len(e.weekly.get(category, []))
+            e.weekly.get(category, [])[w] for e in entries if w < len(e.weekly.get(category, []))
         ]
         spreads.append(max(values) - min(values) if values else 0)
     all_counts = [e.totals.get(category, 0) for e in entries]
@@ -325,8 +327,6 @@ def report_frame(
         for key in CATEGORIES:
             row[category_label(key)] = entry.totals.get(key, 0)
             values = entry.weekly.get(key, [])
-            row[f"{category_label(key)}の週内変動"] = (
-                max(values) - min(values) if values else 0
-            )
+            row[f"{category_label(key)}の週内変動"] = max(values) - min(values) if values else 0
         records.append(row)
     return pd.DataFrame.from_records(records, columns=columns)

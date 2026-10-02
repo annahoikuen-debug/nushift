@@ -168,31 +168,123 @@ _EMPLOYMENT_ALIASES: dict[str, EmploymentType] = {
 
 
 _COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
-    "園児ID": ("園児id", "園児no", "園児番号", "子id", "子类id", "childid", "childno", "id", "園児コード"),
+    "園児ID": (
+        "園児id",
+        "園児no",
+        "園児番号",
+        "子id",
+        "子类id",
+        "childid",
+        "childno",
+        "id",
+        "園児コード",
+    ),
     "氏名": ("氏名", "名前", "お名前", "name", "園児名", "職員名"),
     "年齢": ("年齢", "歳", "歳児", "年齢歳", "age", "ageyears", "園児年齢"),
     "登園日": ("登園日", "日付", "利用日", "出勤日", "day", "date", "登園日付"),
-    "登園時刻": ("登園時刻", "登園time", "登園", "到着時刻", "到着", "arrive", "arrival", "start", "出勤時刻"),
-    "降園時刻": ("降園時刻", "降園time", "降園", "退園時刻", "退園", "depart", "departure", "end", "退園時刻"),
-    "短時間保育": ("短時間保育", "短保育", "短時間", "短時間保育園児", "shorttime", "short", "定時保育"),
+    "登園時刻": (
+        "登園時刻",
+        "登園time",
+        "登園",
+        "到着時刻",
+        "到着",
+        "arrive",
+        "arrival",
+        "start",
+        "出勤時刻",
+    ),
+    "降園時刻": (
+        "降園時刻",
+        "降園time",
+        "降園",
+        "退園時刻",
+        "退園",
+        "depart",
+        "departure",
+        "end",
+        "退園時刻",
+    ),
+    "短時間保育": (
+        "短時間保育",
+        "短保育",
+        "短時間",
+        "短時間保育園児",
+        "shorttime",
+        "short",
+        "定時保育",
+    ),
     "欠席": ("欠席", "不在", "欠勤", "absent", "欠席予定"),
     "欠席理由": ("欠席理由", "欠席理由備考", "理由", "absentreason", "欠席理由memo"),
     "早朝保育": ("早朝保育", "早朝", "早朝保育利用", "early", "earlycare", "早朝利用"),
     "延長保育": ("延長保育", "延長", "延長保育利用", "late", "latecare", "延長利用"),
     "備考": ("備考", "メモ", "note", "notes", "memo", "コメント", "remarks"),
-    "職員ID": ("職員id", "スタッフid", "職員no", "職員番号", "staffid", "staffno", "id", "職員コード"),
+    "職員ID": (
+        "職員id",
+        "スタッフid",
+        "職員no",
+        "職員番号",
+        "staffid",
+        "staffno",
+        "id",
+        "職員コード",
+    ),
     "資格（主）": ("資格主", "主資格", "資格", "資格1", "primaryrole", "role", "職種", "主職種"),
     "資格（副）": ("資格副", "副資格", "資格2", "副職種", "secondaryrole", "副"),
     "雇用形態": ("雇用形態", "雇用区分", "contracttype", "employment", "employmenttype", "区分"),
     "週契約時間": ("週契約時間", "週契約", "週所定労働時間", "weeklyhours", "weekhours", "週時間"),
-    "1日契約時間": ("1日契約時間", "1日契約", "日契約時間", "1日所定労働時間", "dailyhours", "dayhours", "日時間"),
-    "月間最小時間": ("月間最小時間", "月最小時間", "月間最小", "minmonthlyhours", "minhours", "月最小"),
-    "月間最大時間": ("月間最大時間", "月最大時間", "月間最大", "maxmonthlyhours", "maxhours", "月最大"),
-    "週最大出勤日数": ("週最大出勤日数", "週最大日数", "週出勤日数上限", "maxweeklydays", "maxdays", "週最大出勤"),
-    "最大連続勤務日数": ("最大連続勤務日数", "連続勤務日数上限", "maxconsecutivedays", "maxconsecutive", "連続出勤上限"),
+    "1日契約時間": (
+        "1日契約時間",
+        "1日契約",
+        "日契約時間",
+        "1日所定労働時間",
+        "dailyhours",
+        "dayhours",
+        "日時間",
+    ),
+    "月間最小時間": (
+        "月間最小時間",
+        "月最小時間",
+        "月間最小",
+        "minmonthlyhours",
+        "minhours",
+        "月最小",
+    ),
+    "月間最大時間": (
+        "月間最大時間",
+        "月最大時間",
+        "月間最大",
+        "maxmonthlyhours",
+        "maxhours",
+        "月最大",
+    ),
+    "週最大出勤日数": (
+        "週最大出勤日数",
+        "週最大日数",
+        "週出勤日数上限",
+        "maxweeklydays",
+        "maxdays",
+        "週最大出勤",
+    ),
+    "最大連続勤務日数": (
+        "最大連続勤務日数",
+        "連続勤務日数上限",
+        "maxconsecutivedays",
+        "maxconsecutive",
+        "連続出勤上限",
+    ),
     "最早始業": ("最早始業", "最早開始", "始業時刻", "earlieststart", "earliest", "最早始業時刻"),
     "最遅終業": ("最遅終業", "最遅終了", "終業時刻", "latestend", "latest", "最遅終業時刻"),
-    "能力タグ": ("能力タグ", "スキル", "技能", "タグ", "保有資格", "skills", "tags", "skill", "特技"),
+    "能力タグ": (
+        "能力タグ",
+        "スキル",
+        "技能",
+        "タグ",
+        "保有資格",
+        "skills",
+        "tags",
+        "skill",
+        "特技",
+    ),
     "種別": ("種別", "種類", "希望種別", "type", "kind", "希望区分"),
     "開始": ("開始", "開始時刻", "start", "starttime", "from"),
     "終了": ("終了", "終了時刻", "end", "endtime", "to"),
@@ -618,19 +710,19 @@ def _iter_rows(df: pd.DataFrame, expected: Sequence[str], issues: list[LoadIssue
     present = {v for v in mapping.values()}
     for missing in [c for c in expected if c not in present]:
         issues.append(
-            LoadIssue("warning", -1, missing, f"列「{missing}」が見つかりません（空として扱います）")
+            LoadIssue(
+                "warning", -1, missing, f"列「{missing}」が見つかりません（空として扱います）"
+            )
         )
     known = {normalize_header(k) for k in mapping}
-    unknown = [
-        str(col) for col in df.columns if normalize_header(str(col)) not in known
-    ]
+    unknown = [str(col) for col in df.columns if normalize_header(str(col)) not in known]
     if unknown:
         issues.append(
             LoadIssue(
                 "warning",
                 -1,
                 ",".join(unknown[:10]),
-                f"解釈できない列を無視します: {', '.join(unknown[:10])}"
+                f"解釈できない列を無視します: {', '.join(unknown[:10])}",
             )
         )
     rows = []
@@ -649,7 +741,9 @@ def load_children(df: pd.DataFrame) -> tuple[list[ChildPlan], list[LoadIssue]]:
     issues: list[LoadIssue] = []
     plans: list[ChildPlan] = []
     if df is None or len(df.columns) == 0:
-        issues.append(LoadIssue("error", -1, "children", "園児データを読み込めませんでした（ヘッダが空です）"))
+        issues.append(
+            LoadIssue("error", -1, "children", "園児データを読み込めませんでした（ヘッダが空です）")
+        )
         return plans, issues
 
     seen: dict[tuple[str, str], int] = {}
@@ -668,7 +762,9 @@ def load_children(df: pd.DataFrame) -> tuple[list[ChildPlan], list[LoadIssue]]:
         day = parse_date(view.get("登園日"))
         if day is None:
             issues.append(
-                LoadIssue("error", row, "登園日", f"登園日を解釈できません: {view.text('登園日')!r}")
+                LoadIssue(
+                    "error", row, "登園日", f"登園日を解釈できません: {view.text('登園日')!r}"
+                )
             )
             continue
         key = (child_id, day.isoformat())
@@ -693,12 +789,22 @@ def load_children(df: pd.DataFrame) -> tuple[list[ChildPlan], list[LoadIssue]]:
         else:
             if arrive is None:
                 issues.append(
-                    LoadIssue("error", row, "登園時刻", f"登園時刻を解釈できません: {view.text('登園時刻')!r}")
+                    LoadIssue(
+                        "error",
+                        row,
+                        "登園時刻",
+                        f"登園時刻を解釈できません: {view.text('登園時刻')!r}",
+                    )
                 )
                 continue
             if depart is None:
                 issues.append(
-                    LoadIssue("error", row, "降園時刻", f"降園時刻を解釈できません: {view.text('降園時刻')!r}")
+                    LoadIssue(
+                        "error",
+                        row,
+                        "降園時刻",
+                        f"降園時刻を解釈できません: {view.text('降園時刻')!r}",
+                    )
                 )
                 continue
 
@@ -729,7 +835,9 @@ def load_staff(df: pd.DataFrame) -> tuple[list[StaffMember], list[LoadIssue]]:
     issues: list[LoadIssue] = []
     members: list[StaffMember] = []
     if df is None or len(df.columns) == 0:
-        issues.append(LoadIssue("error", -1, "staff", "職員データを読み込めませんでした（ヘッダが空です）"))
+        issues.append(
+            LoadIssue("error", -1, "staff", "職員データを読み込めませんでした（ヘッダが空です）")
+        )
         return members, issues
 
     seen: dict[str, int] = {}
@@ -740,7 +848,12 @@ def load_staff(df: pd.DataFrame) -> tuple[list[StaffMember], list[LoadIssue]]:
             continue
         if staff_id in seen:
             issues.append(
-                LoadIssue("error", row, "職員ID", f"職員ID が重複しています（{seen[staff_id] + 1} 行目と重複）")
+                LoadIssue(
+                    "error",
+                    row,
+                    "職員ID",
+                    f"職員ID が重複しています（{seen[staff_id] + 1} 行目と重複）",
+                )
             )
             continue
         seen[staff_id] = row
@@ -748,7 +861,12 @@ def load_staff(df: pd.DataFrame) -> tuple[list[StaffMember], list[LoadIssue]]:
         roles = parse_role_list(view.get("資格（主）"))
         if not roles:
             issues.append(
-                LoadIssue("error", row, "資格（主）", f"資格（主）を解釈できません: {view.text('資格（主）')!r}")
+                LoadIssue(
+                    "error",
+                    row,
+                    "資格（主）",
+                    f"資格（主）を解釈できません: {view.text('資格（主）')!r}",
+                )
             )
             continue
         # parse_role_list は tuple[Role, ...] を返すので、そのまま append はできない
@@ -765,29 +883,42 @@ def load_staff(df: pd.DataFrame) -> tuple[list[StaffMember], list[LoadIssue]]:
         daily = _parse_float(view.get("1日契約時間"), 0.0)
         if weekly <= 0:
             weekly = max(daily, 1.0) * 2.0
-            issues.append(LoadIssue("warning", row, "週契約時間", f"週契約時間を既定値 {weekly:g} にしました"))
+            issues.append(
+                LoadIssue("warning", row, "週契約時間", f"週契約時間を既定値 {weekly:g} にしました")
+            )
         if daily <= 0:
             daily = max(weekly / 5.0, 1.0)
-            issues.append(LoadIssue("warning", row, "1日契約時間", f"1日契約時間を既定値 {daily:g} にしました"))
+            issues.append(
+                LoadIssue(
+                    "warning", row, "1日契約時間", f"1日契約時間を既定値 {daily:g} にしました"
+                )
+            )
 
         min_monthly = _parse_float(view.get("月間最小時間"), 0.0)
         max_monthly = _parse_float(view.get("月間最大時間"), 200.0)
         if max_monthly < min_monthly:
             issues.append(
-                LoadIssue("warning", row, "月間最大時間", "月間最大時間が月間最小時間未満のため入れ替えます")
+                LoadIssue(
+                    "warning",
+                    row,
+                    "月間最大時間",
+                    "月間最大時間が月間最小時間未満のため入れ替えます",
+                )
             )
             min_monthly, max_monthly = max_monthly, min_monthly
 
         earliest = parse_time(view.get("最早始業")) or time(6, 0)
         latest = parse_time(view.get("最遅終業")) or time(22, 0)
         if latest <= earliest:
-            issues.append(LoadIssue("warning", row, "最遅終業", "最遅終業が最早始業以前のため 24:00 扱いにします"))
+            issues.append(
+                LoadIssue(
+                    "warning", row, "最遅終業", "最遅終業が最早始業以前のため 24:00 扱いにします"
+                )
+            )
             latest = time(23, 59)
 
         skills = frozenset(
-            s.strip()
-            for s in re.split(r"[|、,，/／\n\r]+", view.text("能力タグ"))
-            if s.strip()
+            s.strip() for s in re.split(r"[|、,，/／\n\r]+", view.text("能力タグ")) if s.strip()
         )
         try:
             contract = Contract(
@@ -797,7 +928,9 @@ def load_staff(df: pd.DataFrame) -> tuple[list[StaffMember], list[LoadIssue]]:
                 min_monthly_hours=min_monthly,
                 max_monthly_hours=max_monthly,
                 max_weekly_days=_parse_day_cap(view.get("週最大出勤日数"), "週最大出勤日数"),
-                max_consecutive_days=_parse_day_cap(view.get("最大連続勤務日数"), "最大連続勤務日数"),
+                max_consecutive_days=_parse_day_cap(
+                    view.get("最大連続勤務日数"), "最大連続勤務日数"
+                ),
                 earliest_start=earliest,
                 latest_end=latest,
             )
@@ -832,11 +965,20 @@ def load_preferences(df: pd.DataFrame) -> tuple[dict[str, StaffPreferences], lis
         kind_raw = view.text("種別") or "希望休"
         kind = PREFERENCE_TYPES.get(kind_raw)
         if kind is None:
-            issues.append(LoadIssue("warning", row, "種別", f"未知の種別のため「希望休」として扱います: {kind_raw!r}"))
+            issues.append(
+                LoadIssue(
+                    "warning",
+                    row,
+                    "種別",
+                    f"未知の種別のため「希望休」として扱います: {kind_raw!r}",
+                )
+            )
             kind = "希望休"
         day = parse_date(view.get("日付"))
         if day is None:
-            issues.append(LoadIssue("error", row, "日付", f"日付を解釈できません: {view.text('日付')!r}"))
+            issues.append(
+                LoadIssue("error", row, "日付", f"日付を解釈できません: {view.text('日付')!r}")
+            )
             continue
 
         entry = prefs.setdefault(staff_id, StaffPreferences())
@@ -846,7 +988,9 @@ def load_preferences(df: pd.DataFrame) -> tuple[dict[str, StaffPreferences], lis
             end = parse_time(view.get("終了")) or time(23, 59)
             if end <= start:
                 end = time(23, 59)
-            entry.unavailable.append(Unavailability(day=day, start=start, end=end, reason=reason or kind))
+            entry.unavailable.append(
+                Unavailability(day=day, start=start, end=end, reason=reason or kind)
+            )
         elif kind == "出勤希望":
             entry.preferred_days = frozenset(entry.preferred_days) | {day}
         else:
@@ -881,7 +1025,9 @@ def load_bundle(
     for staff_id, entry in result.preferences.items():
         if staff_ids and staff_id not in staff_ids:
             result.issues.append(
-                LoadIssue("warning", -1, "職員ID", f"希望休のある職員 {staff_id} が職員CSVにいません")
+                LoadIssue(
+                    "warning", -1, "職員ID", f"希望休のある職員 {staff_id} が職員CSVにいません"
+                )
             )
         for note in ("早朝を避けたい", "延長を避けたい"):
             if note in entry.notes:
@@ -910,7 +1056,7 @@ def _dataframe_from_json(payload: Any) -> pd.DataFrame:
                     frame.insert(0, "種別", key)
                     records.append(frame)
                 else:
-                    records.append(pd.DataFrame([{ "種別": key, "値": value }]))
+                    records.append(pd.DataFrame([{"種別": key, "値": value}]))
             return pd.concat(records, ignore_index=True) if records else pd.DataFrame()
     if isinstance(payload, list):
         if not payload:
@@ -951,7 +1097,9 @@ def read_table(source: Any, kind: str = "children") -> pd.DataFrame:
     ファイルライクオブジェクトのいずれかを渡せる。
     """
     if kind not in TABLE_COLUMNS:
-        raise ValueError(f"kind は {sorted(TABLE_COLUMNS)} のいずれかを指定してください（got {kind!r}）")
+        raise ValueError(
+            f"kind は {sorted(TABLE_COLUMNS)} のいずれかを指定してください（got {kind!r}）"
+        )
 
     if isinstance(source, pd.DataFrame):
         return source.copy()
@@ -1007,9 +1155,7 @@ def read_table(source: Any, kind: str = "children") -> pd.DataFrame:
     return frame
 
 
-def read_bundle(
-    children: Any = None, staff: Any = None, preferences: Any = None
-) -> LoadResult:
+def read_bundle(children: Any = None, staff: Any = None, preferences: Any = None) -> LoadResult:
     """ファイル 3 つを直接渡して ``LoadResult`` を得る。"""
     return load_bundle(
         read_table(children, "children") if children is not None else None,
@@ -1032,12 +1178,14 @@ def write_template_csvs(target_dir: Path | str) -> dict[str, Path]:
     base.mkdir(parents=True, exist_ok=True)
     days = [date.today()]
     children, staff, prefs = sample_data.make_dataset(days, seed=1)
-    frames = sample_data.sample_dataframes(
-        children=children, staff=staff, preferences=prefs
-    )
+    frames = sample_data.sample_dataframes(children=children, staff=staff, preferences=prefs)
     limits = {"children": 1, "staff": 1, "preferences": 1}
     out: dict[str, Path] = {}
-    for key, columns in (("children", CHILDREN_COLUMNS), ("staff", STAFF_COLUMNS), ("preferences", PREFERENCE_COLUMNS)):
+    for key, columns in (
+        ("children", CHILDREN_COLUMNS),
+        ("staff", STAFF_COLUMNS),
+        ("preferences", PREFERENCE_COLUMNS),
+    ):
         frame = frames[key].head(limits[key]).reindex(columns=columns)
         out[key] = _write_csv(frame, base / DEFAULT_FILENAMES[key])
     return out

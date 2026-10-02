@@ -75,8 +75,9 @@ def test_一連の業務フロー(solved_week, week_inputs):
     assert len(payroll_dataframe(result, slots, staff)) == 28
     assert not requirements_dataframe(table).empty
     assert to_ics(result, slots, staff).startswith("BEGIN:VCALENDAR")
-    assert "# シフトサマリー" in summary_markdown(result, slots, staff,
-                                                   facility_name="あさひ保育園")
+    assert "# シフトサマリー" in summary_markdown(
+        result, slots, staff, facility_name="あさひ保育園"
+    )
 
 
 def test_勤務表が全日全職員を埋める(solved_week, week_inputs):
@@ -103,8 +104,13 @@ def test_成果物ZIPが開ける(solved_week, week_inputs):
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         assert archive.testzip() is None
         assert set(archive.namelist()) == {
-            "shift.csv", "payroll.csv", "shift_matrix.csv",
-            "requirements.csv", "shift.ics", "summary.md", "shift.xlsx",
+            "shift.csv",
+            "payroll.csv",
+            "shift_matrix.csv",
+            "requirements.csv",
+            "shift.ics",
+            "summary.md",
+            "shift.xlsx",
         }
         workbook = load_workbook(io.BytesIO(archive.read("shift.xlsx")))
         assert {"シフト", "職員別勤務", "給与計算", "配置基準"} <= set(workbook.sheetnames)

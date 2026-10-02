@@ -37,6 +37,7 @@ from shiftai.domain import (
     Violation,
     ViolationSeverity,
     cost_coefficient,
+    qualified_ids,
     weekly_periods,
 )
 from shiftai.solver import staff_work_hours
@@ -168,14 +169,19 @@ def _state_lookup(result: SolveResult) -> dict[tuple[str, date, str], CellState]
     return lookup
 
 
-def _qualified_ids(staff: Sequence[StaffMember]) -> set[str]:
-    return {s.staff_id for s in staff if s.is_qualified}
+def _qualified_ids(
+    staff: Sequence[StaffMember], standard: StaffingStandard | None = None
+) -> set[str]:
+    """この基準で「必要保育士数」を満たす職員 ID 集合。
+
+    看護師のみなしが許される基準（企業主導型保育事業など）では看護師を
+    ``nurse_as_qualified_cap`` まで数える。
+    """
+    return qualified_ids(staff, standard)
 
 
 def _binding_rows(requirements: RequirementTable, day: date, slot: Slot) -> list:
-    return [
-        r for r in requirements.for_day(day) if r.slot == slot and r.is_binding
-    ]
+    return [r for r in requirements.for_day(day) if r.slot == slot and r.is_binding]
 
 
 def _slot_kind_of(rows: Sequence, slot: Slot, standard: StaffingStandard | None) -> SlotKind:
@@ -204,7 +210,7 @@ def analyze_gap(
 ) -> GapReport:
     """必要人員と実際の配置を時間帯ごとに比較して GapReport を作る。"""
     lookup = _state_lookup(result)
-    qualified = _qualified_ids(staff)
+    qualified = _qualified_ids(staff, standard)
     gaps: list[SlotGap] = []
     shortfall_slots = 0
     shortfall_hours = 0.0
@@ -324,8 +330,7 @@ def coverage_matrix(
             actual = sum(
                 1
                 for s in staff
-                if lookup.get((s.staff_id, day, slot.label), CellState.OFF)
-                is CellState.WORK
+                if lookup.get((s.staff_id, day, slot.label), CellState.OFF) is CellState.WORK
             )
             row[slot.label] = f"{actual}/{need}"
         records.append(row)
@@ -384,8 +389,6 @@ def _is_contiguous(indices: Sequence[int]) -> bool:
         return True
     ordered = sorted(indices)
     return ordered[-1] - ordered[0] + 1 == len(ordered)
-
-
 
 
 def check_violations(
@@ -473,8 +476,10 @@ def check_violations(
                 continue
             worked_days.setdefault(sid, set()).add(day)
             daily_hours[day] = work_minutes / 60.0
-            cap = c.daily_hours if not c.overtime_allowed else min(
-                c.daily_hours * 1.25, _DAILY_LEGAL_CAP_HOURS
+            cap = (
+                c.daily_hours
+                if not c.overtime_allowed
+                else min(c.daily_hours * 1.25, _DAILY_LEGAL_CAP_HOURS)
             )
             if work_minutes / 60.0 > cap + 1e-6:
                 out.append(
@@ -538,9 +543,8 @@ def check_violations(
                             detail={"facility": fac.facility_name},
                         )
                     )
-                if (
-                    slot.start_minutes < _minutes(c.earliest_start)
-                    or slot.end_minutes > _minutes(c.latest_end)
+                if slot.start_minutes < _minutes(c.earliest_start) or slot.end_minutes > _minutes(
+                    c.latest_end
                 ):
                     out.append(
                         Violation(
@@ -690,7 +694,10 @@ def check_violations(
             else:
                 streak = 0
                 streak_start = None
-        if worst_streak > c.max_consecutive_days:
+        # ``max_consecutive_days == 0`` は「上限なし」なので判定しない。
+        # 修正前: 1 日勤務するたびに「契約上限（0 日）を超えています」と
+        # 誤った違反が出ていた（``max_weekly_days`` には同種のガードがある）。
+        if c.max_consecutive_days > 0 and worst_streak > c.max_consecutive_days:
             out.append(
                 Violation(
                     severity=ViolationSeverity.WARNING,
@@ -734,7 +741,9 @@ def check_violations(
             cur = [i for i in range(n) if lookup.get((sid, b, slots[i].label)) is CellState.WORK]
             if not prev or not cur:
                 continue
-            rest = (b - a).days * 24 * 60 - slots[prev[-1]].end_minutes + slots[cur[0]].start_minutes
+            rest = (
+                (b - a).days * 24 * 60 - slots[prev[-1]].end_minutes + slots[cur[0]].start_minutes
+            )
             if rest < c.min_rest_hours * 60 - 1e-6:
                 out.append(
                     Violation(
@@ -795,8 +804,8 @@ def check_violations(
                         ),
                         staff_id=sid,
                         detail={"days": len(late_days), "cap": p.max_late_shifts},
+                    )
                 )
-            )
 
     # 「同時刻の休憩者数」を時間帯ごとに数える（全職員_pool に対する1回の検査）。
     # 以前は職員ループの中で 1 日全体の休憩セル総数と在勤セル総数を比べていたため、
@@ -943,9 +952,7 @@ def compute_cost(
     扱っていたため CSV とはずれており、係数も 1.6 / 1.25 と異なっていた。
     """
     fac = settings or FacilitySettings()
-    weight_by_staff = {
-        s.staff_id: cost_coefficient(s.contract.employment_type) for s in staff
-    }
+    weight_by_staff = {s.staff_id: cost_coefficient(s.contract.employment_type) for s in staff}
     total = 0.0
     for a in result.assignments:
         if a.state is not CellState.WORK:

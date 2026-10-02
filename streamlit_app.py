@@ -26,6 +26,7 @@ from shiftai.ui import (
     tab_shift,
     tab_solve,
     theme,
+    wizard,
 )
 
 SUBTITLE = "園児の登降園予定 × 保育所の職員配置基準 → 適法なシフトを自動生成"
@@ -43,32 +44,44 @@ TAB_LABELS: tuple[str, ...] = (
     "5️⃣ 出力",
 )
 
-MODE_KEY = "ui_simple_mode"
-SIMPLE_GUIDE = (
-    "**はじめての方へ（3 ステップ）:**"
-    " ①「データ」タブで **サンプルデータを読み込む** →"
-    " ②「シフト作成」タブで **🚀 シフトを自動作成する** を押す →"
-    " ③「出力」タブでファイルをダウンロード。"
-    " まずはサンプルデータで一通り試すのがおすすめです。"
+MODE_KEY = theme.MODE_KEY
+SIMPLE_GUIDE_BODY = (
+    "<p><b>① データ</b> タブで「サンプルデータを読み込む」</p>"
+    "<p><b>② シフト作成</b> タブで「🚀 シフトを自動作成する」を押す</p>"
+    "<p><b>③ 出力</b> タブでファイルをダウンロード</p>"
+    "<p>まずはサンプルデータで一通り試すのがおすすめです。</p>"
+)
+WIZARD_GUIDE_BODY = (
+    "<p><b>① データ</b> タブのウィザードが 5 ステップで案内します</p>"
+    "<p>園の条件 → 園児 → 職員 → 希望休 → 確認 の順に、必要なところだけ"
+    "入力します。手元のデータがないときはサンプルデータで試せます。</p>"
+    "<p><b>② シフト作成</b> タブで「🚀 シフトを自動作成する」を押す</p>"
+    "<p><b>③ 出力</b> タブでファイルをダウンロード</p>"
 )
 
 
 def render_header() -> None:
-    """ページタイトルと説明。"""
+    """ページタイトルと、常時 1 行だけの説明チップ。"""
     st.title(f"{APP_ICON} {APP_TITLE}")
     st.caption(SUBTITLE)
     if simple_mode():
-        st.markdown(SIMPLE_GUIDE)
+        body = WIZARD_GUIDE_BODY if wizard_active() else SIMPLE_GUIDE_BODY
+        theme.tip("❓ はじめての方へ（3 ステップ）", body)
 
 
 def simple_mode() -> bool:
-    """シンプル 3 タブモードかどうか（既定: True）。"""
-    return bool(st.session_state.get(MODE_KEY, True))
+    """シンプル 3 タブモードかどうか（既定: True）。
+
+    判定とステップ名の一覧は ``theme`` 側が真実（``streamlit_app`` から
+    しか呼ばれないため循環参照は起きない）。
+    """
+    return theme.simple_mode()
 
 
 def render_mode_switch() -> None:
-    """シンプル / 上級者モードの切り替え（サイドバー内）。"""
+    """入力方法・シンプル／上級者モードの切り替え（サイドバー内）。"""
     with st.sidebar:
+        wizard.render_sidebar_control()
         st.toggle(
             "シンプルモード（初心者向け 3 タブ）",
             value=simple_mode(),
@@ -77,12 +90,32 @@ def render_mode_switch() -> None:
         )
 
 
+def wizard_active() -> bool:
+    """入力方法としてウィザードが選ばれているか。
+
+    最初の問い合わせ（``render_intro``）に答える前もウィザード扱いにする。
+    どちらのモードでもタブ構成は変わらないため、副次的。
+    """
+    return wizard.use_wizard()
+
+
+def render_data_tab() -> None:
+    """タブ1（データ投入）を入力方法に応じて描画する。"""
+    if not wizard.answered():
+        wizard.render_intro()
+        return
+    if wizard_active():
+        wizard.render()
+        return
+    tab_data.render()
+
+
 def render_tabs() -> None:
     """モードに応じてタブを描画する。"""
     if simple_mode():
         tabs = st.tabs(list(SIMPLE_TABS), key="main_tabs")
         with tabs[0]:
-            tab_data.render()
+            render_data_tab()
         with tabs[1]:
             tab_solve.render(auto_requirements=True)
         with tabs[2]:
@@ -90,7 +123,7 @@ def render_tabs() -> None:
         return
     tabs = st.tabs(list(TAB_LABELS), key="main_tabs")
     with tabs[0]:
-        tab_data.render()
+        render_data_tab()
     with tabs[1]:
         tab_requirements.render()
     with tabs[2]:
@@ -108,7 +141,14 @@ def main() -> None:
     theme.inject_css()
     render_header()
     render_mode_switch()
-    sidebar.render(simple=simple_mode())
+    # ウィザードが「園の条件」を描くときは、同じキーのウィジェットを
+    # 二重に作らないようサイドバー側を隠す。
+    wizard_owns_conditions = wizard_active() and wizard.answered()
+    sidebar.render(
+        simple=simple_mode(),
+        period=not wizard_owns_conditions,
+        times=not wizard_owns_conditions,
+    )
     render_tabs()
     theme.render_footer()
 

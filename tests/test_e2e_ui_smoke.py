@@ -29,9 +29,7 @@ import pytest
 
 from tests._utf8_subprocess import run_module_utf8
 
-app_test = pytest.importorskip(
-    "streamlit.testing.v1", reason="AppTest が無い環境ではスキップ"
-)
+app_test = pytest.importorskip("streamlit.testing.v1", reason="AppTest が無い環境ではスキップ")
 
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "streamlit_app.py"
@@ -99,9 +97,18 @@ def test_サンプル投入からシフト作成までUI上で通る():
     既定の「シンプルモード」は 3 タブ構成で、タブ 2「シフト作成」の中で
     必要人員を自動再計算するため、独立した「再計算」ボタンは出ない
     （不要に手動手順を増やさないため）。上級者モードで現れる「再計算」は
-    あれば押すが、必須ではない。详见 ``test_ui_tabs.py``。
+    あれば押すが、必須ではない。詳細は ``test_ui_tabs.py``。
+
+    初期画面は入力方法を尋ねるため、先に「まとめて入力」を選んでから
+    3 表の画面を操作する（ウィザード経由は ``test_ui_wizard`` が検証する）。
     """
+    from shiftai.ui import wizard
+
     at = app_test.AppTest.from_file(str(APP), default_timeout=300).run()
+    assert _exceptions(at) == []
+
+    at.radio(key=wizard.KEY_MODE).set_value(wizard.MODE_BULK).run()
+    at.button(key="wizard_start").click().run()
     assert _exceptions(at) == []
 
     for key in ("sample_children", "sample_staff", "sample_preferences"):
@@ -253,10 +260,14 @@ def test_壊れた入力は終了コード1でTracebackを出さない(tmp_path:
 
     done = _cli(
         "solve",
-        "--children", str(broken),
-        "--staff", str(sample / "staff.csv"),
-        "--out", str(tmp_path / "out"),
-        "--time-limit", "10",
+        "--children",
+        str(broken),
+        "--staff",
+        str(sample / "staff.csv"),
+        "--out",
+        str(tmp_path / "out"),
+        "--time-limit",
+        "10",
     )
     assert done.returncode == 1
     assert "Traceback" not in done.stderr, "内部 Traceback がそのまま出ている"
@@ -296,9 +307,7 @@ def test_未知の列が混ざったCSVは読み込める():
     assert plans, "無関係な列があっても読み込みは通ること"
     warnings = [i for i in issues if i.level == "warning"]
     assert warnings
-    assert any("renov" in i.message for i in warnings), [
-        i.message for i in warnings
-    ]
+    assert any("renov" in i.message for i in warnings), [i.message for i in warnings]
 
 
 def test_shift_csvは入力として再利用できない(tmp_path: Path):
@@ -319,10 +328,14 @@ def test_shift_csvは入力として再利用できない(tmp_path: Path):
 
     done = _cli(
         "solve",
-        "--children", str(shift_csv),
-        "--staff", str(out / "sample" / "staff.csv"),
-        "--out", str(tmp_path / "reuse_out"),
-        "--time-limit", "10",
+        "--children",
+        str(shift_csv),
+        "--staff",
+        str(out / "sample" / "staff.csv"),
+        "--out",
+        str(tmp_path / "reuse_out"),
+        "--time-limit",
+        "10",
     )
     assert done.returncode == 1
     assert "Traceback" not in done.stderr, "内部 Traceback がそのまま出ている"

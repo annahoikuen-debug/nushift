@@ -81,9 +81,7 @@ def _children(count: int = 3, day: date = DAY) -> list[ChildPlan]:
 
 
 def _row(states: list[CellState], slots) -> dict[str, CellState]:
-    return {
-        slot.label: state for slot, state in zip(slots, states, strict=False)
-    }
+    return {slot.label: state for slot, state in zip(slots, states, strict=False)}
 
 
 def _codes(report: live_validation.LiveReport) -> set[str]:
@@ -100,9 +98,7 @@ def test_基準を満たすシフトは指摘を返さない():
     staff = [_staff(f"S{i:03d}") for i in range(1, 4)]
     table, standard = _table(_children(3))
     grid = {m.staff_id: [CellState.WORK] * len(slots) for m in staff}
-    report = live_validation.validate_day(
-        DAY, table, staff, slots, grid, standard=standard
-    )
+    report = live_validation.validate_day(DAY, table, staff, slots, grid, standard=standard)
     assert report.has_errors is False
     assert "SHORTFALL_STAFF" not in _codes(report)
 
@@ -118,14 +114,10 @@ def test_人数が減ると配置不足でエラーになる():
     staff = [_staff(f"S{i:03d}") for i in range(1, 5)]
     table, standard = _table(_children(12))
     grid = {m.staff_id: [CellState.WORK] * len(slots) for m in staff}
-    before = live_validation.validate_day(
-        DAY, table, staff, slots, grid, standard=standard
-    )
+    before = live_validation.validate_day(DAY, table, staff, slots, grid, standard=standard)
     assert "SHORTFALL_STAFF" not in _codes(before)
     grid["S004"] = [CellState.OFF] * len(slots)
-    after = live_validation.validate_day(
-        DAY, table, staff, slots, grid, standard=standard
-    )
+    after = live_validation.validate_day(DAY, table, staff, slots, grid, standard=standard)
     assert after.has_errors
     assert "SHORTFALL_STAFF" in _codes(after)
     assert after.error_columns()
@@ -138,9 +130,7 @@ def test_保育士が減ると保育士不足でエラーになる():
     table, standard = _table([child])
     grid = {"S001": [CellState.WORK] * len(slots)}
     grid["S002"] = [CellState.OFF] * len(slots)
-    report = live_validation.validate_day(
-        DAY, table, staff, slots, grid, standard=standard
-    )
+    report = live_validation.validate_day(DAY, table, staff, slots, grid, standard=standard)
     assert "SHORTFALL_STAFF" in _codes(report)
 
 
@@ -154,9 +144,7 @@ def test_契約時間帯の外へ勤務するとエラーになる():
     staff = [_staff("S001", earliest=time(10, 0), latest=time(14, 0))]
     table, standard = _table(_children(1))
     grid = {"S001": [CellState.WORK] * len(slots)}
-    report = live_validation.validate_day(
-        DAY, table, staff, slots, grid, standard=standard
-    )
+    report = live_validation.validate_day(DAY, table, staff, slots, grid, standard=standard)
     codes = _codes(report)
     assert "BEFORE_EARLIEST_START" in codes
 
@@ -196,15 +184,11 @@ def test_休日不可の職員に土曜勤務させるとエラーになる():
         staff_id="S001",
         name="太郎",
         roles=(Role.HOIKUSHI,),
-        contract=Contract(
-            weekly_hours=40.0, daily_hours=4.0, can_work_holiday=False
-        ),
+        contract=Contract(weekly_hours=40.0, daily_hours=4.0, can_work_holiday=False),
     )
     table, standard = _table(_children(1), SATURDAY)
     grid = {"S001": [CellState.WORK] * len(slots)}
-    report = live_validation.validate_day(
-        SATURDAY, table, [member], slots, grid, standard=standard
-    )
+    report = live_validation.validate_day(SATURDAY, table, [member], slots, grid, standard=standard)
     assert "HOLIDAY_NOT_ALLOWED" in _codes(report)
 
 
@@ -230,9 +214,7 @@ def test_最低休憩時間を満たさないと警告になる():
         granularity_min=30,
     )
     grid = {"S001": [CellState.WORK] * len(slots)}
-    report = live_validation.validate_day(
-        DAY, table, staff, slots, grid, standard=standard
-    )
+    report = live_validation.validate_day(DAY, table, staff, slots, grid, standard=standard)
     assert "BREAK_INSUFFICIENT" in _codes(report)
     assert not any(i.is_error and i.code == "BREAK_INSUFFICIENT" for i in report.issues)
 
@@ -244,9 +226,7 @@ def test_勤務が分断されると警告になる():
     states = [CellState.WORK] * len(slots)
     states[2] = CellState.OFF
     grid = {"S001": states}
-    report = live_validation.validate_day(
-        DAY, table, staff, slots, grid, standard=standard
-    )
+    report = live_validation.validate_day(DAY, table, staff, slots, grid, standard=standard)
     assert "DUTY_DISCONTIGUOUS" in _codes(report)
 
 
@@ -255,9 +235,7 @@ def test_1日の契約時間を超えると警告になる():
     staff = [_staff("S001")]
     table, standard = _table(_children(1))
     grid = {"S001": [CellState.WORK] * len(slots)}
-    report = live_validation.validate_day(
-        DAY, table, staff, slots, grid, standard=standard
-    )
+    report = live_validation.validate_day(DAY, table, staff, slots, grid, standard=standard)
     codes = _codes(report)
     assert "DAILY_CONTRACT_EXCEEDED" in codes or "DAILY_CAP_EXCEEDED" in codes
 
@@ -294,9 +272,7 @@ def test_DataFrameのindexが職員IDと氏名でも読める():
 def test_解釈できない値はオフとして扱う():
     slots = _slots()
     staff = [_staff("S001")]
-    frame = pd.DataFrame(
-        [["不明"] * len(slots)], index=["S001"], columns=[s.label for s in slots]
-    )
+    frame = pd.DataFrame([["不明"] * len(slots)], index=["S001"], columns=[s.label for s in slots])
     states = live_validation.states_from_grid(frame, staff, slots)
     assert all(s is CellState.OFF for s in states["S001"])
 
@@ -327,9 +303,7 @@ def test_サマリーと表が埋まる():
     staff = [_staff("S001")]
     table, standard = _table(_children(3))
     grid = {"S001": [CellState.OFF] * len(slots)}
-    report = live_validation.validate_day(
-        DAY, table, staff, slots, grid, standard=standard
-    )
+    report = live_validation.validate_day(DAY, table, staff, slots, grid, standard=standard)
     assert "エラー" in report.summary()
     frame = live_validation.to_dataframe(report)
     assert list(frame.columns) == ["深刻度", "種別", "職員ID", "時間帯", "内容"]

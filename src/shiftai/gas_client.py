@@ -124,9 +124,7 @@ def _request_json(
         method = "POST"
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request_headers["Content-Type"] = "application/json; charset=utf-8"
-    request = urllib.request.Request(
-        url, data=data, headers=request_headers, method=method
-    )
+    request = urllib.request.Request(url, data=data, headers=request_headers, method=method)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             body = response.read()
@@ -153,7 +151,9 @@ def _request_json(
     if not isinstance(parsed, dict):
         raise GasError(f"GAS の応答形式が不正です: {type(parsed).__name__}")
     if parsed.get("ok") is False:
-        raise GasError(f"GAS がエラーを返しました: {parsed.get('error') or parsed.get('message') or parsed}")
+        raise GasError(
+            f"GAS がエラーを返しました: {parsed.get('error') or parsed.get('message') or parsed}"
+        )
     return parsed
 
 

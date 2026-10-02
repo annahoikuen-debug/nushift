@@ -116,9 +116,7 @@ def test_一番近いパターンを返す() -> None:
 
 def test_ずれの説明文を作る() -> None:
     early = DEFAULT_PATTERNS[0]
-    text = describe_pattern(
-        early.start_minutes, early.end_minutes, DEFAULT_PATTERNS
-    )
+    text = describe_pattern(early.start_minutes, early.end_minutes, DEFAULT_PATTERNS)
     assert "早番" in text
     off = describe_pattern(530, 1040, DEFAULT_PATTERNS)
     assert "分" in off
@@ -173,12 +171,21 @@ def test_緩解モードでは配置基準が罰変数になる(
     requirements, small_children, small_staff, small_preferences
 ) -> None:
     strict = solver.solve_shift(
-        small_children, small_staff, requirements, small_preferences,
-        None, time_limit_sec=20,
+        small_children,
+        small_staff,
+        requirements,
+        small_preferences,
+        None,
+        time_limit_sec=20,
     )
     relaxed = solver.solve_shift(
-        small_children, small_staff, requirements, small_preferences,
-        None, time_limit_sec=20, relaxation=int(RelaxLevel.SOFT_COVERAGE),
+        small_children,
+        small_staff,
+        requirements,
+        small_preferences,
+        None,
+        time_limit_sec=20,
+        relaxation=int(RelaxLevel.SOFT_COVERAGE),
     )
     assert strict.status is not SolveStatus.ERROR
     assert relaxed.status is not SolveStatus.ERROR
@@ -198,12 +205,21 @@ def test_パターンを渡すと整列率が上がる(
     requirements, small_children, small_staff, small_preferences
 ) -> None:
     plain = solver.solve_shift(
-        small_children, small_staff, requirements, small_preferences,
-        None, time_limit_sec=20,
+        small_children,
+        small_staff,
+        requirements,
+        small_preferences,
+        None,
+        time_limit_sec=20,
     )
     aligned = solver.solve_shift(
-        small_children, small_staff, requirements, small_preferences,
-        None, time_limit_sec=20, patterns=DEFAULT_PATTERNS,
+        small_children,
+        small_staff,
+        requirements,
+        small_preferences,
+        None,
+        time_limit_sec=20,
+        patterns=DEFAULT_PATTERNS,
     )
     assert aligned.stats["patterns"] == [p.label for p in DEFAULT_PATTERNS]
     plain_counts = solver.pattern_breakdown(plain, DEFAULT_PATTERNS)
@@ -222,8 +238,13 @@ def test_スナップは配置基準を壊さない(
         ShiftPattern("c", "枠C", time(10, 0), time(14, 0)),
     )
     result = solver.solve_shift(
-        small_children, small_staff, requirements, small_preferences,
-        None, time_limit_sec=20, patterns=pats,
+        small_children,
+        small_staff,
+        requirements,
+        small_preferences,
+        None,
+        time_limit_sec=20,
+        patterns=pats,
     )
     snapped, changes = solver.snap_to_patterns(
         result,
@@ -240,9 +261,7 @@ def test_スナップは配置基準を壊さない(
     for day in DAYS:
         for slot in requirements.slots:
             need = sum(
-                r.needed_staff
-                for r in requirements.for_day(day)
-                if r.slot == slot and r.is_binding
+                r.needed_staff for r in requirements.for_day(day) if r.slot == slot and r.is_binding
             )
             if need <= 0:
                 continue
@@ -259,8 +278,12 @@ def test_空パターンのときは何もしない(
     requirements, small_children, small_staff, small_preferences
 ) -> None:
     result = solver.solve_shift(
-        small_children, small_staff, requirements, small_preferences,
-        None, time_limit_sec=20,
+        small_children,
+        small_staff,
+        requirements,
+        small_preferences,
+        None,
+        time_limit_sec=20,
     )
     same, changes = solver.snap_to_patterns(result, ())
     assert same is result
@@ -268,12 +291,15 @@ def test_空パターンのときは何もしない(
 
 
 @pytest.mark.slow
-def test_勤務枠の説明を出せる(
-    requirements, small_children, small_staff, small_preferences
-) -> None:
+def test_勤務枠の説明を出せる(requirements, small_children, small_staff, small_preferences) -> None:
     result = solver.solve_shift(
-        small_children, small_staff, requirements, small_preferences,
-        None, time_limit_sec=20, patterns=DEFAULT_PATTERNS,
+        small_children,
+        small_staff,
+        requirements,
+        small_preferences,
+        None,
+        time_limit_sec=20,
+        patterns=DEFAULT_PATTERNS,
     )
     day = result.shift_days[0].day
     sid = result.shift_days[0].assignments.keys().__iter__().__next__()
@@ -289,17 +315,13 @@ def test_勤務枠の説明を出せる(
 def test_供給が足りていれば構造診断では何も言わない(
     requirements, small_staff, small_preferences
 ) -> None:
-    report = diagnostics.diagnose(
-        requirements, small_staff, small_preferences, FacilitySettings()
-    )
+    report = diagnostics.diagnose(requirements, small_staff, small_preferences, FacilitySettings())
     assert report.rows == ()
     assert report.structural_conflicts == ()
     assert report.headline()
 
 
-def test_供給が足りないとき不足行を返す(
-    requirements, small_staff, small_preferences
-) -> None:
+def test_供給が足りないとき不足行を返す(requirements, small_staff, small_preferences) -> None:
     """職員 1 人だけの供給で広い必要人員は埋まらない。"""
     one = small_staff[:1]
     report = diagnostics.diagnose(requirements, one, {})
@@ -311,9 +333,7 @@ def test_供給が足りないとき不足行を返す(
     assert "保育標準時間" in report.headline() or "需要" in report.headline()
 
 
-def test_不足行はDataFrameになる(
-    requirements, small_staff
-) -> None:
+def test_不足行はDataFrameになる(requirements, small_staff) -> None:
     report = diagnostics.diagnose(requirements, small_staff[:1], {})
     frame = diagnostics.shortfall_dataframe(report)
     assert not frame.empty
@@ -321,9 +341,7 @@ def test_不足行はDataFrameになる(
     assert (frame["必要人員"] >= frame["供給人員"]).all()
 
 
-def test_比率が0除算にならない(
-    requirements, small_staff, small_preferences
-) -> None:
+def test_比率が0除算にならない(requirements, small_staff, small_preferences) -> None:
     report = diagnostics.diagnose(requirements, small_staff, small_preferences)
     assert report.ratio is None or report.ratio >= 0.0
 
@@ -341,18 +359,14 @@ def test_削除フィルタで矛盾の当事者を残す() -> None:
 
 def test_外しても解けないものは当事者から外れる() -> None:
     """外しても解けないグループは「矛盾の当事者ではない」と判断される。"""
-    core = diagnostics.find_conflict_core(
-        lambda key: False, diagnostics.CONSTRAINT_GROUPS
-    )
+    core = diagnostics.find_conflict_core(lambda key: False, diagnostics.CONSTRAINT_GROUPS)
     # 最後の 1 つは「外すと検証対象がなくなる」ため残る
     assert len(core) == 1
     assert core[0] is diagnostics.CONSTRAINT_GROUPS[-1]
 
 
 def test_全部外せるなら全部が残る() -> None:
-    core = diagnostics.find_conflict_core(
-        lambda key: True, diagnostics.CONSTRAINT_GROUPS[:3]
-    )
+    core = diagnostics.find_conflict_core(lambda key: True, diagnostics.CONSTRAINT_GROUPS[:3])
     assert [g.key for g in core] == [g.key for g in diagnostics.CONSTRAINT_GROUPS[:3]]
 
 
@@ -379,8 +393,12 @@ def test_緩和ラダーは段階を順に試す(
     requirements, small_children, small_staff, small_preferences
 ) -> None:
     ladder = diagnostics.relaxation_ladder(
-        small_children, small_staff, requirements, small_preferences,
-        time_limit_sec=10, max_level=1,
+        small_children,
+        small_staff,
+        requirements,
+        small_preferences,
+        time_limit_sec=10,
+        max_level=1,
     )
     assert len(ladder.outcomes) >= 1
     assert ladder.outcomes[0].level == 0
@@ -399,8 +417,13 @@ def test_drop_groupsで制約を外すと解ありと判定される(
     これは実行可能なのである。
     """
     dropped = solver.solve_shift(
-        small_children, small_staff, requirements, small_preferences,
-        None, time_limit_sec=20, drop_groups=frozenset({"contract"}),
+        small_children,
+        small_staff,
+        requirements,
+        small_preferences,
+        None,
+        time_limit_sec=20,
+        drop_groups=frozenset({"contract"}),
     )
     assert dropped.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE)
     assert dropped.stats["solver_status"]
@@ -409,9 +432,7 @@ def test_drop_groupsで制約を外すと解ありと判定される(
 
 
 @pytest.mark.slow
-def test_供給行の公開関数が使える(
-    requirements, small_staff, small_preferences
-) -> None:
+def test_供給行の公開関数が使える(requirements, small_staff, small_preferences) -> None:
     rows = solver.shortfall_rows(small_staff, requirements, small_preferences)
     assert isinstance(rows, tuple)
     for row in rows:

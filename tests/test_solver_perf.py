@@ -129,8 +129,15 @@ def _tiny_requirements(children, day=DAY, *, slots_count=4, need=1, qualified=1)
     """時間帯 ``slots_count`` 個・1 日だけの極小必要人員表を作る。"""
     slots = _requirements(children).slots[:slots_count]
     rows = [
-        Requirement(day=day, slot=slot, age_class=AgeClass.INFANT, child_count=need,
-                    needed_staff=need, needed_qualified=qualified, basis="テスト")
+        Requirement(
+            day=day,
+            slot=slot,
+            age_class=AgeClass.INFANT,
+            child_count=need,
+            needed_staff=need,
+            needed_qualified=qualified,
+            basis="テスト",
+        )
         for slot in slots
     ]
     return RequirementTable(
@@ -146,8 +153,13 @@ def _solve(children, staff, requirements, **kwargs):
 
 def _build(staff, requirements, *, prefs=None, fixed=None, settings=None, standard=STANDARD):
     return solver_mod._build_problem(
-        staff, requirements, prefs or {}, fixed or {}, settings or FacilitySettings(),
-        ObjectiveWeights(), standard,
+        staff,
+        requirements,
+        prefs or {},
+        fixed or {},
+        settings or FacilitySettings(),
+        ObjectiveWeights(),
+        standard,
     )
 
 
@@ -201,7 +213,11 @@ def test_重みの全フィールドが目的関数に反映される(small_chil
         for c in small_children
     ]
     table = build_requirements(
-        children, days, STANDARD, day_open=time(7, 15), day_close=time(19, 30),
+        children,
+        days,
+        STANDARD,
+        day_open=time(7, 15),
+        day_close=time(19, 30),
         granularity_min=30,
     )
     slot = table.slots[-1]
@@ -241,7 +257,8 @@ def test_重みの全フィールドが目的関数に反映される(small_chil
         changed = {v for v in terms if abs(terms[v] - base.get(v, 0.0)) > 1e-9}
         assert changed, f"{name} を変更しても目的関数が変わらない"
         scaled = [
-            v for v in changed
+            v
+            for v in changed
             if abs(base.get(v, 0.0)) > 1e-9 and abs(terms[v] / base[v] - 7) < 1e-6
         ]
         assert scaled, f"{name} の変更が 7 倍になっていない"
@@ -249,11 +266,13 @@ def test_重みの全フィールドが目的関数に反映される(small_chil
 
 def test_同じ入力なら2回とも同じ解になる(small_children, small_requirements):
     """CBC が決定的であること（タイムアウトしない極小問題で 2 回走らせて全項目を比較）。"""
-    pool = _pool([
-        ("S001", (Role.HOIKUSHI,), sei_contract()),
-        ("S002", (Role.HOIKUSHI,), sei_contract()),
-        ("S003", (Role.SHIENSHIIN,), part_contract()),
-    ])
+    pool = _pool(
+        [
+            ("S001", (Role.HOIKUSHI,), sei_contract()),
+            ("S002", (Role.HOIKUSHI,), sei_contract()),
+            ("S003", (Role.SHIENSHIIN,), part_contract()),
+        ]
+    )
     table = _tiny_requirements(small_children, slots_count=4, need=1, qualified=1)
     first = _solve(small_children, pool, table, time_limit_sec=15)
     second = _solve(small_children, pool, table, time_limit_sec=15)
@@ -301,10 +320,12 @@ def test_verify_solutionは意図的に壊した解を検出する(small_childre
     回帰対象: 検査が例外や未評価で黙って飛ばすと、制約違反した解が
     「制約を満たす解」として採用されてしまう。
     """
-    narrow = _pool([
-        ("S001", (Role.HOIKUSHI,), sei_contract(daily_hours=1.0, weekly_hours=10.0)),
-        ("S002", (Role.HOIKUSHI,), sei_contract(daily_hours=1.0, weekly_hours=10.0)),
-    ])
+    narrow = _pool(
+        [
+            ("S001", (Role.HOIKUSHI,), sei_contract(daily_hours=1.0, weekly_hours=10.0)),
+            ("S002", (Role.HOIKUSHI,), sei_contract(daily_hours=1.0, weekly_hours=10.0)),
+        ]
+    )
     # 1 日上限 60 分の職員 2 名 = 合計 4 セル分なので、4 時間帯なら充足可能。
     table = _tiny_requirements(small_children, slots_count=4, need=1, qualified=1)
     ctx = _build(narrow, table)
@@ -405,8 +426,7 @@ def _capped_greedy_case(*, slots_count=6, peak=3, daily_hours=1.0, tail=0):
     ``if not can_left and can_right: break`` が効かない（=無限ループする）状況になる。
     """
     slots = tuple(
-        Slot(to_time(9 * 60 + 30 * i), to_time(9 * 60 + 30 * (i + 1)))
-        for i in range(slots_count)
+        Slot(to_time(9 * 60 + 30 * i), to_time(9 * 60 + 30 * (i + 1))) for i in range(slots_count)
     )
 
     def _need(i: int) -> int:
@@ -417,21 +437,41 @@ def _capped_greedy_case(*, slots_count=6, peak=3, daily_hours=1.0, tail=0):
         return 0
 
     rows = [
-        Requirement(day=DAY, slot=slot, age_class=AgeClass.INFANT, child_count=3,
-                    needed_staff=_need(i), needed_qualified=_need(i), basis="テスト")
+        Requirement(
+            day=DAY,
+            slot=slot,
+            age_class=AgeClass.INFANT,
+            child_count=3,
+            needed_staff=_need(i),
+            needed_qualified=_need(i),
+            basis="テスト",
+        )
         for i, slot in enumerate(slots)
     ]
     table = RequirementTable(
-        day_open=slots[0].start, day_close=slots[-1].end,
-        granularity_min=30, slots=slots, rows={DAY: rows},
+        day_open=slots[0].start,
+        day_close=slots[-1].end,
+        granularity_min=30,
+        slots=slots,
+        rows={DAY: rows},
     )
     children = _kids(DAY, arrive=slots[0].start, depart=slots[-1].end)
-    staff = _pool([
-        ("G001", (Role.HOIKUSHI,),
-         Contract(weekly_hours=10.0, daily_hours=daily_hours,
-                  earliest_start=time(8, 0), latest_end=time(13, 0),
-                  max_weekly_days=5, max_consecutive_days=5)),
-    ])
+    staff = _pool(
+        [
+            (
+                "G001",
+                (Role.HOIKUSHI,),
+                Contract(
+                    weekly_hours=10.0,
+                    daily_hours=daily_hours,
+                    earliest_start=time(8, 0),
+                    latest_end=time(13, 0),
+                    max_weekly_days=5,
+                    max_consecutive_days=5,
+                ),
+            ),
+        ]
+    )
     return children, staff, table, slots
 
 
@@ -485,13 +525,25 @@ def test_短契約職員が通常契約職員に混ざっていても無限ル�
     children, staff, table, slots = _capped_greedy_case(
         slots_count=8, peak=3, daily_hours=1.0, tail=1
     )
-    pool = [*staff, *(
-        StaffMember(f"T{i:03d}", f"短契約{i}", (Role.HOIKUSHI,),
-                    Contract(weekly_hours=10.0, daily_hours=0.5,
-                             earliest_start=time(8, 0), latest_end=time(13, 0),
-                             max_weekly_days=5, max_consecutive_days=5))
-        for i in range(1, 4)
-    )]
+    pool = [
+        *staff,
+        *(
+            StaffMember(
+                f"T{i:03d}",
+                f"短契約{i}",
+                (Role.HOIKUSHI,),
+                Contract(
+                    weekly_hours=10.0,
+                    daily_hours=0.5,
+                    earliest_start=time(8, 0),
+                    latest_end=time(13, 0),
+                    max_weekly_days=5,
+                    max_consecutive_days=5,
+                ),
+            )
+            for i in range(1, 4)
+        ),
+    ]
     started = perf_counter()
     result = solve_shift_greedy(children, pool, table, standard=STANDARD)
     elapsed = perf_counter() - started
@@ -528,8 +580,9 @@ def _large_case():
     children = sample_data.make_children(days, seed=42)
     staff = sample_data.make_staff(seed=42)
     prefs = sample_data.make_preferences(staff, days, seed=42)
-    table = build_requirements(children, days, STANDARD, day_open=time(7, 15),
-                               day_close=time(19, 30), granularity_min=30)
+    table = build_requirements(
+        children, days, STANDARD, day_open=time(7, 15), day_close=time(19, 30), granularity_min=30
+    )
     assert len(table.slots) == 25
     assert len(staff) == 28
     return children, staff, prefs, table
@@ -582,11 +635,21 @@ def test_供給人時が0でも例外を投げない(small_children):
     """契約時間帯が需要時間帯と一切重ならない職員でも診断が返ること（修正前は例外）。"""
     children = _kids(DAY, count=6)
     table = _requirements(children)
-    staff = _pool([
-        ("H001", (Role.HOIKUSHI,),
-         Contract(weekly_hours=40.0, daily_hours=8.0, employment_type=EmploymentType.SEI,
-                  earliest_start=time(20, 0), latest_end=time(22, 0))),
-    ])
+    staff = _pool(
+        [
+            (
+                "H001",
+                (Role.HOIKUSHI,),
+                Contract(
+                    weekly_hours=40.0,
+                    daily_hours=8.0,
+                    employment_type=EmploymentType.SEI,
+                    earliest_start=time(20, 0),
+                    latest_end=time(22, 0),
+                ),
+            ),
+        ]
+    )
     result = _solve(children, staff, table, time_limit_sec=5)
     assert result.status is SolveStatus.PARTIAL
     assert any("配置できる人時が 0 です" in m for m in result.messages)
@@ -598,15 +661,18 @@ def test_供給人時が0でも例外を投げない(small_children):
 
 def test_供給人時は0人時になる(small_children, small_requirements):
     """契約時間帯が全時間帯を外れる職員は供給可能時間 0 として扱われること。"""
-    narrow = _pool([
-        ("N001", (Role.HOIKUSHI,),
-         sei_contract(earliest_start=time(3, 0), latest_end=time(4, 0))),
-    ])
+    narrow = _pool(
+        [
+            (
+                "N001",
+                (Role.HOIKUSHI,),
+                sei_contract(earliest_start=time(3, 0), latest_end=time(4, 0)),
+            ),
+        ]
+    )
     payload = _payload(small_children, narrow, small_requirements)
     assert _supply_hours(payload) == 0.0
-    assert _supply_hours(
-        _payload(small_children, [], small_requirements)
-    ) == 0.0
+    assert _supply_hours(_payload(small_children, [], small_requirements)) == 0.0
 
 
 # ===========================================================================
@@ -640,10 +706,12 @@ def test_職員1名では配置基準を満たせない(small_children):
 
 def test_時間帯1つだけの問題を解ける(small_children):
     """時間帯 1 個でも退化せず 1 パス目で解けること。"""
-    pool = _pool([
-        ("M001", (Role.HOIKUSHI,), sei_contract()),
-        ("M002", (Role.HOIKUSHI,), sei_contract()),
-    ])
+    pool = _pool(
+        [
+            ("M001", (Role.HOIKUSHI,), sei_contract()),
+            ("M002", (Role.HOIKUSHI,), sei_contract()),
+        ]
+    )
     table = _tiny_requirements(small_children, slots_count=1, need=1, qualified=1)
     result = _solve(small_children, pool, table, time_limit_sec=5)
     assert result.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE)
@@ -657,20 +725,27 @@ def test_全時間帯が休園なら誰も勤務しない(small_children, small_
     table = replace(_requirements(small_children), rows={DAY: []})
     result = _solve(small_children, small_staff, table, time_limit_sec=5)
     assert result.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE, SolveStatus.PARTIAL)
-    assert {result.day(DAY).get(s.staff_id, slot) for s in small_staff
-            for slot in table.slots} == {CellState.OFF}
+    assert {result.day(DAY).get(s.staff_id, slot) for s in small_staff for slot in table.slots} == {
+        CellState.OFF
+    }
 
 
 def test_希望休が全日の職員は勤務しない(small_children, small_requirements):
     """丸 1 日の希望休は MILP でも貪欲法でもハード制約になること。"""
-    pool = _pool([
-        ("P001", (Role.HOIKUSHI,), sei_contract()),
-        ("P002", (Role.HOIKUSHI,), sei_contract()),
-    ])
+    pool = _pool(
+        [
+            ("P001", (Role.HOIKUSHI,), sei_contract()),
+            ("P002", (Role.HOIKUSHI,), sei_contract()),
+        ]
+    )
     table = _tiny_requirements(small_children, slots_count=3, need=1, qualified=1)
-    prefs = {"P001": StaffPreferences(unavailable=[
-        Unavailability(day=DAY, start=time(0, 0), end=time(23, 59), reason="希望休")
-    ])}
+    prefs = {
+        "P001": StaffPreferences(
+            unavailable=[
+                Unavailability(day=DAY, start=time(0, 0), end=time(23, 59), reason="希望休")
+            ]
+        )
+    }
     greedy = solve_shift_greedy(small_children, pool, table, prefs, standard=STANDARD)
     assert {greedy.day(DAY).get("P001", s) for s in table.slots} == {CellState.OFF}
     milp = _solve(small_children, pool, table, preferences=prefs, time_limit_sec=5)
@@ -679,11 +754,16 @@ def test_希望休が全日の職員は勤務しない(small_children, small_req
 
 def test_存在しない職員IDの希望は無視される(small_children, small_staff, small_requirements):
     """``preferences`` のキーが職員 ID に紐づいていなくても落ちないこと。"""
-    orphan = StaffPreferences(unavailable=[
-        Unavailability(day=DAY, start=time(0, 0), end=time(23, 59), reason="希望休")
-    ])
-    result = _solve(small_children, small_staff, small_requirements,
-                    preferences={"存在しないID": orphan}, time_limit_sec=5)
+    orphan = StaffPreferences(
+        unavailable=[Unavailability(day=DAY, start=time(0, 0), end=time(23, 59), reason="希望休")]
+    )
+    result = _solve(
+        small_children,
+        small_staff,
+        small_requirements,
+        preferences={"存在しないID": orphan},
+        time_limit_sec=5,
+    )
     assert result.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE, SolveStatus.PARTIAL)
     assert result.assignments
     assert result.stats["num_staff"] == 6
@@ -691,10 +771,12 @@ def test_存在しない職員IDの希望は無視される(small_children, smal
 
 def test_重みが全ゼロでも解ける(small_children):
     """すべての重みを 0 にしても目的関数が定数になり解が返ること。"""
-    pool = _pool([
-        ("W001", (Role.HOIKUSHI,), sei_contract()),
-        ("W002", (Role.HOIKUSHI,), sei_contract()),
-    ])
+    pool = _pool(
+        [
+            ("W001", (Role.HOIKUSHI,), sei_contract()),
+            ("W002", (Role.HOIKUSHI,), sei_contract()),
+        ]
+    )
     table = _tiny_requirements(small_children, slots_count=2, need=1, qualified=1)
     zero = ObjectiveWeights(**{name: 0.0 for name in vars(ObjectiveWeights())})
     result = _solve(small_children, pool, table, weights=zero, time_limit_sec=5)
@@ -704,17 +786,26 @@ def test_重みが全ゼロでも解ける(small_children):
 
 def test_極端な重みでも握り潰さない(small_children):
     """0・負・10 億の重みが混ざっても例外を投げずに結果を返すこと。"""
-    pool = _pool([
-        ("X001", (Role.HOIKUSHI,), sei_contract()),
-        ("X002", (Role.HOIKUSHI,), sei_contract()),
-    ])
+    pool = _pool(
+        [
+            ("X001", (Role.HOIKUSHI,), sei_contract()),
+            ("X002", (Role.HOIKUSHI,), sei_contract()),
+        ]
+    )
     table = _tiny_requirements(small_children, slots_count=2, need=1, qualified=1)
     weights = ObjectiveWeights(
-        shortfall_penalty=0.0, overstaff_penalty=-5.0, preference_miss_penalty=0.0,
-        preference_match_bonus=1e9, early_shift_penalty=-1.0, late_shift_penalty=1e6,
-        break_conflict_penalty=0.0, consecutive_day_penalty=1e6,
-        hours_imbalance_penalty=-1.0, unused_staff_penalty=0.0,
-        monthly_hours_penalty=1e6, rest_violation_penalty=0.0,
+        shortfall_penalty=0.0,
+        overstaff_penalty=-5.0,
+        preference_miss_penalty=0.0,
+        preference_match_bonus=1e9,
+        early_shift_penalty=-1.0,
+        late_shift_penalty=1e6,
+        break_conflict_penalty=0.0,
+        consecutive_day_penalty=1e6,
+        hours_imbalance_penalty=-1.0,
+        unused_staff_penalty=0.0,
+        monthly_hours_penalty=1e6,
+        rest_violation_penalty=0.0,
         max_shift_length_penalty=-1e3,
     )
     result = _solve(small_children, pool, table, weights=weights, time_limit_sec=5)
@@ -732,28 +823,44 @@ def test_確定セルの矛盾指定は致命的でない(small_children):
     以前は ``daily_hours=1.0``（cap=75 分）を使っていたので 2 セルでは上限を
     超えず、「PARTIAL になる」こと自体が成立していなかった。
     """
-    pool = _pool([
-        ("F001", (Role.HOIKUSHI,), sei_contract(daily_hours=0.5, weekly_hours=10.0)),
-        ("F002", (Role.HOIKUSHI,), sei_contract(daily_hours=0.5, weekly_hours=10.0)),
-    ])
+    pool = _pool(
+        [
+            ("F001", (Role.HOIKUSHI,), sei_contract(daily_hours=0.5, weekly_hours=10.0)),
+            ("F002", (Role.HOIKUSHI,), sei_contract(daily_hours=0.5, weekly_hours=10.0)),
+        ]
+    )
     table = _tiny_requirements(small_children, slots_count=4, need=1, qualified=1)
-    unknown = _solve(small_children, pool, table,
-                     fixed_assignments={("F001", DAY, "存在しないラベル"): CellState.WORK},
-                     time_limit_sec=5)
+    unknown = _solve(
+        small_children,
+        pool,
+        table,
+        fixed_assignments={("F001", DAY, "存在しないラベル"): CellState.WORK},
+        time_limit_sec=5,
+    )
     assert unknown.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE, SolveStatus.PARTIAL)
     assert unknown.stats["solver_status_pass1"] != "PrecheckInfeasible"
 
     slots = table.slots
-    over_cap = _solve(small_children, pool, table, fixed_assignments={
-        ("F001", DAY, slots[0].label): CellState.WORK,
-        ("F001", DAY, slots[1].label): CellState.WORK,
-    }, time_limit_sec=5)
+    over_cap = _solve(
+        small_children,
+        pool,
+        table,
+        fixed_assignments={
+            ("F001", DAY, slots[0].label): CellState.WORK,
+            ("F001", DAY, slots[1].label): CellState.WORK,
+        },
+        time_limit_sec=5,
+    )
     assert over_cap.status is SolveStatus.PARTIAL
     # 確定セルは変数化されず定数 1 として ctx に記録される（カバレッジにも計上される）
-    ctx = _build(pool, table, fixed={
-        ("F001", DAY, slots[0].label): CellState.WORK,
-        ("F001", DAY, slots[1].label): CellState.WORK,
-    })
+    ctx = _build(
+        pool,
+        table,
+        fixed={
+            ("F001", DAY, slots[0].label): CellState.WORK,
+            ("F001", DAY, slots[1].label): CellState.WORK,
+        },
+    )
     assert ctx.work[("F001", DAY, 0)] == 1
     assert ctx.work[("F001", DAY, 1)] == 1
     names = {v.name for v in ctx.prob.variables()}
@@ -762,9 +869,15 @@ def test_確定セルの矛盾指定は致命的でない(small_children):
 
 def test_配置できる職員が居ない場合は前検査で落とす(small_children, small_requirements):
     """契約時間帯が全時間帯を外れる職員しかいない場合は CBC を起動せず落とすこと。"""
-    narrow = _pool([
-        ("Z001", (Role.HOIKUSHI,), sei_contract(earliest_start=time(3, 0), latest_end=time(4, 0))),
-    ])
+    narrow = _pool(
+        [
+            (
+                "Z001",
+                (Role.HOIKUSHI,),
+                sei_contract(earliest_start=time(3, 0), latest_end=time(4, 0)),
+            ),
+        ]
+    )
     result = _solve(small_children, narrow, small_requirements, time_limit_sec=5)
     assert result.stats["solver_status_pass1"] == "PrecheckInfeasible"
     assert result.status is SolveStatus.PARTIAL
@@ -772,16 +885,28 @@ def test_配置できる職員が居ない場合は前検査で落とす(small_c
 
 def test_解のメッセージと統計と違反が埋まる(small_children):
     """極小問題でも messages / stats / violations が空にならないこと。"""
-    pool = _pool([
-        ("U001", (Role.HOIKUSHI,), sei_contract()),
-        ("U002", (Role.SHIENSHIIN,), part_contract()),
-    ])
+    pool = _pool(
+        [
+            ("U001", (Role.HOIKUSHI,), sei_contract()),
+            ("U002", (Role.SHIENSHIIN,), part_contract()),
+        ]
+    )
     table = _tiny_requirements(small_children, slots_count=2, need=1, qualified=1)
     result = _solve(small_children, pool, table, time_limit_sec=5)
     assert result.messages and all(isinstance(m, str) and m for m in result.messages)
-    for key in ("solver", "solver_status", "solver_status_pass1", "pass", "relaxed",
-                "elapsed_sec", "num_variables", "num_constraints", "num_staff",
-                "num_days", "num_slots"):
+    for key in (
+        "solver",
+        "solver_status",
+        "solver_status_pass1",
+        "pass",
+        "relaxed",
+        "elapsed_sec",
+        "num_variables",
+        "num_constraints",
+        "num_staff",
+        "num_days",
+        "num_slots",
+    ):
         assert key in result.stats
     assert result.stats["num_variables"] > 0 and result.stats["num_constraints"] > 0
     assert result.violations is not None
@@ -843,28 +968,31 @@ def test_線形式の組み立て():
 
 def test_加班不可契約は法定10時間で頭打ち():
     assert _daily_cap_minutes(Contract(weekly_hours=40, daily_hours=8.0)) == 600
-    assert _daily_cap_minutes(
-        Contract(weekly_hours=40, daily_hours=8.0, overtime_allowed=False)
-    ) == 480
-    assert _daily_cap_minutes(
-        Contract(weekly_hours=40, daily_hours=15.0, overtime_allowed=False)
-    ) == 600
-    assert _daily_cap_minutes(
-        Contract(weekly_hours=40, daily_hours=5.0, overtime_allowed=False)
-    ) == 300
+    assert (
+        _daily_cap_minutes(Contract(weekly_hours=40, daily_hours=8.0, overtime_allowed=False))
+        == 480
+    )
+    assert (
+        _daily_cap_minutes(Contract(weekly_hours=40, daily_hours=15.0, overtime_allowed=False))
+        == 600
+    )
+    assert (
+        _daily_cap_minutes(Contract(weekly_hours=40, daily_hours=5.0, overtime_allowed=False))
+        == 300
+    )
 
 
 def test_休日不可職員は週末と休園日に出られない():
-    staff = StaffMember("K001", "休日不可", (Role.HOIKUSHI,),
-                        sei_contract(can_work_holiday=False))
+    staff = StaffMember("K001", "休日不可", (Role.HOIKUSHI,), sei_contract(can_work_holiday=False))
     assert _day_is_workable(staff, SATURDAY, FacilitySettings()) is False
     assert _day_is_workable(staff, MONDAY, FacilitySettings()) is True
-    assert _day_is_workable(
-        staff, MONDAY, FacilitySettings(holiday_dates=frozenset({MONDAY}))
-    ) is False
-    assert _day_is_workable(
-        staff, MONDAY, FacilitySettings(closed_days=frozenset({MONDAY}))
-    ) is False
+    assert (
+        _day_is_workable(staff, MONDAY, FacilitySettings(holiday_dates=frozenset({MONDAY})))
+        is False
+    )
+    assert (
+        _day_is_workable(staff, MONDAY, FacilitySettings(closed_days=frozenset({MONDAY}))) is False
+    )
 
 
 def test_定数条件の矛盾は記録される():
@@ -906,8 +1034,9 @@ def test_職員0名でもモデルは空で組める(small_requirements):
 
 def test_確定された休憩セルは変数化しない(small_staff, small_requirements):
     slot = small_requirements.slots[1]
-    ctx = _build(small_staff, small_requirements,
-                 fixed={("S001", DAY, slot.label): CellState.BREAK})
+    ctx = _build(
+        small_staff, small_requirements, fixed={("S001", DAY, slot.label): CellState.BREAK}
+    )
     names = {v.name for v in ctx.prob.variables()}
     # 確定セルは変数化されない（定数 1/0 として ctx にも記録される）
     assert not {"w_S001_0928_1", "b_S001_0928_1"} & names
@@ -918,12 +1047,14 @@ def test_確定された休憩セルは変数化しない(small_staff, small_req
 def test_行フィルタは非必須と未知スロットと需要0を無視する(small_staff, small_requirements):
     table = replace(small_requirements)
     base = small_requirements.for_day(DAY)[0]
-    table.rows = {DAY: [
-        *small_requirements.for_day(DAY),
-        replace(base, is_binding=False),
-        replace(base, slot=Slot(time(3, 0), time(3, 30)), needed_staff=3, needed_qualified=3),
-        replace(base, needed_staff=0, needed_qualified=0),
-    ]}
+    table.rows = {
+        DAY: [
+            *small_requirements.for_day(DAY),
+            replace(base, is_binding=False),
+            replace(base, slot=Slot(time(3, 0), time(3, 30)), needed_staff=3, needed_qualified=3),
+            replace(base, needed_staff=0, needed_qualified=0),
+        ]
+    }
     ctx = _build(small_staff, table)
     assert ctx.counts()[0] > 0
     assert ctx.conflicts == []
@@ -942,12 +1073,18 @@ def test_勤務間の休息時間が短いと罰変数を立てる(small_childre
         ChildPlan(c.child_id, c.name, days[1], c.age_class, c.arrive, c.depart)
         for c in small_children
     ]
-    pool = _pool([
-        ("R001", (Role.HOIKUSHI,), sei_contract(min_rest_hours=20.0)),
-        ("R002", (Role.SHIENSHIIN,), part_contract(min_rest_hours=20.0,
-                                                    earliest_start=time(3, 0),
-                                                    latest_end=time(4, 0))),
-    ])
+    pool = _pool(
+        [
+            ("R001", (Role.HOIKUSHI,), sei_contract(min_rest_hours=20.0)),
+            (
+                "R002",
+                (Role.SHIENSHIIN,),
+                part_contract(
+                    min_rest_hours=20.0, earliest_start=time(3, 0), latest_end=time(4, 0)
+                ),
+            ),
+        ]
+    )
     ctx = _build(pool, _requirements(children, days=days))
     names = {v.name for v in ctx.prob.variables()}
     assert any(name.startswith("rest_R001_") for name in names)
@@ -959,7 +1096,8 @@ def test_連続勤務の窓が欠けたとき何もしない(small_children):
     saturday, sunday = week[5], week[6]
     children = [
         ChildPlan(f"{c.child_id}_{d}", c.name, d, c.age_class, c.arrive, c.depart)
-        for d in week for c in small_children
+        for d in week
+        for c in small_children
     ]
     table = _requirements(children, days=week, closed_days=(saturday, sunday))
     assert table.for_day(saturday) == []
@@ -984,8 +1122,9 @@ def test_勤務セルが1つも無い解は解なし扱い(small_staff, small_re
     assert status is SolveStatus.INFEASIBLE
 
 
-def test_モデル構築に失敗したら貪欲法に退避する(small_children, small_staff,
-                                                small_requirements, monkeypatch):
+def test_モデル構築に失敗したら貪欲法に退避する(
+    small_children, small_staff, small_requirements, monkeypatch
+):
     """``_build_problem`` が例外を投げても握り潰さず貪欲法の暫定シフトを返すこと。"""
 
     def boom(*args, **kwargs):
@@ -1001,9 +1140,15 @@ def test_モデル構築に失敗したら貪欲法に退避する(small_childre
 
 def test_2パス目のモデル構築も失敗したら貪欲法(small_children, small_requirements, monkeypatch):
     """1パス目の前検査で落ち、2パス目の構築が失敗した時も貪欲法へ退避すること。"""
-    narrow = _pool([
-        ("Y001", (Role.HOIKUSHI,), sei_contract(earliest_start=time(3, 0), latest_end=time(4, 0))),
-    ])
+    narrow = _pool(
+        [
+            (
+                "Y001",
+                (Role.HOIKUSHI,),
+                sei_contract(earliest_start=time(3, 0), latest_end=time(4, 0)),
+            ),
+        ]
+    )
     real = solver_mod._build_problem
     calls = {"n": 0}
 
@@ -1065,23 +1210,38 @@ def test_需要表のノイズ行は無視される(small_children, small_staff,
 
 
 def test_供給計算は休日不可と契約外と希望休で減る(small_children, small_staff, small_requirements):
-    saturday_table = replace(small_requirements, rows={SATURDAY: [
-        replace(small_requirements.for_day(DAY)[0], day=SATURDAY, needed_staff=5,
-                needed_qualified=4),
-    ]})
+    saturday_table = replace(
+        small_requirements,
+        rows={
+            SATURDAY: [
+                replace(
+                    small_requirements.for_day(DAY)[0],
+                    day=SATURDAY,
+                    needed_staff=5,
+                    needed_qualified=4,
+                ),
+            ]
+        },
+    )
     pool = [
         *small_staff,
-        StaffMember("A001", "休日不可", (Role.HOIKUSHI,),
-                    sei_contract(can_work_holiday=False)),
-        StaffMember("A002", "契約外", (Role.HOIKUSHI,),
-                    sei_contract(earliest_start=time(3, 0), latest_end=time(4, 0))),
+        StaffMember("A001", "休日不可", (Role.HOIKUSHI,), sei_contract(can_work_holiday=False)),
+        StaffMember(
+            "A002",
+            "契約外",
+            (Role.HOIKUSHI,),
+            sei_contract(earliest_start=time(3, 0), latest_end=time(4, 0)),
+        ),
     ]
-    prefs = {sid: StaffPreferences(unavailable=[
-        Unavailability(day=SATURDAY, start=time(0, 0), end=time(23, 59), reason="希望休")
-    ]) for sid in ("S001", "S005")}
-    rows = _shortfall_supply(
-        _payload(small_children, pool, saturday_table, prefs=prefs)
-    )
+    prefs = {
+        sid: StaffPreferences(
+            unavailable=[
+                Unavailability(day=SATURDAY, start=time(0, 0), end=time(23, 59), reason="希望休")
+            ]
+        )
+        for sid in ("S001", "S005")
+    }
+    rows = _shortfall_supply(_payload(small_children, pool, saturday_table, prefs=prefs))
     assert len(rows) == 1
     day, label, need_all, need_q, sup_all, sup_q, support = rows[0]
     assert (day, label) == (SATURDAY, saturday_table.slots[0].label)
@@ -1090,16 +1250,27 @@ def test_供給計算は休日不可と契約外と希望休で減る(small_chil
 
 
 def test_支援員は保育士数に数えない(small_children, small_requirements):
-    saturday_table = replace(small_requirements, rows={SATURDAY: [
-        replace(small_requirements.for_day(DAY)[0], day=SATURDAY, needed_staff=6,
-                needed_qualified=4),
-    ]})
-    pool = _pool([
-        ("B001", (Role.HOIKUSHI,), sei_contract()),
-        ("B002", (Role.HOIKUSHI,), sei_contract()),
-        ("B003", (Role.SHIENSHIIN,), part_contract()),
-        ("B004", (Role.SHIENSHIIN,), part_contract()),
-    ])
+    saturday_table = replace(
+        small_requirements,
+        rows={
+            SATURDAY: [
+                replace(
+                    small_requirements.for_day(DAY)[0],
+                    day=SATURDAY,
+                    needed_staff=6,
+                    needed_qualified=4,
+                ),
+            ]
+        },
+    )
+    pool = _pool(
+        [
+            ("B001", (Role.HOIKUSHI,), sei_contract()),
+            ("B002", (Role.HOIKUSHI,), sei_contract()),
+            ("B003", (Role.SHIENSHIIN,), part_contract()),
+            ("B004", (Role.SHIENSHIIN,), part_contract()),
+        ]
+    )
     _day, _label, need_all, need_q, sup_all, sup_q, support = _shortfall_supply(
         _payload(small_children, pool, saturday_table)
     )[0]
@@ -1111,8 +1282,9 @@ def _raise_runtime_error(*args, **kwargs):
     raise RuntimeError("check_violations failed")
 
 
-def test_違反の貼り付け失敗は握り潰さない(small_children, small_staff, small_requirements,
-                                           monkeypatch):
+def test_違反の貼り付け失敗は握り潰さない(
+    small_children, small_staff, small_requirements, monkeypatch
+):
     """検査に失敗しても ``violations=[]`` では済ませず BLOCKER を出すこと。
 
     以前は ``violations == []`` を期待値にしており、UI は「違反 0 件」と表示して
@@ -1129,8 +1301,9 @@ def test_違反の貼り付け失敗は握り潰さない(small_children, small_
     assert not result.ok
 
 
-def test_gap_analysisが読めなくても致命的にしない(small_children, small_staff,
-                                                   small_requirements, monkeypatch):
+def test_gap_analysisが読めなくても致命的にしない(
+    small_children, small_staff, small_requirements, monkeypatch
+):
     """``gap_analysis`` が import できない場合も fail-closed で報告すること。"""
     import shiftai
 
@@ -1168,9 +1341,10 @@ def test_変数値からシフト表を復元できる(small_staff, small_requir
         assert days[0].get("S001", slots[1]) is CellState.BREAK
         assert len(assignments) == 2 * len(small_staff)
     assert _extract_vars(object()) == ({}, {})
-    assert decode_solution(object(), small_staff, [DAY], slots)[0][0].get(
-        "S001", slots[0]
-    ) is CellState.OFF
+    assert (
+        decode_solution(object(), small_staff, [DAY], slots)[0][0].get("S001", slots[0])
+        is CellState.OFF
+    )
 
 
 def test_ラベル検索と連続勤務日数(small_requirements):
@@ -1191,35 +1365,44 @@ def test_貪欲法は休園日と休日不可と契約外を守る(small_childre
     pool = [
         *small_staff,
         StaffMember("C001", "休日不可", (Role.HOIKUSHI,), sei_contract(can_work_holiday=False)),
-        StaffMember("C002", "契約外", (Role.HOIKUSHI,),
-                    sei_contract(earliest_start=time(3, 0), latest_end=time(4, 0))),
+        StaffMember(
+            "C002",
+            "契約外",
+            (Role.HOIKUSHI,),
+            sei_contract(earliest_start=time(3, 0), latest_end=time(4, 0)),
+        ),
     ]
     result = solve_shift_greedy(
-        small_children, pool, saturday_table,
+        small_children,
+        pool,
+        saturday_table,
         fixed_assignments={("C001", SATURDAY, "存在しないラベル"): CellState.WORK},
         standard=STANDARD,
     )
     assert {result.day(SATURDAY).get("C001", s) for s in saturday_table.slots} == {CellState.OFF}
     assert {result.day(SATURDAY).get("C002", s) for s in saturday_table.slots} == {CellState.OFF}
     assert CellState.WORK in {
-        result.day(SATURDAY).get(sid, s)
-        for sid in ("S001", "S002") for s in saturday_table.slots
+        result.day(SATURDAY).get(sid, s) for sid in ("S001", "S002") for s in saturday_table.slots
     }
 
 
 def test_貪欲法は週の勤務日数と連続勤務日数を守る(small_children, small_requirements):
     days = [MONDAY + timedelta(days=i) for i in range(4)]
-    table = replace(small_requirements, rows={d: list(small_requirements.for_day(DAY))
-                                              for d in days})
-    pool = _pool([
-        ("D001", (Role.HOIKUSHI,), sei_contract(max_weekly_days=1)),
-        ("D002", (Role.HOIKUSHI,), sei_contract(max_consecutive_days=1, min_rest_hours=40.0)),
-    ])
+    table = replace(
+        small_requirements, rows={d: list(small_requirements.for_day(DAY)) for d in days}
+    )
+    pool = _pool(
+        [
+            ("D001", (Role.HOIKUSHI,), sei_contract(max_weekly_days=1)),
+            ("D002", (Role.HOIKUSHI,), sei_contract(max_consecutive_days=1, min_rest_hours=40.0)),
+        ]
+    )
     result = solve_shift_greedy(small_children, pool, table, standard=STANDARD)
     counts = staff_shift_count(result)
     assert counts["D001"] <= 1  # max_weekly_days = 1
-    worked = [sd.day for sd in result.shift_days if sd.get("D002", table.slots[0])
-              is CellState.WORK]
+    worked = [
+        sd.day for sd in result.shift_days if sd.get("D002", table.slots[0]) is CellState.WORK
+    ]
     assert all(b - a > timedelta(days=1) for a, b in zip(worked, worked[1:], strict=False))
 
 
@@ -1234,7 +1417,9 @@ def test_貪欲法は1日上限で勤務ブロックを保つ():
 def test_貪欲法は確定セルと休憩上限を反映する(small_children, small_staff, small_requirements):
     slots = small_requirements.slots
     result = solve_shift_greedy(
-        small_children, small_staff, small_requirements,
+        small_children,
+        small_staff,
+        small_requirements,
         fixed_assignments={
             ("S001", DAY, slots[0].label): CellState.OFF,
             ("S001", date(1999, 1, 1), slots[1].label): CellState.WORK,
@@ -1245,18 +1430,17 @@ def test_貪欲法は確定セルと休憩上限を反映する(small_children, 
     assert result.day(DAY).get("S001", slots[0]) is CellState.OFF
     for shift_day in result.shift_days:
         breaks = sum(
-            1 for sid in small_staff for s in slots
-            if shift_day.get(sid, s) is CellState.BREAK
+            1 for sid in small_staff for s in slots if shift_day.get(sid, s) is CellState.BREAK
         )
         on_duty = sum(
-            1 for sid in small_staff for s in slots
-            if shift_day.get(sid, s) is not CellState.OFF
+            1 for sid in small_staff for s in slots if shift_day.get(sid, s) is not CellState.OFF
         )
         assert breaks <= max(1, on_duty // 4) + 1
 
 
-def test_貪欲法の違反検査が壊れても返す(small_children, small_staff, small_requirements,
-                                        monkeypatch):
+def test_貪欲法の違反検査が壊れても返す(
+    small_children, small_staff, small_requirements, monkeypatch
+):
     """貪欲法でも検査不能を ``violations=[]`` で済ませないこと。"""
     monkeypatch.setattr(gap_analysis, "check_violations", _raise_runtime_error)
     result = solve_shift_greedy(small_children, small_staff, small_requirements, standard=STANDARD)
@@ -1335,9 +1519,7 @@ def test_その他のステータスのメッセージ():
     assert "算出不可" in messages[0]
 
 
-def test_希望時間帯が未知や契約外でもペナルティ対象にならない(
-    small_staff, small_requirements
-):
+def test_希望時間帯が未知や契約外でもペナルティ対象にならない(small_staff, small_requirements):
     """``preferred_slots`` に未知の時間帯や契約外の時間帯を入れても落ちないこと。"""
     prefs = {
         "S001": StaffPreferences(preferred_slots={DAY: (Slot(time(3, 0), time(3, 30)),)}),
@@ -1352,9 +1534,15 @@ def test_希望時間帯が未知や契約外でもペナルティ対象にな�
 
 def test_休憩変数を持たない職員はスキップ(small_children):
     """契約時間帯が全時間帯を外れる職員は ``_add_breaks`` で除外されること。"""
-    narrow = _pool([
-        ("V001", (Role.HOIKUSHI,), sei_contract(earliest_start=time(3, 0), latest_end=time(4, 0))),
-    ])
+    narrow = _pool(
+        [
+            (
+                "V001",
+                (Role.HOIKUSHI,),
+                sei_contract(earliest_start=time(3, 0), latest_end=time(4, 0)),
+            ),
+        ]
+    )
     ctx = _build(narrow, _requirements(_kids(DAY)))
     assert not any(v.name.startswith("brkdef_") for v in ctx.prob.variables())
 
@@ -1362,11 +1550,18 @@ def test_休憩変数を持たない職員はスキップ(small_children):
 def test_貪欲法も非必須行と未知スロットを無視する(small_children, small_requirements):
     """貪欲法側の行フィルタ（is_binding / 未知スロット）も効いていること。"""
     base = small_requirements.for_day(DAY)[0]
-    table = replace(small_requirements, rows={DAY: [
-        *small_requirements.for_day(DAY),
-        replace(base, is_binding=False),
-        replace(base, slot=Slot(time(3, 0), time(3, 30)), needed_staff=9, needed_qualified=9),
-    ]})
+    table = replace(
+        small_requirements,
+        rows={
+            DAY: [
+                *small_requirements.for_day(DAY),
+                replace(base, is_binding=False),
+                replace(
+                    base, slot=Slot(time(3, 0), time(3, 30)), needed_staff=9, needed_qualified=9
+                ),
+            ]
+        },
+    )
     pool = _pool([("W001", (Role.HOIKUSHI,), sei_contract())])
     result = solve_shift_greedy(small_children, pool, table, standard=STANDARD)
     assert result.status is SolveStatus.PARTIAL
@@ -1379,8 +1574,7 @@ def test_貪欲法も非必須行と未知スロットを無視する(small_chil
 
 
 @pytest.mark.slow
-def test_6名で1日解ける規模なら1日あたり10秒以内(small_children, small_staff,
-                                                  small_requirements):
+def test_6名で1日解ける規模なら1日あたり10秒以内(small_children, small_staff, small_requirements):
     """6 名・1 日・10 時間帯の規模では 10 秒以内に解けること。"""
     result = _solve(small_children, small_staff, small_requirements, time_limit_sec=10)
     assert result.stats["elapsed_sec"] < 10.0
@@ -1395,8 +1589,14 @@ def test_モデル規模は職員数にほぼ比例する(week_days, fq_standard
 
     days = list(week_days)
     children = sample_data.make_children(days, seed=7)
-    table = build_requirements(children, days, fq_standard, day_open=time(7, 15),
-                              day_close=time(19, 30), granularity_min=30)
+    table = build_requirements(
+        children,
+        days,
+        fq_standard,
+        day_open=time(7, 15),
+        day_close=time(19, 30),
+        granularity_min=30,
+    )
     all_staff = list(sample_data.make_staff(seed=7))
     small = _build(all_staff[:10], table)
     large = _build(all_staff, table)
@@ -1416,11 +1616,21 @@ def test_モデル規模は職員数にほぼ比例する(week_days, fq_standard
 
 def _disjoint_staff():
     """契約時間帯（20:00-22:00）が園の開所時間と 1 分も重ならない職員。"""
-    return _pool([
-        ("Z001", (Role.HOIKUSHI,),
-         Contract(weekly_hours=40.0, daily_hours=8.0, employment_type=EmploymentType.SEI,
-                  earliest_start=time(20, 0), latest_end=time(22, 0))),
-    ])
+    return _pool(
+        [
+            (
+                "Z001",
+                (Role.HOIKUSHI,),
+                Contract(
+                    weekly_hours=40.0,
+                    daily_hours=8.0,
+                    employment_type=EmploymentType.SEI,
+                    earliest_start=time(20, 0),
+                    latest_end=time(22, 0),
+                ),
+            ),
+        ]
+    )
 
 
 def test_再現_契約時間帯が需要と重ならずにZeroDivisionErrorを投げない():
@@ -1480,11 +1690,21 @@ def test_正常系は従来どおりの妥当なメッセージが返る():
     """職員が需要に重なっている場合は空でない妥当なメッセージになること。"""
     children = _kids(DAY, count=6)
     table = _requirements(children)
-    staff = _pool([
-        ("K001", (Role.HOIKUSHI,),
-         Contract(weekly_hours=40.0, daily_hours=8.0, employment_type=EmploymentType.SEI,
-                  earliest_start=time(8, 0), latest_end=time(18, 0))),
-    ])
+    staff = _pool(
+        [
+            (
+                "K001",
+                (Role.HOIKUSHI,),
+                Contract(
+                    weekly_hours=40.0,
+                    daily_hours=8.0,
+                    employment_type=EmploymentType.SEI,
+                    earliest_start=time(8, 0),
+                    latest_end=time(18, 0),
+                ),
+            ),
+        ]
+    )
     payload = _payload(children, staff, table)
     assert _supply_hours(payload) > 0.0
 
@@ -1506,11 +1726,21 @@ def test_供給が極端に小さい場合も不足倍率の助言が返る():
     children = _kids(DAY, count=6)
     table = _requirements(children)
     # 1 日だけ 30 分の契約（必要量に対して極端に小さい供給）
-    tiny = _pool([
-        ("Y001", (Role.HOIKUSHI,),
-         Contract(weekly_hours=40.0, daily_hours=0.5, employment_type=EmploymentType.SEI,
-                  earliest_start=time(9, 0), latest_end=time(9, 30))),
-    ])
+    tiny = _pool(
+        [
+            (
+                "Y001",
+                (Role.HOIKUSHI,),
+                Contract(
+                    weekly_hours=40.0,
+                    daily_hours=0.5,
+                    employment_type=EmploymentType.SEI,
+                    earliest_start=time(9, 0),
+                    latest_end=time(9, 30),
+                ),
+            ),
+        ]
+    )
     payload = _payload(children, tiny, table)
     supply = _supply_hours(payload)
     need = payload.requirements.total_needed_hours()
@@ -1538,8 +1768,9 @@ def test_職員0名と全職員休園日も例外にならない():
 
     # 全職員が休園日（FacilitySettings の休園日に一致する日付）
     settings = FacilitySettings()
-    closed = solve_shift(children, staff, table, time_limit_sec=5, standard=STANDARD,
-                         settings=settings)
+    closed = solve_shift(
+        children, staff, table, time_limit_sec=5, standard=STANDARD, settings=settings
+    )
     assert closed.messages
     joined = "\n".join(closed.messages)
     assert "配置できる人時が 0 です" in joined
@@ -1571,8 +1802,14 @@ def test_台帳はモデルの全制約を1本ずつ収録する(small_staff, sm
     """
     for soft in (False, True):
         ctx = solver_mod._build_problem(
-            small_staff, small_requirements, {}, {}, FacilitySettings(),
-            ObjectiveWeights(), STANDARD, soft_coverage=soft,
+            small_staff,
+            small_requirements,
+            {},
+            {},
+            FacilitySettings(),
+            ObjectiveWeights(),
+            STANDARD,
+            soft_coverage=soft,
         )
         specs = _constraint_specs(ctx)
         assert len(specs) == len(ctx.prob.constraints) > 0, f"soft={soft} で台帳が欠落"
@@ -1588,9 +1825,15 @@ def test_台帳は全ハード制約ファミリを収録する(small_staff, sma
     ctx = _build(small_staff, small_requirements)
     names = {spec.name for spec in _constraint_specs(ctx)}
     assert any(n.startswith("dailycap_") for n in names), "1日上限が入っていない"
-    assert any(n.startswith("coverq_") or n.startswith("cover_") for n in names), "配置基準が入っていない"
-    assert any(n.endswith("_splitcap") and n.startswith("duty_") for n in names), "在勤ブロックが入っていない"
-    assert any(n.endswith("_splitcap") and n.startswith("brk_") for n in names), "休憩ブロックが入っていない"
+    assert any(n.startswith("coverq_") or n.startswith("cover_") for n in names), (
+        "配置基準が入っていない"
+    )
+    assert any(n.endswith("_splitcap") and n.startswith("duty_") for n in names), (
+        "在勤ブロックが入っていない"
+    )
+    assert any(n.endswith("_splitcap") and n.startswith("brk_") for n in names), (
+        "休憩ブロックが入っていない"
+    )
     # セル排他（w + b <= 1）は PuLP の自動連番名になる
     assert len(names) == len(ctx.prob.constraints)
     assert all(
@@ -1667,17 +1910,29 @@ def test_検査不能な制約だけが除外され他は検出される(small_s
     ctx = _solved_ctx(small_staff, small_requirements)
     first = next(v for v in ctx.work.values() if not isinstance(v, (int, float)))
     # 「その変数を含む制約」は未判定なので、違反リストに現れない
-    touched = {spec.name for spec in _constraint_specs(ctx) if any(var is first for var, _ in spec.terms)}
+    touched = {
+        spec.name for spec in _constraint_specs(ctx) if any(var is first for var, _ in spec.terms)
+    }
     assert touched, "テスト対象の変数を含む制約が台帳に無い"
     first.varValue = None
     bad = verify_solution(ctx)
     assert isinstance(bad, list)
     assert not touched & set(bad), bad
-    # 同じ変数に 1 を入れれば、同一の検査経路で当該制約が違反として返る
-    first.varValue = 1.0
+
+    # 同じ変数に「違反する値」を入れれば、同一の検査経路で当該制約が違反として返る
+    #
+    # 修正前: 単に ``1.0`` を代入していたため、**``longd`` が常に結合していた**ことに
+    # 依存していた。``longd`` の誤り（分 vs 時間）が直ると 8 時間勤務では
+    # ``longd`` に余裕ができるため、このテストが落ちてしまう
+    # （テストがバグの副作用に結合していた）。
+    # ここでは「現在値をさらに大きくした値は確実に違反になる」量まで増やす。
+    upper = getattr(first, "upBound", None)
+    step = (upper + 1.0) if isinstance(upper, (int, float)) and upper is not None else 1.0
+    current = first.varValue if isinstance(first.varValue, (int, float)) else 0.0
+    first.varValue = current + max(1.0, float(step))
     detected = verify_solution(ctx)
     assert touched & set(detected), (
-        "変数値を 1 にしたのに制約違反を検出できなかった（検査経路が死んでいる）"
+        "変数値を違反する値にしたのに制約違反を検出できなかった（検査経路が死んでいる）"
     )
 
 
@@ -1697,10 +1952,12 @@ def test_全変数が未決なら判定不能として空リストになる(smal
 
 def test_貪欲法の固定セルはロックされる(small_children):
     """``fixed_assignments`` の WORK / BREAK / OFF ロックが貪欲法で効くこと。"""
-    pool = _pool([
-        ("L001", (Role.HOIKUSHI,), sei_contract()),
-        ("L002", (Role.HOIKUSHI,), sei_contract()),
-    ])
+    pool = _pool(
+        [
+            ("L001", (Role.HOIKUSHI,), sei_contract()),
+            ("L002", (Role.HOIKUSHI,), sei_contract()),
+        ]
+    )
     table = _tiny_requirements(small_children, slots_count=3, need=1, qualified=1)
     slots = table.slots
     fixed = {
@@ -1725,10 +1982,12 @@ def test_MILPの固定セルはロックされる(small_children):
     計上される）ので、UI で確定したセルが出力上だけ「オフ」になっていた。
     定数としての値を ctx にも残す実装へ修正済み。
     """
-    pool = _pool([
-        ("L001", (Role.HOIKUSHI,), sei_contract()),
-        ("L002", (Role.HOIKUSHI,), sei_contract()),
-    ])
+    pool = _pool(
+        [
+            ("L001", (Role.HOIKUSHI,), sei_contract()),
+            ("L002", (Role.HOIKUSHI,), sei_contract()),
+        ]
+    )
     table = _tiny_requirements(small_children, slots_count=3, need=1, qualified=1)
     slots = table.slots
     fixed = {
@@ -1749,10 +2008,12 @@ def test_MILPは固定セルをモデルの中で反映する(small_children):
     よう定数として ctx へも記録する実装へ変更された。定数であることと、
     最適化からは変数が見えないことの両方を検証する。
     """
-    pool = _pool([
-        ("L001", (Role.HOIKUSHI,), sei_contract(daily_hours=1.0, weekly_hours=10.0)),
-        ("L002", (Role.HOIKUSHI,), sei_contract(daily_hours=1.0, weekly_hours=10.0)),
-    ])
+    pool = _pool(
+        [
+            ("L001", (Role.HOIKUSHI,), sei_contract(daily_hours=1.0, weekly_hours=10.0)),
+            ("L002", (Role.HOIKUSHI,), sei_contract(daily_hours=1.0, weekly_hours=10.0)),
+        ]
+    )
     table = _tiny_requirements(small_children, slots_count=3, need=1, qualified=1)
     slots = table.slots
     ctx = _build(pool, table, fixed={("L001", DAY, slots[0].label): CellState.WORK})
@@ -1763,20 +2024,27 @@ def test_MILPは固定セルをモデルの中で反映する(small_children):
         v.name for v in ctx.prob.variables() if v.name == "w_L001_0928_0"
     }
     # 確定分は 1日上限の右辺に定数として入るので、上限 60 分の職員で 2 セルは解けない
-    result = _solve(small_children, pool, table,
-                    fixed_assignments={
-                        ("L001", DAY, slots[0].label): CellState.WORK,
-                        ("L001", DAY, slots[1].label): CellState.WORK,
-                    }, time_limit_sec=10)
+    result = _solve(
+        small_children,
+        pool,
+        table,
+        fixed_assignments={
+            ("L001", DAY, slots[0].label): CellState.WORK,
+            ("L001", DAY, slots[1].label): CellState.WORK,
+        },
+        time_limit_sec=10,
+    )
     assert result.stats["solver_status_pass1"] != "Optimal"
 
 
 def test_負の時間上限や0でも例外を投げない(small_children):
     """``time_limit_sec`` が 0 / 負でも内部で 2 秒に丸められ例外を投げないこと。"""
-    pool = _pool([
-        ("T001", (Role.HOIKUSHI,), sei_contract()),
-        ("T002", (Role.HOIKUSHI,), sei_contract()),
-    ])
+    pool = _pool(
+        [
+            ("T001", (Role.HOIKUSHI,), sei_contract()),
+            ("T002", (Role.HOIKUSHI,), sei_contract()),
+        ]
+    )
     table = _tiny_requirements(small_children, slots_count=2, need=1, qualified=1)
     for limit in (0, -1, -100000):
         result = _solve(small_children, pool, table, time_limit_sec=limit)
@@ -1802,13 +2070,16 @@ def test_全経路でstatsの必須キーが揃う(small_children, small_staff, 
 
 def test_重みを全部巨大にしても解が返る(small_children):
     """全フィールドを 10^6 倍にしても目的関数が壊れず解が得られること。"""
-    pool = _pool([
-        ("H001", (Role.HOIKUSHI,), sei_contract()),
-        ("H002", (Role.HOIKUSHI,), sei_contract()),
-    ])
+    pool = _pool(
+        [
+            ("H001", (Role.HOIKUSHI,), sei_contract()),
+            ("H002", (Role.HOIKUSHI,), sei_contract()),
+        ]
+    )
     table = _tiny_requirements(small_children, slots_count=2, need=1, qualified=1)
-    huge = ObjectiveWeights(**{name: value * 1e6 for name, value in
-                              vars(ObjectiveWeights()).items()})
+    huge = ObjectiveWeights(
+        **{name: value * 1e6 for name, value in vars(ObjectiveWeights()).items()}
+    )
     result = _solve(small_children, pool, table, weights=huge, time_limit_sec=10)
     assert result.status is not SolveStatus.ERROR
     assert result.assignments
@@ -1820,7 +2091,9 @@ def test_重みを全部巨大にしても解が返る(small_children):
 # ===========================================================================
 
 
-def test_検査器が落ちても違反0件にはしない(small_children, small_staff, small_requirements, monkeypatch):
+def test_検査器が落ちても違反0件にはしない(
+    small_children, small_staff, small_requirements, monkeypatch
+):
     """``check_violations`` が例外を投げても BLOCKER を出して ERROR にすること。
 
     以前は ``except Exception: return`` で握り潰しており ``violations`` が空の
@@ -1843,7 +2116,9 @@ def test_検査器が落ちても違反0件にはしない(small_children, small
     assert any("判定" in m for m in result.messages), result.messages
 
 
-def test_検査器が落ちても貪欲法も同じ扱い(small_children, small_staff, small_requirements, monkeypatch):
+def test_検査器が落ちても貪欲法も同じ扱い(
+    small_children, small_staff, small_requirements, monkeypatch
+):
     """貪欲法ルートでも検査不能を BLOCKER で示すこと。"""
     from shiftai import gap_analysis
 
@@ -1851,9 +2126,7 @@ def test_検査器が落ちても貪欲法も同じ扱い(small_children, small_
         raise RuntimeError("checker exploded")
 
     monkeypatch.setattr(gap_analysis, "check_violations", boom)
-    result = solve_shift_greedy(
-        small_children, small_staff, small_requirements, standard=STANDARD
-    )
+    result = solve_shift_greedy(small_children, small_staff, small_requirements, standard=STANDARD)
     assert [v.code for v in result.violations] == ["CHECK_UNAVAILABLE"]
     assert result.status is SolveStatus.ERROR
 
@@ -1869,8 +2142,11 @@ def test_貪欲法は休園日を渡すと休園日に勤務しない(small_chil
     closed = frozenset({day})
     settings = FacilitySettings(closed_days=closed)
     result = solve_shift_greedy(
-        small_children, small_staff, small_requirements,
-        standard=STANDARD, settings=settings,
+        small_children,
+        small_staff,
+        small_requirements,
+        standard=STANDARD,
+        settings=settings,
     )
     worked_on_closed = [
         a.staff_id for a in result.assignments if a.day == day and a.state is CellState.WORK
@@ -1884,7 +2160,8 @@ def test_supply_hoursは休園日を除外する(small_staff, small_requirements
 
     plain = supply_hours(small_staff, small_requirements)
     with_closed = supply_hours(
-        small_staff, small_requirements,
+        small_staff,
+        small_requirements,
         settings=FacilitySettings(closed_days=frozenset(small_requirements.all_days())),
     )
     assert plain > 0.0
@@ -1892,17 +2169,325 @@ def test_supply_hoursは休園日を除外する(small_staff, small_requirements
 
 
 def test_supply_hoursは週所定日数で頭打ちになる(small_staff, small_requirements):
-    """``max_weekly_days`` の上限が敷居値を越えても供給人時は増えないこと。"""
+    """``max_weekly_days`` の上限が敷居値を越えても供給人時は増えないこと。
+
+    修正前: ``if days > 1:`` で守乳酸菌 tetapi ``small_requirements`` は
+    1 日構成（``tests/conftest.py`` の ``one_day`` 由来）なので、
+    **唯一の assert が常に未実行**だった（分支が永久に偽）。
+    ``max_weekly_days`` の実装が壊れてもテストは green のまま。
+
+    複数日の表を明示的に構築し、分岐を削除する。
+    """
     from dataclasses import replace as _replace
 
     from shiftai.solver import supply_hours
 
-    days = len(small_requirements.all_days())
-    capped = [
-        _replace(s, contract=_replace(s.contract, max_weekly_days=1))
-        for s in small_staff
+    one_day = small_requirements.all_days()[0]
+    multi = _replace(
+        small_requirements,
+        rows={
+            one_day + timedelta(days=offset): list(small_requirements.for_day(one_day))
+            for offset in range(4)
+        },
+    )
+    days = len(multi.all_days())
+    assert days > 1, f"検証前提: 複数日の表であること（実際 {days} 日）"
+
+    capped = [_replace(s, contract=_replace(s.contract, max_weekly_days=1)) for s in small_staff]
+    full = supply_hours(small_staff, multi)
+    limited = supply_hours(capped, multi)
+    assert full > 0.0, "検証前提: 制限なしでは供給があること"
+    assert limited < full, "週1日制限で供給が減っていない"
+
+
+# ---------------------------------------------------------------------------
+# T-01-R2 / R2-SOL-01: 1 日の長時間勤務ペナルティの単位（分 vs 時間）
+# ---------------------------------------------------------------------------
+
+
+def test_長時間勤務ペナルティの閾値が時間単位である() -> None:
+    """``longd`` の閾値が **時間** で比較されていること。
+
+    ``ctx.day_work`` は **勤務分数（分）** の式だが、
+    ``_LONG_DAILY_HOURS`` は **時間** で宣言されている。
+    修正前は ``expr - _LONG_DAILY_HOURS <= long_day`` で、
+    「勤務分数 − 9（分）」を長日の閾値として扱っていた。
+
+    結果として **完全に合法な 8 時間（= 480 分）勤務**でも
+    ``longd = 471`` となり、``max_shift_length_penalty`` = 6.0 で
+    **2826** の目的関数ペナルティが発生していた（本来は 0）。
+
+    その結果 30 分ぶんの追加勤務の限界的なコストが
+    overstaff ペナルティ（1.0）の **180 倍** となり、
+    ``shortfall_penalty``（1000）以外のすべてのソフト制約が
+    事実上効かなくなっていた（ソルバが「勤務時間を最小化」していた）。
+
+    構造的に確認する（数値計算ではなく、**式が正しいこと**を見る）。
+    """
+    import pathlib
+
+    source = pathlib.Path(solver_mod.__file__).read_text(encoding="utf-8")
+    targets = [
+        line for line in source.splitlines() if "ctx.prob += expr - _LONG_DAILY_HOURS" in line
     ]
-    full = supply_hours(small_staff, small_requirements)
-    one_day = supply_hours(capped, small_requirements)
-    if days > 1:
-        assert one_day < full, "週1日制限で供給が減っていない"
+    assert targets, "longd の制約が見つからない（実装が変わった）"
+    for line in targets:
+        assert "_LONG_DAILY_HOURS * 60.0" in line, (
+            f"longd の閾値が時間単位に変換されていない: {line.strip()}"
+        )
+    assert solver_mod._LONG_DAILY_HOURS > 0
+
+
+def test_9時間以下の勤務は長時間勤務ペナルティを受けない(small_staff, small_requirements) -> None:
+    """実際に解いたモデルで、9 時間以下の勤務なら ``longd`` が 0 になること。
+
+    修正前は 8 時間（= 480 分）の勤務で ``longd = 471`` になっていたため、
+    このテストは ``longd`` が「結合している（tight）」ことに依存していた。
+    """
+    ctx = _solved_ctx(small_staff, small_requirements)
+    longs = [v for v in ctx.prob.variables() if v.name.startswith("longd_")]
+    if not longs:
+        pytest.skip("longd 変数が生成されていない（この構成では不要）")
+    for var in longs:
+        worked_min = var.value()
+        assert isinstance(worked_min, (int, float)), worked_min
+        if worked_min <= 9 * 60:
+            assert var.varValue == 0, (
+                f"{var.name}: {worked_min} 分勤務なのに longd={var.varValue}"
+                "（時間単位への変換が漏れている）"
+            )
+
+
+def test_9時間超過分は時間単位で加算される(small_staff, small_requirements) -> None:
+    """``longd`` の値が「9 時間超の分数」と一致すること。"""
+    threshold_min = solver_mod._LONG_DAILY_HOURS * 60.0
+    ctx = _solved_ctx(small_staff, small_requirements)
+    longs = [v for v in ctx.prob.variables() if v.name.startswith("longd_")]
+    for var in longs:
+        worked_min = var.value()
+        expected = max(0.0, float(worked_min) - threshold_min)
+        assert var.varValue == pytest.approx(expected, abs=1e-6), (
+            f"{var.name}: worked={worked_min}分 に対し longd={var.varValue}（期待 {expected}）"
+        )
+
+
+# ---------------------------------------------------------------------------
+# R3-SOL-03: 貪欲法の週所定出勤日数（計画全体 vs 週ごと）
+# ---------------------------------------------------------------------------
+
+
+def test_貪欲法は複数週の計画でも週上限を守る(small_children, small_staff, small_requirements):
+    """貪欲法でも「週所定出勤日数」が**週ごと**に適用されること。
+
+    修正前: ``_day_ok`` が ``worked_days[sid] & day_open_days``（= 計画全体の出勤日）
+    と ``max_weekly_days`` を比較していたため、14 日計画で
+    ``max_weekly_days = 5`` のとき **2 週間全体で 5 日しか出勤できなかった**。
+    MILP 側は ``weekly_windows`` で正しく週単位になっていたため、
+    フォールバック時だけ充足率が 36 % まで落ちていた。
+
+    MILP を起動しないので純粋な貪欲法のみで検証できる。
+    """
+    from dataclasses import replace as _replace
+    from datetime import timedelta
+
+    from shiftai.solver import solve_shift_greedy
+    from tests.conftest import DAY
+
+    # 14 日ぶんの必要人員表を作る
+    kids = []
+    for offset in range(14):
+        day = DAY + timedelta(days=offset)
+        kids.extend(
+            ChildPlan(c.child_id, f"{c.child_id}-{offset}", day, c.age_class, c.arrive, c.depart)
+            for c in small_children
+        )
+    days = [DAY + timedelta(days=offset) for offset in range(14)]
+    table = build_requirements(
+        kids,
+        days,
+        STANDARD,
+        day_open=DAY_OPEN,
+        day_close=DAY_CLOSE,
+        granularity_min=60,
+    )
+    # 週 5 日制限
+    staff = [_replace(s, contract=_replace(s.contract, max_weekly_days=5)) for s in small_staff]
+    result = solve_shift_greedy(kids, staff, table, standard=STANDARD)
+
+    total_worked = sum(1 for a in result.assignments if a.state is CellState.WORK)
+    worked_days = {a.staff_id for a in result.assignments if a.state is CellState.WORK}
+    max_days = len(days)
+    assert total_worked > 0, "貪欲法_mock が 1 日も出勤していない"
+    # 週上限が「計画全体」に適用されると 5 日で頭打ちになる。
+    # 週単位なら 2 週間で最大 10 日/人まで出勤できる。
+    assert len(worked_days) > 0
+    total_work_days = len(
+        {(a.staff_id, a.day) for a in result.assignments if a.state is CellState.WORK}
+    )
+    assert total_work_days > 5, (
+        f"14 日計画で出勤が {total_work_days} 人日のみ（週上限を計画全体に適用している疑い）"
+    )
+    # 各人の週上限は超えていない
+    per_person: dict[str, set] = {}
+    for a in result.assignments:
+        if a.state is CellState.WORK:
+            per_person.setdefault(a.staff_id, set()).add(a.day)
+    for sid, worked in per_person.items():
+        for w0 in (0, 7):
+            window = set(days[w0 : w0 + 7])
+            assert len(worked & window) <= 5, (
+                f"{sid} が {w0} 週目に {len(worked & window)} 日出勤（週 5 日超過）"
+            )
+    assert max_days == 14
+
+
+# ---------------------------------------------------------------------------
+# R3-SOL-02: preferred_off_days（休み希望）のペナルティが死んでいた
+# ---------------------------------------------------------------------------
+
+
+def test_休み希望の日は出勤で罰せられる() -> None:
+    """``preferred_off_days`` に該当する日は **出勤すると** ペナルティを出すこと。
+
+    修正前: ``yvar + miss <= 1``（``LpMinimize``）だったため、
+    ``yvar`` の値によらず ``miss = 0`` が実行可能で、
+    **どの解でもペナルティ項が 0** になっていた。
+    さらに制約の意味が「休むこと」を罰する向きに逆だった。
+    ``pon_*`` / ``pslot_*`` は ``>= 1`` なので正しく機能している。
+    """
+
+    assert "yvar <= miss" in source_text_of_poff(), (
+        "poff の制約が依然として「yvar + miss <= 1」"
+        "（最小化では miss=0 が常に最適 = ペナルティが死んでいる）"
+    )
+
+
+def source_text_of_poff() -> str:
+    import pathlib
+
+    from shiftai import solver as solver_mod
+
+    src = pathlib.Path(solver_mod.__file__).read_text(encoding="utf-8")
+    i = src.find('f"poff_')
+    return src[max(0, i - 200) : i + 400]
+
+
+# ---------------------------------------------------------------------------
+# R3-SOL-06: max_consecutive_days == 0 は「上限なし」
+# ---------------------------------------------------------------------------
+
+
+def test_最大連続勤務日数0は上限なしとして扱われる():
+    """``max_consecutive_days == 0`` は「上限なし」であること。
+
+    ``domain.py`` が「0 は上限なし」と定義し、
+    ``data_loader`` も 0 を保存するのに、ソルバと検査器は 0 を
+    「1 日まで」と誤って扱っていた。
+
+    * 修正前 MILP : ``max(1, 0) = 1`` → 連続 2 日で違反となる
+    * 修正前貪欲法: ``streak >= 0`` が常に真 → **前日に出勤した翌日は
+      必ず出勤できない**（連続勤務が全面禁止になっていた）
+    * 修正前検査器: 1 日勤務するたびに「契約上限（0 日）を超えています」
+
+    修正前は貪欲法がこのテストの入力で **1 組も連続出勤できなかった**。
+    """
+    from dataclasses import replace as _replace
+    from datetime import time as _time
+    from datetime import timedelta
+
+    from shiftai.domain import AgeClass, CellState
+    from shiftai.gap_analysis import check_violations
+    from shiftai.solver import solve_shift_greedy
+    from shiftai.standards import build_requirements
+    from tests.conftest import DAY
+
+    days = [DAY + timedelta(days=offset) for offset in range(4)]
+    kids = [
+        ChildPlan(f"C{i:03d}", f"kid{i:03d}", day, AgeClass.AGE_3, _time(9, 0), _time(17, 0))
+        for day in days
+        for i in range(1, 3)
+    ]
+    table = build_requirements(
+        kids,
+        days,
+        STANDARD,
+        day_open=_time(9, 0),
+        day_close=_time(17, 0),
+        granularity_min=60,
+    )
+    staff = [
+        _replace(s, contract=_replace(s.contract, max_consecutive_days=0))
+        for s in _pool(
+            [
+                ("G001", (Role.HOIKUSHI,), sei_contract()),
+                ("G002", (Role.SHIENSHIIN,), sei_contract()),
+            ]
+        )
+    ]
+
+    result = solve_shift_greedy(kids, staff, table, standard=STANDARD)
+
+    worked = {(a.staff_id, a.day) for a in result.assignments if a.state is CellState.WORK}
+    consecutive = [(sid, day) for sid, day in worked if (sid, day + timedelta(days=1)) in worked]
+    assert consecutive, (
+        "上限なしの職員が連続出勤できていない"
+        "（修正前の貪欲法は streak >= 0 が常に真で連続勤務を全面禁止）"
+    )
+
+    # 検査器も「上限なし」を尊重して違反を出さないこと
+    violations = check_violations(table, result, staff)
+    assert [v for v in violations if v.code == "CONSECUTIVE_DAYS"] == [], (
+        "上限なしの職員に CONSECUTIVE_DAYS が出ている"
+    )
+
+
+def _greedy_staff():
+    from shiftai.domain import (
+        EmploymentType,
+        Role,
+        StaffMember,
+    )
+    from tests.conftest import part_contract
+
+    return [
+        StaffMember(
+            "G001",
+            "greedy01",
+            (Role.HOIKUSHI,),
+            part_contract(employment_type=EmploymentType.SEI),
+        ),
+        StaffMember(
+            "G002",
+            "greedy02",
+            (Role.SHIENSHIIN,),
+            part_contract(employment_type=EmploymentType.SEI),
+        ),
+    ]
+
+
+def _greedy_kids():
+    from datetime import time as _time
+
+    from shiftai.domain import AgeClass, ChildPlan
+    from tests.conftest import DAY
+
+    return [
+        ChildPlan("C001", "kid01", DAY, AgeClass.AGE_3, _time(9, 0), _time(17, 0)),
+        ChildPlan("C002", "kid02", DAY, AgeClass.AGE_3, _time(9, 0), _time(17, 0)),
+    ]
+
+
+def _greedy_table():
+    from datetime import time as _time
+
+    from shiftai.standards import build_requirements
+    from tests.conftest import DAY
+
+    return build_requirements(
+        _greedy_kids(),
+        [DAY],
+        STANDARD,
+        day_open=_time(9, 0),
+        day_close=_time(17, 0),
+        granularity_min=60,
+    )

@@ -75,8 +75,12 @@ def make_table(days: list[date], child_count: int = 6) -> object:
         for i in range(child_count)
     ]
     return build_requirements(
-        children, days, local_rules.get_standard(STANDARD_KEY),
-        day_open=DAY_OPEN, day_close=DAY_CLOSE, granularity_min=30,
+        children,
+        days,
+        local_rules.get_standard(STANDARD_KEY),
+        day_open=DAY_OPEN,
+        day_close=DAY_CLOSE,
+        granularity_min=30,
     )
 
 
@@ -182,8 +186,7 @@ def test_週判定の違反に窓の日付が入る() -> None:
     result = make_result(table, "S001", {d: 8.0 for d in days})
 
     weekly = [
-        v for v in check_violations(table, result, [member])
-        if v.code == "WEEKLY_HOURS_EXCEEDED"
+        v for v in check_violations(table, result, [member]) if v.code == "WEEKLY_HOURS_EXCEEDED"
     ]
 
     assert weekly
@@ -299,8 +302,7 @@ def test_7日計画は単一窓で判定する() -> None:
     result = make_result(table, "S001", {d: 7.0 for d in days})
 
     weekly = [
-        v for v in check_violations(table, result, [member])
-        if v.code == "WEEKLY_HOURS_EXCEEDED"
+        v for v in check_violations(table, result, [member]) if v.code == "WEEKLY_HOURS_EXCEEDED"
     ]
 
     assert len(weekly) == 1
@@ -374,18 +376,26 @@ def test_モデルは期間全体で出勤日数を制限しない() -> None:
             f"保育士{i}",
             (Role.HOIKUSHI,),
             Contract(
-                weekly_hours=35.0, daily_hours=7.0, max_weekly_days=5,
-                max_consecutive_days=5, min_rest_hours=11.0,
-                earliest_start=time(7, 0), latest_end=time(20, 0),
+                weekly_hours=35.0,
+                daily_hours=7.0,
+                max_weekly_days=5,
+                max_consecutive_days=5,
+                min_rest_hours=11.0,
+                earliest_start=time(7, 0),
+                latest_end=time(20, 0),
                 employment_type=EmploymentType.SEI,
-                min_monthly_hours=0, max_monthly_hours=200,
+                min_monthly_hours=0,
+                max_monthly_hours=200,
             ),
         )
         for i in range(6)
     ]
 
     result = solver.solve_shift(
-        [], members, table, time_limit_sec=45,
+        [],
+        members,
+        table,
+        time_limit_sec=45,
         standard=local_rules.get_standard(STANDARD_KEY),
     )
 

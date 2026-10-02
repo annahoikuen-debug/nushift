@@ -121,10 +121,14 @@ def test_入力不備は終了コード1でTracebackを出さない(tmp_path, ca
     code = main(
         [
             "solve",
-            "--children", str(broken),
-            "--staff", str(sample / "staff.csv"),
-            "--out", str(tmp_path / "out"),
-            "--time-limit", "5",
+            "--children",
+            str(broken),
+            "--staff",
+            str(sample / "staff.csv"),
+            "--out",
+            str(tmp_path / "out"),
+            "--time-limit",
+            "5",
         ]
     )
     captured = capsys.readouterr()
@@ -166,11 +170,16 @@ def test_closed指定日が要員表から除外される(tmp_path) -> None:
     code = main(
         [
             "solve",
-            "--children", str(sample / "children.csv"),
-            "--staff", str(sample / "staff.csv"),
-            "--closed", target,
-            "--out", str(out),
-            "--time-limit", "20",
+            "--children",
+            str(sample / "children.csv"),
+            "--staff",
+            str(sample / "staff.csv"),
+            "--closed",
+            target,
+            "--out",
+            str(out),
+            "--time-limit",
+            "20",
         ]
     )
     assert code in (EXIT_OK, EXIT_BLOCKER)
@@ -212,12 +221,18 @@ def test_no_min_twoで2名ルールの底上げが外れる(tmp_path) -> None:
     def build(out_name: str, extra: list[str]) -> list[str]:
         return [
             "solve",
-            "--children", str(day / "children.csv"),
-            "--staff", str(day / "staff.csv"),
-            "--start", "2026-09-28",
-            "--end", "2026-09-28",
-            "--out", str(tmp_path / out_name),
-            "--time-limit", "10",
+            "--children",
+            str(day / "children.csv"),
+            "--staff",
+            str(day / "staff.csv"),
+            "--start",
+            "2026-09-28",
+            "--end",
+            "2026-09-28",
+            "--out",
+            str(tmp_path / out_name),
+            "--time-limit",
+            "10",
             *extra,
         ]
 
@@ -227,7 +242,9 @@ def test_no_min_twoで2名ルールの底上げが外れる(tmp_path) -> None:
     assert main(build("out2", ["--no-min-two"])) in (EXIT_OK, EXIT_BLOCKER)
     without = pd.read_csv(tmp_path / "out2" / "requirements.csv")
 
-    assert "2名ルール" in "\n".join(with_min_two["根拠"].astype(str)), "既定では底上げが起こるること"
+    assert "2名ルール" in "\n".join(with_min_two["根拠"].astype(str)), (
+        "既定では底上げが起こるること"
+    )
     assert "2名ルール" not in "\n".join(without["根拠"].astype(str)), "底上げが起こらないこと"
     assert without["必要人員"].max() <= with_min_two["必要人員"].max()
 
@@ -240,11 +257,16 @@ def test_facility指定がsummaryに出る(tmp_path) -> None:
     code = main(
         [
             "solve",
-            "--children", str(sample / "children.csv"),
-            "--staff", str(sample / "staff.csv"),
-            "--facility", "あさひ幼稚園",
-            "--out", str(out),
-            "--time-limit", "20",
+            "--children",
+            str(sample / "children.csv"),
+            "--staff",
+            str(sample / "staff.csv"),
+            "--facility",
+            "あさひ幼稚園",
+            "--out",
+            str(out),
+            "--time-limit",
+            "20",
         ]
     )
     assert code in (EXIT_OK, EXIT_BLOCKER)
@@ -261,10 +283,14 @@ def test_zip指定でbundle的中身が読める(tmp_path) -> None:
     code = main(
         [
             "solve",
-            "--children", str(sample / "children.csv"),
-            "--staff", str(sample / "staff.csv"),
-            "--out", str(out),
-            "--time-limit", "20",
+            "--children",
+            str(sample / "children.csv"),
+            "--staff",
+            str(sample / "staff.csv"),
+            "--out",
+            str(out),
+            "--time-limit",
+            "20",
             "--zip",
         ]
     )
@@ -278,7 +304,7 @@ def test_zip指定でbundle的中身が読める(tmp_path) -> None:
 
 
 def test_seedで同じ入力なら同じ出力になる(tmp_path) -> None:
-    """同じ入力なら、优化が求まる範囲では出力が完全に一致すること。
+    """同じ入力なら、最適化が求まる範囲では出力が完全に一致すること。
 
     ``--seed`` はサンプルデータ生成の乱数シードであり、CBC 自体には影響しない。
     したがって **最適解が求まる規模の入力** なら、出力はビット単位で一致する。
@@ -294,13 +320,20 @@ def test_seedで同じ入力なら同じ出力になる(tmp_path) -> None:
         assert main(
             [
                 "solve",
-                "--children", str(day / "children.csv"),
-                "--staff", str(day / "staff.csv"),
-                "--start", "2026-09-28",
-                "--end", "2026-09-28",
-                "--out", str(out),
-                "--time-limit", "60",
-                "--seed", seed,
+                "--children",
+                str(day / "children.csv"),
+                "--staff",
+                str(day / "staff.csv"),
+                "--start",
+                "2026-09-28",
+                "--end",
+                "2026-09-28",
+                "--out",
+                str(out),
+                "--time-limit",
+                "60",
+                "--seed",
+                seed,
             ]
         ) in (EXIT_OK, EXIT_BLOCKER)
         return (out / "shift.csv").read_text(encoding="utf-8-sig")

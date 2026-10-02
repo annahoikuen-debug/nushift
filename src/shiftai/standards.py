@@ -15,16 +15,34 @@
 * 保育室に在園児がいる時間帯は「2名ルール」により最低 ``min_staff_per_room`` 名まで
   底上げする。底上げは最も年少の年齢クラスの行に載せる。
 * 祝日・行事日は ``is_binding=False`` にして超過配置を許容する。
+
+算出手法の切替
+--------------
+``StaffingStandard.headcount_mode`` で制度ごとに算法を切り替える。
+
+* ``per_class``（既定・認可保育所）: 年齢クラス毎に ``ceil(在園児数 / 定員比)``。
+  1・2歳児・4・5歳児も別々に丸めるため、丸め誤差が積み上がる。
+* ``facility_formula``（認可外保育施設）: 年齢区分ごとに小数第2位以下を切り捨て、
+  **合計して 1 を加え**、小数第1位で四捨五入する。
+  1・2歳児と4歳以上児は**合算**してから割る。出典は
+  「企業主導型保育事業費補助金実施要綱」第3の2(4)②。
+
+2 つの算法は結果が一致しない。実測では ``per_class`` は ``facility_formula`` より
+大きい値になるため 1 名足りないと誤認し、大きい値にはならないケースが
+約 0.5% あり、基準を満たしていると**誤判定**する。制度のプリセットは必ず
+``facility_formula`` を指定すること。
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import replace
 from datetime import date, time
 
 from shiftai.domain import (
+    HEADCOUNT_FACILITY_FORMULA,
+    QUALIFIED_RATIO,
     AgeClass,
     ChildPlan,
     Requirement,
@@ -52,6 +70,7 @@ _ROUNDING_LABELS = {
     "ceil": "切り上げ",
     "floor": "切り捨て",
     "round": "四捨五入",
+    "trunc1": "小数第2位以下切り捨て",
 }
 
 _MIN_TWO_TEXT = "2名ルールによる底上げ"
@@ -141,9 +160,7 @@ def count_children_by_slot(
     return counts
 
 
-def _required_qualified(
-    standard: StaffingStandard, kind: SlotKind, needed_staff: int
-) -> int:
+def _required_qualified(standard: StaffingStandard, kind: SlotKind, needed_staff: int) -> int:
     """必要人員のうち保育士でなければならない人数。"""
     if needed_staff <= 0:
         return 0
@@ -171,17 +188,110 @@ def _basis_text(
         f"{needed_staff}名（定員比{ratio.children_per_staff:g}:1、{rounding}）",
         slot_kind_label(kind),
     ]
-    if (
-        standard.late_care_relaxed
-        and kind is SlotKind.LATE
-        and needed_qualified < needed_staff
-    ):
+    if standard.late_care_relaxed and kind is SlotKind.LATE and needed_qualified < needed_staff:
         parts.append(
             f"延長保育の代替措置（保育士1名＋支援員）で必要保育士数を{needed_qualified}名に緩和"
         )
     if not is_binding:
         parts.append(_HOLIDAY_TEXT)
     return "／".join(parts)
+
+
+def _facility_formula_basis(
+    standard: StaffingStandard,
+    counts: Mapping[AgeClass, int],
+    total: int,
+    qual_total: int,
+) -> str:
+    """施設単位算出手法の内訳を ``basis`` 用の1文に組み立てる。"""
+    parts: list[str] = []
+    for group, n, part, ratio in standard.headcount_breakdown(counts):
+        label = "・".join(ac.value for ac in group)
+        parts.append(f"{label} {n}名 × 1/{ratio:g} = {part:.1f}（小数第2位以下切捨て）")
+    extra = f" ＋ {standard.headcount_extra}" if standard.headcount_extra else ""
+    parts.append(f"合計{extra} → 四捨五入 = {total}名（内訳は表示用で、この合計が基準値）")
+    ratio_text = f"／うち保育士{qual_total}名（比率{standard.min_qualified_ratio:.0%}）"
+    return "／".join(parts) + ratio_text
+
+
+def _slot_requirements(
+    standard: StaffingStandard,
+    day: date,
+    slot: Slot,
+    kind: SlotKind,
+    slot_counts: Mapping[AgeClass, int],
+    is_binding: bool,
+) -> list[Requirement]:
+    """1 時間帯分の ``Requirement`` 行を作る（算出手法・資格判定により分岐）。"""
+    present = [ac for ac in sorted(slot_counts, key=lambda a: a.sort_key) if slot_counts[ac] > 0]
+    if not present:
+        return []
+
+    if standard.headcount_mode == HEADCOUNT_FACILITY_FORMULA:
+        total = standard.headcount_for_slot(slot_counts)
+        staff_alloc = standard.allocate_staff(slot_counts)
+    else:
+        staff_alloc = {
+            age_class: standard.headcount_for(age_class, slot_counts[age_class])
+            for age_class in present
+        }
+        total = sum(staff_alloc.values())
+
+    if standard.qualified_mode == QUALIFIED_RATIO:
+        qual_total = standard.slot_qualified_for(total)
+        qual_alloc = standard.allocate_qualified(staff_alloc, qual_total)
+    else:
+        # 認可保育所: 行ごとに「必要人員＝必要保育士数」（延長緩和の時は半数を保育士）
+        qual_total = sum(staff_alloc.values())
+        qual_alloc = {
+            age_class: _required_qualified(standard, kind, staff_alloc[age_class])
+            for age_class in present
+        }
+
+    shared_basis = (
+        _facility_formula_basis(standard, slot_counts, total, qual_total)
+        if standard.headcount_mode == HEADCOUNT_FACILITY_FORMULA
+        else ""
+    )
+
+    rows: list[Requirement] = []
+    for age_class in present:
+        needed_staff = staff_alloc[age_class]
+        needed_qualified = qual_alloc.get(age_class, 0)
+        if shared_basis:
+            row_basis = [
+                f"{age_class.value} {slot_counts[age_class]}名 → 必要人員{needed_staff}名",
+                slot_kind_label(kind),
+                shared_basis,
+            ]
+        else:
+            row_basis = [
+                _basis_text(
+                    standard,
+                    age_class,
+                    slot_counts[age_class],
+                    needed_staff,
+                    needed_qualified,
+                    kind,
+                    is_binding,
+                )
+            ]
+        if not is_binding and "祝" not in "".join(row_basis):
+            row_basis.append(_HOLIDAY_TEXT)
+        rows.append(
+            Requirement(
+                day=day,
+                slot=slot,
+                age_class=age_class,
+                child_count=slot_counts[age_class],
+                needed_staff=needed_staff,
+                needed_qualified=needed_qualified,
+                slot_kind=kind,
+                basis="／".join(row_basis),
+                is_binding=is_binding,
+            )
+        )
+    return rows
 
 
 def build_requirements(
@@ -244,34 +354,7 @@ def build_requirements(
             slot_counts = {ac: counts[ac][index] for ac in counts}
             if sum(slot_counts.values()) <= 0:
                 continue
-            slot_rows: list[Requirement] = []
-            for age_class in sorted(slot_counts, key=lambda a: a.sort_key):
-                child_count = slot_counts[age_class]
-                if child_count <= 0:
-                    continue
-                needed_staff = standard.headcount_for(age_class, child_count)
-                needed_qualified = _required_qualified(standard, kind, needed_staff)
-                slot_rows.append(
-                    Requirement(
-                        day=day,
-                        slot=slot,
-                        age_class=age_class,
-                        child_count=child_count,
-                        needed_staff=needed_staff,
-                        needed_qualified=needed_qualified,
-                        slot_kind=kind,
-                        basis=_basis_text(
-                            standard,
-                            age_class,
-                            child_count,
-                            needed_staff,
-                            needed_qualified,
-                            kind,
-                            is_binding,
-                        ),
-                        is_binding=is_binding,
-                    )
-                )
+            slot_rows = _slot_requirements(standard, day, slot, kind, slot_counts, is_binding)
             slot_rows = _apply_min_two(standard, slot_rows, enforce_min_two)
             day_rows.extend(slot_rows)
         table.rows[day] = day_rows
@@ -294,9 +377,7 @@ def _apply_min_two(
     if total >= standard.min_staff_per_room:
         return slot_rows
     gap = standard.min_staff_per_room - total
-    target_index = min(
-        range(len(slot_rows)), key=lambda i: slot_rows[i].age_class.sort_key
-    )
+    target_index = min(range(len(slot_rows)), key=lambda i: slot_rows[i].age_class.sort_key)
     target = slot_rows[target_index]
     slot_rows[target_index] = replace(
         target,
@@ -322,9 +403,7 @@ def explain_requirement(req: Requirement, standard: StaffingStandard) -> str:
 
 def total_required_hours(table: RequirementTable) -> float:
     """必要人員の総人時（=必要人員×時間帯長）を返す。"""
-    return float(
-        sum(r.needed_staff * r.slot.hours for rows in table.rows.values() for r in rows)
-    )
+    return float(sum(r.needed_staff * r.slot.hours for rows in table.rows.values() for r in rows))
 
 
 def peak_requirement(table: RequirementTable) -> int:

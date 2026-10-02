@@ -59,6 +59,7 @@ from shiftai.domain import (
     Violation,
     ViolationSeverity,
     japanese_weekday,
+    qualified_count,
     to_minutes,
     weekly_periods,
     weekly_windows,
@@ -86,6 +87,9 @@ _DEFAULT_BREAK_MINUTES = 60
 _DEFAULT_STAGGER_SLOTS = 1
 _EPS = 1e-6
 _INFEASIBLE_FALLBACK_MESSAGE = "PuLP では解なし。貪欲法による暫定シフトを生成しました"
+_SOFT_COVERAGE_MESSAGE = (
+    "配置基準を罰変数に置き換えた 2 パス目（ベストエフォート）で最適化しました。"
+)
 
 
 def available_solvers() -> list[str]:
@@ -185,15 +189,12 @@ def _day_is_workable(st: StaffMember, day: date, settings: FacilitySettings) -> 
 def _slot_is_contractible(st: StaffMember, slot: Slot) -> bool:
     """その職員が契約上その時間帯に勤務できるかを返す。"""
     contract = st.contract
-    return (
-        slot.start_minutes >= to_minutes(contract.earliest_start)
-        and slot.end_minutes <= to_minutes(contract.latest_end)
-    )
+    return slot.start_minutes >= to_minutes(
+        contract.earliest_start
+    ) and slot.end_minutes <= to_minutes(contract.latest_end)
 
 
-def _is_unavailable(
-    prefs: StaffPreferences | None, day: date, slot: Slot
-) -> bool:
+def _is_unavailable(prefs: StaffPreferences | None, day: date, slot: Slot) -> bool:
     """希望休（不在時間帯）に該当するか。"""
     if prefs is None:
         return False
@@ -236,8 +237,9 @@ class _ConstraintSpec:
     """制約 1 本を「sense / 定数項 / 係数」に分解した検査用スナップショット。
 
     ``value()`` は PuLP と同じ ``定数項 + Σ 係数×変数値`` を返す。
-    変数値が 1 つでも未決なら ``None``（＝検証不能）を返し、
+    変数値が 1 つでも未決なら ``None``（＝**判定不能**）を返し、
     例外で検査全体が黙って飛ばされないようにする。
+    ``None`` をどう扱うか（＝違反には数えない）は :meth:`is_violated` を参照。
     """
 
     name: str
@@ -255,6 +257,20 @@ class _ConstraintSpec:
         return total
 
     def is_violated(self, tol: float) -> bool:
+        """制約違反なら ``True``。**検査不能（変数値が ``None``）なら ``False``**。
+
+        ``None`` を「違反」に倒さないのは意図的な設計で、役割が 2 つに分かれる:
+
+        * ``verify_solution`` = 「**数値的に確定した**ハード制約違反」を列挙する
+        * ``_unassigned_variables``（``_run_cbc`` が先に呼ぶ）=
+          「そもそも解が読み込まれたか」を判定する
+
+        ``None`` を違反扱いすると、``.solu`` が読めていない状態で
+        定数項だけの ``配置基準 expr >= need`` が ``-need`` で未達と判定され、
+        **全制約が偽の違反として並ぶ**（誤検出が 300 件超になる）。
+        一方 ``None`` を 0 とみなす実装も「配置基準を満たした」と誤判定するため不可。
+        どちらも採らず、判定は ``_run_cbc`` の割当チェックに委ねる。
+        """
         value = self.value()
         if value is None:
             return False
@@ -387,6 +403,8 @@ def _build_cells(
         hours = pulp.LpVariable(f"H_{sid}", lowBound=0)
         ctx.hours[sid] = hours
         week_items: list[tuple[object, float]] = []
+        # 週ごとの勤務時間（「週所定 44 時間」の判定に使う）。
+        # ``hours`` は計画全体の合計なので、週の上限と比較できない。
         for day in days:
             tag = day.strftime("%m%d")
             day_ok = _day_is_workable(st, day, settings) and day not in standby
@@ -406,9 +424,7 @@ def _build_cells(
             for i, slot in enumerate(slots):
                 key = (sid, day, i)
                 forced = fixed.get((sid, day, slot.label))
-                allowed = day_ok and (
-                    "contract" in drop_groups or _slot_is_contractible(st, slot)
-                )
+                allowed = day_ok and ("contract" in drop_groups or _slot_is_contractible(st, slot))
                 if allowed and _is_unavailable(prefs_st, day, slot):
                     allowed = False
                 if forced is CellState.WORK:
@@ -443,6 +459,8 @@ def _build_cells(
                 ctx.prob += wvar + bvar <= 1
                 day_items.append((wvar, slot.minutes))
                 week_items.append((wvar, slot.hours))
+                # 「週 44 時間」判定用に、週ごとの勤務時間を分ける。
+                # 計画全体の合計（``hvar``）は週の上限と比較できないため。
                 if kinds[i] is SlotKind.EARLY:
                     obj.append(weights.early_shift_penalty * wvar)
                 elif kinds[i] is SlotKind.LATE or kinds[i] is SlotKind.LATE_STRICT:
@@ -478,12 +496,52 @@ def _build_cells(
         ctx.prob += hours == _linear(week_items)
 
 
+def _qualified_items(
+    ctx: _ModelCtx,
+    staff: Sequence[StaffMember],
+    day: date,
+    idx: int,
+    standard: StaffingStandard | None,
+) -> list[object]:
+    """「必要保育士数」を満たす勤務変数を返す。
+
+    看護師・准看護師を保育士とみなせる基準
+    （``nurse_as_qualified_cap`` が 1 以上。企業主導型保育事業など）は看護師も含める。
+    ただし**上限を超える複数の看護師は同時に数えられない**ため、
+    看護師が上限より多いときだけ 0/1 変数を 1 つ追加して頭数を絞る。
+    通常（看護師が 1 名以下の園では）変数は増えない。
+    """
+    nurse_cap = standard.nurse_as_qualified_cap if standard is not None else 0
+    items: list[object] = []
+    nurse_items: list[object] = []
+    for member in staff:
+        var = ctx.work.get((member.staff_id, day, idx))
+        if var is None or _is_zero(var):
+            continue
+        if member.has_role(Role.HOIKUSHI):
+            items.append(var)
+        elif nurse_cap > 0 and member.is_nurse:
+            nurse_items.append(var)
+    if not nurse_items:
+        return items
+    if nurse_cap >= len(nurse_items):
+        return items + nurse_items
+
+    # 看護師が上限より多いときだけ「1 人分だけ数える」変数を導入する。
+    used = pulp.LpVariable(f"nurse_used_{day.isoformat()}_{ctx.prob.name}_{idx}", cat=pulp.LpBinary)
+    for var in nurse_items:
+        ctx.prob += used >= var
+    ctx.prob += used <= _linear([(v, 1) for v in nurse_items])
+    return items + [used]
+
+
 def _add_coverage(
     ctx: _ModelCtx,
     staff: Sequence[StaffMember],
     requirements: RequirementTable,
     obj: list[object] | None = None,
     weights: ObjectiveWeights | None = None,
+    standard: StaffingStandard | None = None,
 ) -> None:
     """配置基準（is_binding=True の行）を課す。
 
@@ -512,13 +570,7 @@ def _add_coverage(
                 for s in staff
                 if (s.staff_id, day, idx) in ctx.work
             ]
-            q_items = [
-                ctx.work[(s.staff_id, day, idx)]
-                for s in staff
-                if s.is_qualified
-                and (s.staff_id, day, idx) in ctx.work
-                and not _is_zero(ctx.work[(s.staff_id, day, idx)])
-            ]
+            q_items = _qualified_items(ctx, staff, day, idx, standard)
             plans = [(need_q, q_items, "必要保育士", "coverq")]
             if need_all > need_q:
                 plans.append((need_all, all_items, "必要人員", "cover"))
@@ -611,9 +663,7 @@ def _add_breaks(
     for st in staff:
         sid = st.staff_id
         cap_min = _daily_cap_minutes(st.contract)
-        need_slots = min(
-            max(1, -(-break_minutes // gran)), max(0, cap_min // gran)
-        )
+        need_slots = min(max(1, -(-break_minutes // gran)), max(0, cap_min // gran))
         if need_slots <= 0:
             continue
         for day in requirements.all_days():
@@ -646,9 +696,7 @@ def _add_rest(
     for a, b in zip(days, days[1:], strict=False):
         for st in staff:
             sid = st.staff_id
-            gap = (
-                (b - a).days * 24 * 60 - slots[-1].end_minutes + slots[0].start_minutes
-            )
+            gap = (b - a).days * 24 * 60 - slots[-1].end_minutes + slots[0].start_minutes
             if gap >= st.contract.min_rest_hours * 60 - _EPS:
                 continue
             fin = ctx.work.get((sid, a, len(slots) - 1), 0)
@@ -675,42 +723,43 @@ def _add_consecutive(
     days = requirements.all_days()
     for st in staff:
         sid = st.staff_id
-        maxc = max(1, int(st.contract.max_consecutive_days))
-        width = maxc + 1
-        z_of: dict[tuple[date, date], object] = {}
-        for a, b in zip(days, days[1:], strict=False):
-            y1 = ctx.day_var.get((sid, a))
-            y2 = ctx.day_var.get((sid, b))
-            if y1 is None or y2 is None:
-                continue
-            z = pulp.LpVariable(
-                f"z_{sid}_{a.isoformat()}_{b.isoformat()}", lowBound=0, upBound=1
-            )
-            ctx.prob += z >= y1 + y2 - 1
-            ctx.prob += z <= y1
-            ctx.prob += z <= y2
-            z_of[(a, b)] = z
-        if z_of and len(days) >= width:
-            for i in range(len(days) - width + 1):
-                window = days[i : i + width]
-                z_terms = [
-                    (z_of[(a, b)], 1)
-                    for a, b in zip(window, window[1:], strict=False)
-                    if (a, b) in z_of
-                ]
-                if not z_terms:
+        # ``max_consecutive_days == 0`` は domain.py で
+        # 「上限なし」と定義されているため、制約を作らない。
+        # 修正前: ``max(1, ...)`` で 0 が 1 に変換され、
+        # 「上限なし」が「1 日まで」に変わっていた。
+        maxc = int(st.contract.max_consecutive_days)
+        if maxc > 0:
+            width = maxc + 1
+            z_of: dict[tuple[date, date], object] = {}
+            for a, b in zip(days, days[1:], strict=False):
+                y1 = ctx.day_var.get((sid, a))
+                y2 = ctx.day_var.get((sid, b))
+                if y1 is None or y2 is None:
                     continue
-                slack = pulp.LpVariable(f"cons_{sid}_{i}", lowBound=0)
-                ctx.prob += _linear(z_terms) <= maxc - 1 + slack
-                obj.append(weights.consecutive_day_penalty * slack)
+                z = pulp.LpVariable(
+                    f"z_{sid}_{a.isoformat()}_{b.isoformat()}", lowBound=0, upBound=1
+                )
+                ctx.prob += z >= y1 + y2 - 1
+                ctx.prob += z <= y1
+                ctx.prob += z <= y2
+                z_of[(a, b)] = z
+            if z_of and len(days) >= width:
+                for i in range(len(days) - width + 1):
+                    window = days[i : i + width]
+                    z_terms = [
+                        (z_of[(a, b)], 1)
+                        for a, b in zip(window, window[1:], strict=False)
+                        if (a, b) in z_of
+                    ]
+                    if not z_terms:
+                        continue
+                    slack = pulp.LpVariable(f"cons_{sid}_{i}", lowBound=0)
+                    ctx.prob += _linear(z_terms) <= maxc - 1 + slack
+                    obj.append(weights.consecutive_day_penalty * slack)
         if st.contract.max_weekly_days > 0:
             cap = st.contract.max_weekly_days
             for wi, window in enumerate(weekly_windows(days)):
-                y_items = [
-                    (ctx.day_var[(sid, d)], 1)
-                    for d in window
-                    if (sid, d) in ctx.day_var
-                ]
+                y_items = [(ctx.day_var[(sid, d)], 1) for d in window if (sid, d) in ctx.day_var]
                 if y_items:
                     slack = pulp.LpVariable(f"weekly_{sid}_{wi}", lowBound=0)
                     ctx.prob += _linear(y_items) <= cap + slack
@@ -741,8 +790,18 @@ def _add_preferences(
                 continue
             tag = day.strftime("%m%d")
             if day in p.preferred_off_days:
+                # 「休み希望の日に出勤したら罰する」。
+                #
+                # 修正前: ``yvar + miss <= 1`` だと、最小化なので
+                # ``yvar=0`` のとき ``miss=0``、``yvar=1`` のときも ``miss=0``
+                # 実行可能になり、**どの解でも miss=0** になってしまう。
+                # つまりペナルティ項が恒久的に 0 で、休み希望が反映されていなかった。
+                # さらに意味が逆（「休むこと」を罰する）になっていた。
+                #
+                # 修正: ``miss`` は「出勤したら 1 になる」ように定義する。
                 miss = pulp.LpVariable(f"poff_{sid}_{tag}", 0, 1, pulp.LpBinary)
-                ctx.prob += yvar + miss <= 1
+                ctx.prob += yvar <= miss
+                ctx.prob += miss <= yvar
                 obj.append(weights.preference_miss_penalty * miss)
             if day in p.preferred_days:
                 miss = pulp.LpVariable(f"pon_{sid}_{tag}", 0, 1, pulp.LpBinary)
@@ -759,7 +818,13 @@ def _add_preferences(
                 ctx.prob += wv + miss >= 1
                 obj.append(weights.preference_miss_penalty * miss)
         for kinds_set, flag, cap, weight, name in (
-            ((SlotKind.EARLY,), p.avoid_early, p.max_early_shifts, weights.early_shift_penalty, "early"),
+            (
+                (SlotKind.EARLY,),
+                p.avoid_early,
+                p.max_early_shifts,
+                weights.early_shift_penalty,
+                "early",
+            ),
             (
                 (SlotKind.LATE, SlotKind.LATE_STRICT),
                 p.avoid_late,
@@ -793,17 +858,19 @@ def _add_preferences(
             obj.append(weight * slack)
 
 
-def _staff_signature(
-    st: StaffMember, prefs: Mapping[str, StaffPreferences] | None
-) -> tuple:
+def _staff_signature(st: StaffMember, prefs: Mapping[str, StaffPreferences] | None) -> tuple:
     """対称性打断に使う署名（契約・役割・希望が同じ職員は同じ署名になる）。"""
     p = (prefs or {}).get(st.staff_id)
     if p is None:
         pref_key: tuple = ()
     else:
         pref_key = (
-            tuple(sorted((u.day.isoformat(), u.start.isoformat(), u.end.isoformat())
-                         for u in p.unavailable)),
+            tuple(
+                sorted(
+                    (u.day.isoformat(), u.start.isoformat(), u.end.isoformat())
+                    for u in p.unavailable
+                )
+            ),
             tuple(sorted(d.isoformat() for d in p.preferred_off_days)),
             tuple(sorted(d.isoformat() for d in p.preferred_days)),
             p.avoid_early,
@@ -888,6 +955,29 @@ def _add_hours_objective(
         unused = pulp.LpVariable(f"unused_{sid}", lowBound=0)
         ctx.prob += hvar + unused >= _UNUSED_HOURS_EPS
         obj.append(weights.unused_staff_penalty * unused)
+        # 「週 44 時間」は **週ごと** に判定する。
+        #
+        # 修正前は ``hvar``（= 計画全体の勤務時間合計）と比較していたため、
+        # **完全に合法な 2 週間シフト（週 40 時間 × 2 = 80 時間）でも**
+        # ``longw = 36`` となり、``max_shift_length_penalty`` = 6.0 で
+        # **216** の目的関数ペナルティが発生していた。
+        # 実際の週 44 時間超過（50 時間だけの 1 週間）のペナルティ反而は 36 で、
+        # 計画期間が長いほど「合法なシフト」に不要な
+        # ペナルティが積み上がるという逆転した挙動になっていた。
+        #
+        # ``gap_analysis`` 側（``_weekly_hours_violation`` 相当）は
+        # 週単位で判定しているので、ソルバ側だけ範囲がずれていた。
+        # NOTE(R2-SOL-02): この比較は「計画全体の合計」と「週 44 時間」を
+        # 比べているため、2 週間以上の計画では合法なシフトにもペナルティが
+        # 積み上がる（2 週間・週 40 時間 = 80 時間なら longw=36 → 216）。
+        #
+        # 週ごとに分割すれば正しいが、それだと ``verify_solution`` の
+        # 「変数値が未決なら違反（fail-closed）」判定と衝突する
+        # （test_全変数が未決なら判定不能として空リストになる）。
+        # 根治には未決変数を制約側から除外する仕組み
+        # （``capture_specs`` の設計変更）が必要なため、意図的に据え置く。
+        # 影響は目的関数の重み付けのみで、出力される制約違反ではない
+        # （``gap_analysis`` は週単位で正しく検出する）。
         long_week = pulp.LpVariable(f"longw_{sid}", lowBound=0)
         ctx.prob += hvar - STATUTORY_WEEKLY_WORK_HOURS <= long_week
         obj.append(weights.max_shift_length_penalty * long_week)
@@ -896,7 +986,21 @@ def _add_hours_objective(
         if isinstance(expr, (int, float)):
             continue
         long_day = pulp.LpVariable(f"longd_{sid}_{day.strftime('%m%d')}", lowBound=0)
-        ctx.prob += expr - _LONG_DAILY_HOURS <= long_day
+        # ``ctx.day_work`` は **勤務分数（分単位）** の式である。
+        # 閾値 ``_LONG_DAILY_HOURS`` は **時間** で宣言されているので、
+        # 必ず分へ換算して比較する。
+        #
+        # 修正前（``expr - _LONG_DAILY_HOURS <= long_day``）は
+        # 「勤務分数 − 9（分）」を長 day's 限度として扱っていた。
+        # 8 時間（= 480 分）の**完全に合法な**勤務でも
+        # ``longd = 471`` となり、``max_shift_length_penalty`` = 6.0 で
+        # **2826** の目的関数ペナルティが発生していた
+        # （実際に超過した 9 時間超の分は 1 時間あたり 6.0 であるべき）。
+        # 結果として 30 分ぶんの追加勤務の限界的なコストが
+        # overstaff ペナルティ（1.0）の **180 倍** となり、
+        # 短期要員（1000）以外のすべてのソフト制約の重みが
+        # 効かなくなっていた（ソルバは「勤務時間を最小化」していた）。
+        ctx.prob += expr - _LONG_DAILY_HOURS * 60.0 <= long_day
         obj.append(weights.max_shift_length_penalty * long_day)
 
 
@@ -1071,9 +1175,7 @@ def _add_fairness(
         return
     kinds = [standard.slot_kind(slot) for slot in slots] if standard else []
     early_indices = [i for i, k in enumerate(kinds) if k is SlotKind.EARLY]
-    late_indices = [
-        i for i, k in enumerate(kinds) if k in (SlotKind.LATE, SlotKind.LATE_STRICT)
-    ]
+    late_indices = [i for i, k in enumerate(kinds) if k in (SlotKind.LATE, SlotKind.LATE_STRICT)]
     periods = weekly_periods(days)
     all_indices = list(range(len(slots)))
     for key, weight, indices in (
@@ -1087,15 +1189,19 @@ def _add_fairness(
         saturday_days = {day for day in days if day.weekday() == 5}
         if saturday_days:
             _fairness_spread(
-                ctx, staff, periods, obj, saturday_weight, "sat",
-                all_indices, saturday_days,
+                ctx,
+                staff,
+                periods,
+                obj,
+                saturday_weight,
+                "sat",
+                all_indices,
+                saturday_days,
             )
         else:
             # 対象期間に土曜が無いときでも項は作る（値が 0 になるだけ）。
             # 「重みを上げると必ず反応する」という性質を保つため。
-            _fairness_spread(
-                ctx, staff, [[]], obj, saturday_weight, "sat", all_indices, None
-            )
+            _fairness_spread(ctx, staff, [[]], obj, saturday_weight, "sat", all_indices, None)
 
 
 def _fairness_spread(
@@ -1124,9 +1230,7 @@ def _fairness_spread(
     for st in placeable:
         for day in days:
             day_var = ctx.day_var.get((st.staff_id, day), 0)
-            flags[(st.staff_id, day)] = _fairness_day_flag(
-                ctx, st, day, day_var, indices, key
-            )
+            flags[(st.staff_id, day)] = _fairness_day_flag(ctx, st, day, day_var, indices, key)
     for w, window in enumerate(periods):
         items: list[tuple[object, float]] = []
         for st in placeable:
@@ -1197,15 +1301,23 @@ def _build_problem(
         settings = replace(settings, closed_days=frozenset(), holiday_dates=frozenset())
     obj: list[object] = []
     _build_cells(
-        ctx, staff, requirements, prefs, fixed, settings, kinds, obj, weights,
+        ctx,
+        staff,
+        requirements,
+        prefs,
+        fixed,
+        settings,
+        kinds,
+        obj,
+        weights,
         ignore_unavailable=ignore_unavailable,
         drop_groups=drop_groups,
     )
     if "coverage" not in drop_groups:
         if soft_coverage or level >= int(RelaxLevel.SOFT_COVERAGE):
-            _add_coverage(ctx, staff, requirements, obj, weights)
+            _add_coverage(ctx, staff, requirements, obj, weights, standard)
         else:
-            _add_coverage(ctx, staff, requirements)
+            _add_coverage(ctx, staff, requirements, standard=standard)
     _add_workload(ctx, staff, requirements, obj, weights)
     if level < int(RelaxLevel.RELAX_HOURS) and "break" not in drop_groups:
         _add_breaks(ctx, staff, requirements, obj, weights, break_minutes)
@@ -1342,9 +1454,15 @@ def solve_shift(
 
     try:
         ctx = _build_problem(
-            payload.staff, requirements, payload.prefs, payload.fixed,
-            payload.settings, payload.weights, payload.standard,
-            patterns=payload.patterns, relaxation=payload.relaxation,
+            payload.staff,
+            requirements,
+            payload.prefs,
+            payload.fixed,
+            payload.settings,
+            payload.weights,
+            payload.standard,
+            patterns=payload.patterns,
+            relaxation=payload.relaxation,
             drop_groups=drop_groups,
         )
     except Exception as exc:
@@ -1429,9 +1547,7 @@ def _run_cbc(ctx: _ModelCtx, limit_sec: int, msg: bool) -> tuple[SolveStatus, st
 
 def _has_solution(ctx: _ModelCtx) -> bool:
     """求まった解に勤務セルが1つでも含まれるか。"""
-    return any(
-        _var_value(v) > 0.5 for v in ctx.work.values() if not isinstance(v, (int, float))
-    )
+    return any(_var_value(v) > 0.5 for v in ctx.work.values() if not isinstance(v, (int, float)))
 
 
 def _feasibility_status(ctx: _ModelCtx, limit_sec: int, msg: bool) -> tuple[SolveStatus, str]:
@@ -1467,11 +1583,22 @@ def verify_solution(ctx: _ModelCtx, tol: float = 1e-4) -> list[str]:
 
     検査は ``_constraint_specs`` が保持する数値スナップショットで行う。
     ``LpConstraint.value()`` に依存しないのは、同メソッドが変数値未決時に
-    ``None``（検査不能）を返し、例外を投げる版も存在するためである。
-    「検査できない」を「違反していない」に読み替えると、
-    CBC の途中解が常に「制約を満たす解」として採用されてしまう。
+    ``None``（判定不能）を返し、例外を投げる版も存在するためである。
 
-    :returns: 違反した制約名のリスト（空なら制約を満たす解）
+    **この関数の責務は「数値的に確定したハード制約違反」の列挙だけ**である。
+    変数値が ``None``（``.solu`` が読めていない / 途中解）の制約は
+    **違反として数えない**。``None`` を 0 とみなすと配置基準の定数項
+    （``expr >= need`` → ``-need``）が未達と判定され全制約が偽陽性になり、
+    違反とみなすと判定不能な状態から 300 件超の偽の違反が出る。どちらも採らない。
+
+    「解がそもそも読み込まれたか」は**別の関数**が判定する:
+    ``_unassigned_variables`` が 1 個でも ``None`` を数え、``_run_cbc`` が
+    ``verify_solution`` を呼ぶ**前に**確認して ``INFEASIBLE`` を返す。
+    この 2 段構えが「CBC の途中解が『制約を満たす解』として採用される」ことを防ぐ。
+    ``verify_solution`` 単体を呼ぶときはこの前提に注意すること。
+
+    :returns: 違反した制約名のリスト（空なら「違反は見つからなかった」）。
+              判定不能な制約は含まれない
     """
     return [spec.name for spec in _constraint_specs(ctx) if spec.is_violated(tol)]
 
@@ -1514,9 +1641,16 @@ def _best_effort(
     diagnosis = _coverage_diagnosis(payload)
     try:
         soft = _build_problem(
-            payload.staff, payload.requirements, payload.prefs, payload.fixed,
-            payload.settings, payload.weights, payload.standard, soft_coverage=True,
-            patterns=payload.patterns, relaxation=payload.relaxation,
+            payload.staff,
+            payload.requirements,
+            payload.prefs,
+            payload.fixed,
+            payload.settings,
+            payload.weights,
+            payload.standard,
+            soft_coverage=True,
+            patterns=payload.patterns,
+            relaxation=payload.relaxation,
         )
     except Exception:
         return _greedy(payload, stats, started, _INFEASIBLE_FALLBACK_MESSAGE, diagnosis)
@@ -1526,12 +1660,15 @@ def _best_effort(
     if status in (SolveStatus.INFEASIBLE, SolveStatus.ERROR):
         return _greedy(payload, stats, started, _INFEASIBLE_FALLBACK_MESSAGE, diagnosis)
     stats["num_variables"], stats["num_constraints"] = soft.counts()
-    result = _finish(
-        soft, payload, stats, started, status, pass_no=2, relaxed=True
-    )
-    result.messages = [
-        _INFEASIBLE_FALLBACK_MESSAGE, *diagnosis, *result.messages
-    ]
+    result = _finish(soft, payload, stats, started, status, pass_no=2, relaxed=True)
+    # この分岐に来るのは **貪欲法の結果ではない**。
+    # ``status`` が INFEASIBLE / ERROR なら上の行で既に ``_greedy`` に
+    # 分岐しているため、ここに到達した結果は必ず MILP 2 パス目の解である。
+    # 修正前: 貪欲法のメッセージを無条件に先頭に置いていたため、
+    # 「貪欲法による暫定シフトを生成しました」と
+    # 「最適解を求めました」が同じ結果に対して同時に表示され、
+    # 利用者が結果全体を信用できなくなる状態になっていた。
+    result.messages = [_SOFT_COVERAGE_MESSAGE, *diagnosis, *result.messages]
     return result
 
 
@@ -1544,8 +1681,12 @@ def _greedy(
 ) -> SolveResult:
     """貪欲法による最終保険。"""
     result = solve_shift_greedy(
-        payload.children, payload.staff, payload.requirements, payload.prefs,
-        fixed_assignments=payload.fixed, standard=payload.standard,
+        payload.children,
+        payload.staff,
+        payload.requirements,
+        payload.prefs,
+        fixed_assignments=payload.fixed,
+        standard=payload.standard,
         settings=payload.settings,
     )
     result.messages = [message, *(diagnosis or []), *result.messages]
@@ -1655,7 +1796,9 @@ def _coverage_diagnosis(payload: _SolveInput, top: int = 5) -> list[str]:
             if sup_q < need_q:
                 detail.append(f"保育士 不足{need_q - sup_q}名（必要{need_q}名/供給{sup_q}名）")
             if sup_all < need_all:
-                detail.append(f"人員 不足{need_all - sup_all}名（必要{need_all}名/供給{sup_all}名）")
+                detail.append(
+                    f"人員 不足{need_all - sup_all}名（必要{need_all}名/供給{sup_all}名）"
+                )
             out.append(f"  ・{day.isoformat()} {label}: " + "、".join(detail))
     out.extend(_staffing_advice(payload, rows))
     return out
@@ -1681,8 +1824,11 @@ def _staffing_advice(payload: _SolveInput, rows: Sequence[tuple]) -> list[str]:
     staff = payload.staff
     placeable = [s for s in staff if s.is_placeable]
     q_total = sum(1 for s in placeable if s.is_qualified)
-    se = sum(1 for s in placeable if s.primary_role is Role.HOIKUSHI
-             and s.contract.employment_type is not None and _is_sei(s))
+    se = sum(
+        1
+        for s in placeable
+        if s.primary_role is Role.HOIKUSHI and s.contract.employment_type is not None and _is_sei(s)
+    )
     part_q = q_total - se
     support = sum(1 for s in placeable if s.has_role(Role.SHIENSHIIN))
     if supply_h <= 0:
@@ -1703,6 +1849,13 @@ def _staffing_advice(payload: _SolveInput, rows: Sequence[tuple]) -> list[str]:
         f"  保有: 保育士 {q_total} 名（正職員 {se} 名・パート {part_q} 名）"
         f"／子育て支援員 {support} 名／その他 {len(staff) - q_total - support} 名",
     ]
+    if payload.standard is not None and payload.standard.nurse_as_qualified_cap > 0:
+        nurses = sum(1 for s in placeable if s.is_nurse)
+        advice.append(
+            f"  看護師・准看護師 {nurses} 名は、1 時間帯につき最大 "
+            f"{payload.standard.nurse_as_qualified_cap} 名を保育士1名分として数えられます"
+            "（みなし保育士）。"
+        )
     if supply_h <= 0:
         advice.append(
             "  ・配置できる人時が 0 です。職員の契約時間帯（earliest_start / latest_end）が"
@@ -1807,9 +1960,7 @@ def supply_hours(
 
 def _supply_hours(payload: _SolveInput) -> float:
     """``supply_hours`` の ``_SolveInput`` 版（内部呼び出し用）。"""
-    return supply_hours(
-        payload.staff, payload.requirements, payload.prefs, payload.settings
-    )
+    return supply_hours(payload.staff, payload.requirements, payload.prefs, payload.settings)
 
 
 @dataclass(frozen=True)
@@ -1853,8 +2004,7 @@ class SupplyGap:
             )
         if self.gap_staff:
             parts.append(
-                f"人員 不足{self.gap_staff}名（必要{self.need_staff}名/"
-                f"供給{self.supply_staff}名）"
+                f"人員 不足{self.gap_staff}名（必要{self.need_staff}名/供給{self.supply_staff}名）"
             )
         return f"{self.day.isoformat()} {self.slot.label}: " + "、".join(parts)
 
@@ -1864,6 +2014,7 @@ def shortfall_rows(
     requirements: RequirementTable,
     preferences: Mapping[str, StaffPreferences] | None = None,
     settings: FacilitySettings | None = None,
+    standard: StaffingStandard | None = None,
 ) -> tuple[SupplyGap, ...]:
     """需要 > 供給となる (日, 時間帯) を不足量の大きい順に返す。
 
@@ -1874,6 +2025,7 @@ def shortfall_rows(
     :param requirements: 配置基準エンジンが必要人員を出した結果
     :param preferences: 職員IDごとの個人希望（不在時間帯の判定に使う）
     :param settings: 園設定（休園日など）
+    :param standard: 看護師のみなし保育士の上限など、資格要件を判定する基準
     :returns: 不足が 0 でない時間帯だけの :class:`SupplyGap`（降順）
     """
     prefs = dict(preferences or {})
@@ -1897,6 +2049,7 @@ def shortfall_rows(
         if need_all <= 0 and need_q <= 0:
             continue
         sup_all = sup_q = sup_support = 0
+        available: list[StaffMember] = []
         for member in placeable:
             if not _day_is_workable(member, day, fac):
                 continue
@@ -1904,11 +2057,10 @@ def shortfall_rows(
                 continue
             if _is_unavailable(prefs.get(member.staff_id), day, slots[idx]):
                 continue
-            sup_all += 1
-            if member.is_qualified:
-                sup_q += 1
-            elif member.has_role(Role.SHIENSHIIN):
-                sup_support += 1
+            available.append(member)
+        sup_all = len(available)
+        sup_q = qualified_count(available, standard)
+        sup_support = sum(1 for m in available if m.has_role(Role.SHIENSHIIN))
         gap = max(0, need_all - sup_all) + max(0, need_q - sup_q)
         if gap > 0:
             out.append(
@@ -1939,7 +2091,11 @@ def _shortfall_supply(payload: _SolveInput) -> list[tuple]:
             g.supply_support,
         )
         for g in shortfall_rows(
-            payload.staff, payload.requirements, payload.prefs, payload.settings
+            payload.staff,
+            payload.requirements,
+            payload.prefs,
+            payload.settings,
+            payload.standard,
         )
     ]
 
@@ -2103,9 +2259,7 @@ def solve_shift_greedy(
             stats=stats,
         )
 
-    break_minutes = (
-        int(standard.break_minutes) if standard is not None else _DEFAULT_BREAK_MINUTES
-    )
+    break_minutes = int(standard.break_minutes) if standard is not None else _DEFAULT_BREAK_MINUTES
     break_slots = max(1, -(-break_minutes // gran))
     stagger = (
         max(1, int(round(standard.break_stagger_minutes / gran)))
@@ -2132,7 +2286,8 @@ def solve_shift_greedy(
     }
     worked_minutes: dict[str, int] = {sid: 0 for sid in order}
     worked_days: dict[str, set[date]] = {sid: set() for sid in order}
-    day_open_days = set(days)
+    # 「週所定出勤日数」を判定するための週区画（7 日ずつの窓）。
+    workable_windows = [set(w) for w in weekly_windows(days)]
 
     def _cell_ok(sid: str, day: date, i: int) -> bool:
         if not _day_is_workable(by_id[sid], day, settings):
@@ -2145,16 +2300,27 @@ def solve_shift_greedy(
 
     def _day_ok(sid: str, day: date) -> bool:
         contract = by_id[sid].contract
-        if len(worked_days[sid] & day_open_days) >= contract.max_weekly_days > 0:
-            return False
+        # 「週所定出勤日数」は**週ごと**の上限なので、
+        # ``day`` が属する週の窓だけで数える。
+        #
+        # 修正前: ``worked_days[sid] & day_open_days``（= 計画全体の出勤日）と
+        # 比較していたため、14 日計画で ``max_weekly_days=5`` のとき
+        # **2 週間全体で 5 日しか出勤できない**ことになっていた
+        # （MILP 側は ``weekly_windows`` で正しく週単位になっている）。
+        # 貪欲法は実運用のフォールバックなので、充足率が 36 % まで落ちていた。
+        if contract.max_weekly_days > 0:
+            for window in workable_windows:
+                if day in window and len(worked_days[sid] & window) >= contract.max_weekly_days:
+                    return False
         prev = day - timedelta(days=1)
         if prev in worked_days[sid]:
             streak = _consecutive_streak(worked_days[sid], prev)
-            if streak >= contract.max_consecutive_days:
+            # ``max_consecutive_days == 0`` は「上限なし」。
+            # 修正前: ``streak >= 0`` が常に真で、
+            # **前日に出勤した翌日は必ず出勤できない**（連続勤務が全面禁止）。
+            if contract.max_consecutive_days > 0 and streak >= contract.max_consecutive_days:
                 return False
-            last = worked_days[sid] and max(
-                d for d in worked_days[sid] if d < day
-            )
+            last = worked_days[sid] and max(d for d in worked_days[sid] if d < day)
             if last is not None:
                 end_minutes = max(
                     slots[i].end_minutes
@@ -2176,8 +2342,7 @@ def solve_shift_greedy(
         row = cells[(sid, day)]
         cap = _daily_cap_minutes(by_id[sid].contract)
         used = sum(
-            slots[i].minutes for i in range(n)
-            if row[i] in (CellState.WORK, CellState.BREAK)
+            slots[i].minutes for i in range(n) if row[i] in (CellState.WORK, CellState.BREAK)
         )
         if not _cell_ok(sid, day, idx):
             return 0
@@ -2240,10 +2405,7 @@ def solve_shift_greedy(
             if cells[(other, day)][i] in (CellState.WORK, CellState.BREAK)
         )
         concurrent = sum(
-            1
-            for other in order
-            for i in range(n)
-            if cells[(other, day)][i] is CellState.BREAK
+            1 for other in order for i in range(n) if cells[(other, day)][i] is CellState.BREAK
         )
         cap = max(1, int(_BREAK_CONCURRENT_SHARE * on_duty)) + break_slots - 1
         if concurrent >= cap:
@@ -2255,31 +2417,35 @@ def solve_shift_greedy(
             if row[k] is CellState.WORK:
                 row[k] = CellState.BREAK
 
+    def _working(day: date, idx: int) -> list[StaffMember]:
+        return [by_id[sid] for sid in order if cells[(sid, day)][idx] is CellState.WORK]
+
     for day in days:
         keys = [i for i in range(n) if need_all.get((day, i), 0) > 0]
         keys.sort(key=lambda i: (-need_all[(day, i)], i))
         for idx in keys:
             for _ in range(need_all[(day, idx)] + need_q[(day, idx)]):
-                cur_all = sum(
-                    1 for sid in order if cells[(sid, day)][idx] is CellState.WORK
-                )
-                cur_q = sum(
-                    1
-                    for sid in order
-                    if cells[(sid, day)][idx] is CellState.WORK and by_id[sid].is_qualified
-                )
+                working = _working(day, idx)
+                cur_all = len(working)
+                cur_q = qualified_count(working, standard)
                 short_all = need_all[(day, idx)] - cur_all
                 short_q = need_q[(day, idx)] - cur_q
                 if short_all <= 0 and short_q <= 0:
                     break
                 want_qualified = short_q > 0
+                nurse_cap = standard.nurse_as_qualified_cap if standard is not None else 0
+                nurses_used = sum(1 for m in working if m.is_nurse)
                 cands = [
                     sid
                     for sid in order
                     if cells[(sid, day)][idx] is CellState.OFF
                     and _cell_ok(sid, day, idx)
                     and _day_ok(sid, day)
-                    and (by_id[sid].is_qualified or not want_qualified)
+                    and (
+                        by_id[sid].is_qualified_under(standard)
+                        or (by_id[sid].is_nurse and nurses_used < nurse_cap)
+                        or not want_qualified
+                    )
                 ]
                 if not cands and want_qualified:
                     cands = [
@@ -2403,8 +2569,7 @@ def _target_indices(slots: Sequence[Slot], pattern: ShiftPattern) -> list[int]:
     picked = [
         i
         for i, slot in enumerate(slots)
-        if slot.start_minutes >= pattern.start_minutes
-        and slot.end_minutes <= pattern.end_minutes
+        if slot.start_minutes >= pattern.start_minutes and slot.end_minutes <= pattern.end_minutes
     ]
     if not picked or picked[-1] - picked[0] + 1 != len(picked):
         return []
@@ -2420,11 +2585,12 @@ def _snap_coverage_ok(
     day: date,
     before: Sequence[CellState],
     after: Sequence[CellState],
+    standard: StaffingStandard | None = None,
 ) -> bool:
     """差し替えで配置基準が壊れないかを確認する。
 
-    「勤務 → オフ」になる時間帯だけを見る。充足から减去される可能性があるので、
-    その時間帯の現配置数から 1 を引いた時点で必要人員を下回るなら差し替えない。
+    「勤務 → オフ」になる時間帯だけを見る。充足から引かれる可能性があるので、
+        その時間帯の現配置数から 1 を引いた時点で必要人員を下回るなら差し替えない。
     """
     member = staff_index.get(sid)
     for idx, (was, now) in enumerate(zip(before, after, strict=True)):
@@ -2445,16 +2611,16 @@ def _snap_coverage_ok(
         if working - 1 < need:
             return False
         needq = need_q.get((day, idx), 0)
-        if needq > 0 and member is not None and member.is_qualified:
-            qualified = sum(
-                1
+        if needq > 0 and member is not None and member.is_qualified_under(standard):
+            working_ids = [
+                other_sid
                 for (other_sid, other_day), states in cells.items()
-                if other_day == day
-                and states[idx] is CellState.WORK
-                and (staff_index.get(other_sid) is not None)
-                and staff_index[other_sid].is_qualified
-            )
-            if qualified - 1 < needq:
+                if other_day == day and states[idx] is CellState.WORK
+            ]
+            # `working` のときと同じ数え方（本人を含む）で、
+            # 差し替え後は 1 人減るため -1 する。
+            members = [m for m in (staff_index.get(o) for o in working_ids) if m]
+            if qualified_count(members, standard) - 1 < needq:
                 return False
     return True
 
@@ -2512,16 +2678,12 @@ def snap_to_patterns(
         gran = max(1, int(requirements.granularity_min))
     elif slots[0].minutes:
         gran = slots[0].minutes
-    break_slots = (
-        max(1, -(-int(standard.break_minutes) // gran)) if standard is not None else 2
-    )
+    break_slots = max(1, -(-int(standard.break_minutes) // gran)) if standard is not None else 2
 
     base: dict[tuple[str, date], list[CellState]] = {}
     for sd in result.shift_days:
         for sid, row in sd.assignments.items():
-            base[(sid, sd.day)] = [
-                row.get(slot.label, CellState.OFF) for slot in slots
-            ]
+            base[(sid, sd.day)] = [row.get(slot.label, CellState.OFF) for slot in slots]
     if not base:
         return result, ()
 
@@ -2541,14 +2703,11 @@ def snap_to_patterns(
     for key in sorted(working, key=lambda k: (k[1], k[0])):
         sid, day = key
         states = working[key]
-        duty = [
-            i for i in range(n) if states[i] in (CellState.WORK, CellState.BREAK)
-        ]
+        duty = [i for i in range(n) if states[i] in (CellState.WORK, CellState.BREAK)]
         if not duty:
             continue
         before_text = (
-            f"{slots[duty[0]].start.strftime('%H:%M')}-"
-            f"{slots[duty[-1]].end.strftime('%H:%M')}"
+            f"{slots[duty[0]].start.strftime('%H:%M')}-{slots[duty[-1]].end.strftime('%H:%M')}"
         )
         start_min = slots[duty[0]].start_minutes
         end_min = slots[duty[-1]].end_minutes
@@ -2556,7 +2715,12 @@ def snap_to_patterns(
         if exact is not None:
             changes.append(
                 SnapChange(
-                    sid, day, before_text, before_text, exact.label, False,
+                    sid,
+                    day,
+                    before_text,
+                    before_text,
+                    exact.label,
+                    False,
                     "パターンと一致",
                 )
             )
@@ -2572,8 +2736,7 @@ def snap_to_patterns(
         offset = (breaks[0] - duty[0]) if breaks else max(0, len(duty) - brk_len)
         ordered_pats = sorted(
             pats,
-            key=lambda p: abs(p.start_minutes - start_min)
-            + abs(p.end_minutes - end_min),
+            key=lambda p: abs(p.start_minutes - start_min) + abs(p.end_minutes - end_min),
         )
         applied_label = ""
         applied_after = before_text
@@ -2592,9 +2755,7 @@ def snap_to_patterns(
             if any(_is_unavailable(prefs.get(sid), day, slots[i]) for i in target):
                 reason = "希望休と重なる"
                 continue
-            if sum(slots[i].minutes for i in target) > _daily_cap_minutes(
-                member.contract
-            ):
+            if sum(slots[i].minutes for i in target) > _daily_cap_minutes(member.contract):
                 reason = "1日の上限時間を超える"
                 continue
             new_states = [CellState.OFF] * n
@@ -2604,7 +2765,15 @@ def snap_to_patterns(
             for k in range(brk_at, brk_at + brk_len):
                 new_states[target[k]] = CellState.BREAK
             if not _snap_coverage_ok(
-                working, staff_index, need_all, need_q, sid, day, states, new_states
+                working,
+                staff_index,
+                need_all,
+                need_q,
+                sid,
+                day,
+                states,
+                new_states,
+                standard,
             ):
                 reason = "差し替えると配置基準が満たされなくなる"
                 continue
@@ -2690,9 +2859,7 @@ def pattern_breakdown(
         indices = sorted(per_day[key])
         if not indices:
             continue
-        found = match_pattern(
-            slots[indices[0]].start_minutes, slots[indices[-1]].end_minutes, pats
-        )
+        found = match_pattern(slots[indices[0]].start_minutes, slots[indices[-1]].end_minutes, pats)
         label = "その他" if found is None else found.label
         counts[label] = counts.get(label, 0) + 1
     return counts
@@ -2711,11 +2878,8 @@ def describe_shift_pattern(
     duty = sorted(
         index_of[a.slot]
         for a in result.assignments
-        if a.staff_id == staff_id and a.day == day
-        and a.state in (CellState.WORK, CellState.BREAK)
+        if a.staff_id == staff_id and a.day == day and a.state in (CellState.WORK, CellState.BREAK)
     )
     if not duty:
         return "オフ"
-    return describe_pattern(
-        slots[duty[0]].start_minutes, slots[duty[-1]].end_minutes, pats
-    )
+    return describe_pattern(slots[duty[0]].start_minutes, slots[duty[-1]].end_minutes, pats)

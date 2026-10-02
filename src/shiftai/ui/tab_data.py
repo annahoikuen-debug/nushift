@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date
+from html import escape
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -16,26 +17,35 @@ from shiftai.domain import AgeClass, EmploymentType, Role
 from shiftai.ui import components, state, theme
 from shiftai.validation import ERROR, ValidationReport, validate_frames
 
-TABLE_KINDS: tuple[tuple[str, str, str], ...] = (
+TABLE_KINDS: tuple[tuple[str, str, str, str], ...] = (
     (
         "children",
         "🧒 園児（登降園予定）",
-        "園児が 1 プラン 1 行。短時間保育・早朝保育・延長保育のフラグで必要人員が変わります。"
-        "列: 園児ID / 氏名 / 年齢 / 登園日 / 登園時刻 / 降園時刻 / 短時間保育 / 欠席 / 早朝保育 / 延長保育",
+        "ℹ️ この表の読み方",
+        "<p>園児が 1 プラン 1 行。短時間保育・早朝保育・延長保育のフラグで"
+        "その日の必要人員が変わります。</p>",
     ),
     (
         "staff",
         "👩‍🏫 職員",
-        "契約時間がそのまま「供給できる人時」になります。週契約時間を増やさないと基準を満たせません。"
-        "列: 職員ID / 氏名 / 資格（主・副）/ 雇用形態 / 週・1日契約時間 / 最早始業・最遅終業",
+        "ℹ️ この表の読み方",
+        "<p>契約時間がそのまま「供給できる人時」になります。"
+        "週契約時間を増やさないと基準を満たせません。</p>",
     ),
     (
         "preferences",
         "🌴 希望休",
-        "「出勤不可」「希望休」はハード制約（シフトを割り当てません）。それ以外はソフト制約です。"
-        "列: 職員ID / 種別（出勤不可・希望休・休み希望・出勤希望）/ 日付 / 開始 / 終了 / 理由",
+        "ℹ️ この表の読み方",
+        "<p>「出勤不可」「希望休」はハード制約（シフトを割り当てません）。"
+        "それ以外はソフト制約です。</p>",
     ),
 )
+"""(内部キー, 見出し, ツールチップのラベル, ツールチップ本文) の並び。
+
+説明は初期画面で常に目に入るグレーのキャプションにせず、``theme.tip`` の
+ツールチップへ入れる。``table_tip`` が「想定される列」を自動で足すため、
+本文には列一覧を書かない（``data_loader.TABLE_COLUMNS`` と二重に管理しない）。
+"""
 
 YES_NO: tuple[str, str] = ("true", "false")
 
@@ -106,24 +116,55 @@ def coerce_frame(kind: str, frame: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def _column_config(kind: str) -> dict[str, Any]:
+def column_config(kind: str) -> dict[str, Any]:
     """``st.data_editor`` 用の日本語 ``column_config``。"""
     if kind == "children":
         return {
             "園児ID": st.column_config.TextColumn("園児ID", required=True, width="small"),
             "氏名": st.column_config.TextColumn("氏名", required=True),
             "年齢": st.column_config.SelectboxColumn(
-                "年齢", options=[str(a.years) for a in AgeClass], required=True
+                "年齢",
+                options=[str(a.years) for a in AgeClass],
+                required=True,
+                help="0歳児〜5歳児以上。定員比と必要人員の基準になります。",
             ),
             "登園日": st.column_config.DateColumn("登園日", format="YYYY/MM/DD", required=True),
-            "登園時刻": st.column_config.TimeColumn("登園時刻", format="HH:MM", step=900),
-            "降園時刻": st.column_config.TimeColumn("降園時刻", format="HH:MM", step=900),
-            "短時間保育": st.column_config.SelectboxColumn("短時間保育", options=list(YES_NO)),
-            "欠席": st.column_config.SelectboxColumn("欠席", options=list(YES_NO)),
-            "欠席理由": st.column_config.TextColumn("欠席理由"),
-            "早朝保育": st.column_config.SelectboxColumn("早朝保育", options=list(YES_NO)),
-            "延長保育": st.column_config.SelectboxColumn("延長保育", options=list(YES_NO)),
-            "備考": st.column_config.TextColumn("備考"),
+            "登園時刻": st.column_config.TimeColumn(
+                "登園時刻",
+                format="HH:MM",
+                step=900,
+                help="この時刻より前は在園児として数えません。",
+            ),
+            "降園時刻": st.column_config.TimeColumn(
+                "降園時刻",
+                format="HH:MM",
+                step=900,
+                help="この時刻以降は在園児として数えません。",
+            ),
+            "短時間保育": st.column_config.SelectboxColumn(
+                "短時間保育",
+                options=list(YES_NO),
+                help="true で短時間保育（定時保育）の扱いになります。",
+            ),
+            "欠席": st.column_config.SelectboxColumn(
+                "欠席",
+                options=list(YES_NO),
+                help="true でその日の在園児から除外します（登降園時刻は不要）。",
+            ),
+            "欠席理由": st.column_config.TextColumn(
+                "欠席理由", help="欠席したときの記録用。集計には影響しません。"
+            ),
+            "早朝保育": st.column_config.SelectboxColumn(
+                "早朝保育",
+                options=list(YES_NO),
+                help="true で早朝保育時間帯の在園児として数えます。",
+            ),
+            "延長保育": st.column_config.SelectboxColumn(
+                "延長保育",
+                options=list(YES_NO),
+                help="true で延長保育時間帯の在園児として数えます。",
+            ),
+            "備考": st.column_config.TextColumn("備考", help="自由記入。集計には影響しません。"),
         }
     if kind == "staff":
         return {
@@ -138,15 +179,29 @@ def _column_config(kind: str) -> dict[str, Any]:
             "雇用形態": st.column_config.SelectboxColumn(
                 "雇用形態", options=[e.value for e in EmploymentType]
             ),
-            "週契約時間": st.column_config.NumberColumn("週契約時間", min_value=0.0, max_value=80.0, step=0.5, format="%.1f"),
-            "1日契約時間": st.column_config.NumberColumn("1日契約時間", min_value=0.5, max_value=14.0, step=0.5, format="%.1f"),
-            "月間最小時間": st.column_config.NumberColumn("月間最小時間", min_value=0.0, max_value=400.0, step=1.0),
-            "月間最大時間": st.column_config.NumberColumn("月間最大時間", min_value=0.0, max_value=400.0, step=1.0),
-            "週最大出勤日数": st.column_config.NumberColumn("週最大出勤日数", min_value=0, max_value=7, step=1, format="%d"),
-            "最大連続勤務日数": st.column_config.NumberColumn("最大連続勤務日数", min_value=1, max_value=7, step=1, format="%d"),
+            "週契約時間": st.column_config.NumberColumn(
+                "週契約時間", min_value=0.0, max_value=80.0, step=0.5, format="%.1f"
+            ),
+            "1日契約時間": st.column_config.NumberColumn(
+                "1日契約時間", min_value=0.5, max_value=14.0, step=0.5, format="%.1f"
+            ),
+            "月間最小時間": st.column_config.NumberColumn(
+                "月間最小時間", min_value=0.0, max_value=400.0, step=1.0
+            ),
+            "月間最大時間": st.column_config.NumberColumn(
+                "月間最大時間", min_value=0.0, max_value=400.0, step=1.0
+            ),
+            "週最大出勤日数": st.column_config.NumberColumn(
+                "週最大出勤日数", min_value=0, max_value=7, step=1, format="%d"
+            ),
+            "最大連続勤務日数": st.column_config.NumberColumn(
+                "最大連続勤務日数", min_value=1, max_value=7, step=1, format="%d"
+            ),
             "最早始業": st.column_config.TimeColumn("最早始業", format="HH:MM", step=900),
             "最遅終業": st.column_config.TimeColumn("最遅終業", format="HH:MM", step=900),
-            "能力タグ": st.column_config.TextColumn("能力タグ", help="| で区切ります（例: 乳幼児研修修了|ピアノ指導可）"),
+            "能力タグ": st.column_config.TextColumn(
+                "能力タグ", help="| で区切ります（例: 乳幼児研修修了|ピアノ指導可）"
+            ),
             "備考": st.column_config.TextColumn("備考"),
         }
     return {
@@ -164,30 +219,39 @@ def _column_config(kind: str) -> dict[str, Any]:
     }
 
 
+def table_tip(kind: str, label: str, detail: str) -> None:
+    """表の説明をツールチップへ閉じ込める（hover / クリックで開く）。
+
+    初期画面を短く保つため、説明と「想定される列」は常時表示にしない。
+    列一覧は ``data_loader.TABLE_COLUMNS`` から組み立てるので、表の定義と
+    説明文が二重管理されることがない。
+    """
+    columns = escape(" / ".join(data_loader.TABLE_COLUMNS[kind]))
+    theme.tip(label, f"{detail}<p><b>想定される列</b>: {columns}</p>")
+
+
 def _seed_for_table() -> int:
     return int(st.session_state.get("sample_seed", 42))
 
 
-def _sync_seed_inputs(master: int) -> None:
+def sync_seed_inputs(master: int) -> None:
     """共通シードを変えたら、各表のシード入力を既定値に戻す。"""
     previous = st.session_state.get("sample_seed_applied", master)
     if previous == master:
         return
-    for kind, _title, _desc in TABLE_KINDS:
+    for kind, _title, _label, _detail in TABLE_KINDS:
         st.session_state.pop(f"sample_seed_{kind}", None)
     st.session_state["sample_seed_applied"] = master
 
 
-def _load_sample(kind: str, days: Sequence[date], seed: int) -> pd.DataFrame:
+def load_sample(kind: str, days: Sequence[date], seed: int) -> pd.DataFrame:
     """``sample_data`` から該当テーブルの DataFrame を作る。"""
     children, staff, preferences = sample_data.make_dataset(days, seed=seed)
-    frames = sample_data.sample_dataframes(
-        children=children, staff=staff, preferences=preferences
-    )
+    frames = sample_data.sample_dataframes(children=children, staff=staff, preferences=preferences)
     return frames[kind]
 
 
-def _read_uploads(kind: str, files: Sequence[Any]) -> list[pd.DataFrame]:
+def read_uploads(kind: str, files: Sequence[Any]) -> list[pd.DataFrame]:
     """アップロードされたファイルを DataFrame として読む。"""
     frames: list[pd.DataFrame] = []
     for uploaded in files:
@@ -205,14 +269,52 @@ def _history_label(kind: str, title: str) -> str:
 
 def _record_edit(kind: str, frame: pd.DataFrame) -> None:
     """編集内容を履歴へ記録する（同一内容は取り込まない）。"""
-    state.edit_history(kind).record(kind, frame, _history_label(kind, _title_of(kind)))
+    state.edit_history(kind).record(kind, frame, _history_label(kind, table_title(kind)))
 
 
-def _title_of(kind: str) -> str:
-    for _kind, title, _desc in TABLE_KINDS:
+def store_frame(kind: str, frame: pd.DataFrame, *, reset_editor: bool = True) -> pd.DataFrame:
+    """編集内容を ``session_state`` へ保存する（型変換・履歴記録つき）。
+
+    ``reset_editor=False`` は、同じ実行内で直後に ``st.data_editor`` を
+    描画するとき用。**ウィジェットを生成したあとでキー ``editor_<kind>`` を
+    書き換えると Streamlit が例外を投げる**ため、エディタより前に評価される
+    場面（サンプル読み込み・アップロード）では ``reset_editor=True`` のまま使う。
+    """
+    coerced = coerce_frame(kind, frame)
+    _record_edit(kind, coerced)
+    st.session_state[f"frame_{kind}"] = coerced
+    if reset_editor:
+        st.session_state.pop(f"editor_{kind}", None)
+    return coerced
+
+
+def editor_frame(kind: str) -> pd.DataFrame:
+    """``st.data_editor`` に出すフレーム（未投入なら空テンプレート）。"""
+    frame = st.session_state.get(f"frame_{kind}", None)
+    if frame is None or frame.empty:
+        return pd.DataFrame(columns=data_loader.TABLE_COLUMNS[kind])
+    return coerce_frame(kind, frame)
+
+
+def frame_rows(kind: str) -> int:
+    """その表が何行あるか（未投入・空なら 0）。"""
+    frame = st.session_state.get(f"frame_{kind}", None)
+    return 0 if frame is None else len(frame)
+
+
+def table_title(kind: str) -> str:
+    for _kind, title, _label, _detail in TABLE_KINDS:
         if _kind == kind:
             return title
     return kind
+
+
+def table_tip_body(kind: str) -> tuple[str, str]:
+    """その表のツールチップ（ラベル, 本文）を返す。"""
+    for _kind, _title, label, detail in TABLE_KINDS:
+        if _kind == kind:
+            return label, detail
+    return "ℹ️ この表の読み方", "<p></p>"
 
 
 def _render_history_controls(kind: str) -> None:
@@ -249,12 +351,10 @@ def _render_history_controls(kind: str) -> None:
         st.caption(history.trail())
 
 
-def _preview_table(kind: str, title: str, description: str) -> None:
+def _preview_table(kind: str, title: str, label: str, detail: str) -> None:
     columns = data_loader.TABLE_COLUMNS[kind]
     days = state.current_days()
-    st.markdown(f"#### {title}")
-    st.caption(description)
-    st.caption(f"想定される列: {', '.join(columns)}")
+    table_tip(kind, label, detail)
 
     seed_row, template_col, load_col = st.columns([1, 1, 1])
     with seed_row:
@@ -281,15 +381,11 @@ def _preview_table(kind: str, title: str, description: str) -> None:
             type="primary" if kind == "staff" else "secondary",
             width="stretch",
         ):
-            frame = _load_sample(
-                kind, days, int(st.session_state.get(f"sample_seed_{kind}", 42))
-            )
+            frame = load_sample(kind, days, int(st.session_state.get(f"sample_seed_{kind}", 42)))
             st.session_state[f"frame_{kind}"] = frame
             st.session_state.pop(f"editor_{kind}", None)
             _record_edit(kind, frame)
-            st.session_state[f"seed_{kind}"] = int(
-                st.session_state.get(f"sample_seed_{kind}", 42)
-            )
+            st.session_state[f"seed_{kind}"] = int(st.session_state.get(f"sample_seed_{kind}", 42))
             st.toast(f"{title} のサンプルを {len(frame)} 行読み込みました", icon="✅")
 
     uploads = st.file_uploader(
@@ -300,7 +396,7 @@ def _preview_table(kind: str, title: str, description: str) -> None:
     )
     if uploads:
         try:
-            frames = _read_uploads(kind, uploads)
+            frames = read_uploads(kind, uploads)
             merged = pd.concat(frames, ignore_index=True)
             st.session_state[f"frame_{kind}"] = merged
             st.session_state.pop(f"editor_{kind}", None)
@@ -310,7 +406,7 @@ def _preview_table(kind: str, title: str, description: str) -> None:
             st.error(f"ファイルを読み込めませんでした: {exc}")
 
     if kind == "children":
-        _render_importer()
+        render_importer()
 
     frame = st.session_state.get(f"frame_{kind}", None)
     if frame is None or frame.empty:
@@ -333,7 +429,7 @@ def _preview_table(kind: str, title: str, description: str) -> None:
         frame,
         num_rows="dynamic",
         hide_index=True,
-        column_config=_column_config(kind),
+        column_config=column_config(kind),
         key=f"editor_{kind}",
         height=320,
         width="stretch",
@@ -343,12 +439,12 @@ def _preview_table(kind: str, title: str, description: str) -> None:
     st.session_state[f"frame_{kind}"] = coerced
     st.caption(f"編集中 {len(edited)} 行。行を追加・削除できます。")
 
-    _render_table_validation(kind)
+    render_table_validation(kind)
 
 
-def _render_table_validation(kind: str) -> None:
+def render_table_validation(kind: str) -> None:
     """その表だけの検証結果を表示する（行・列・理由を提示）。"""
-    report = _current_report()
+    report = current_report()
     issues = report.by_table(kind)
     if not issues:
         return
@@ -368,7 +464,7 @@ def _render_table_validation(kind: str) -> None:
     )
 
 
-def _current_report() -> ValidationReport:
+def current_report() -> ValidationReport:
     """3 表をまとめて検証した結果を取得し、session_state に保存する。"""
     settings = state.current_settings()
     report = validate_frames(
@@ -383,7 +479,7 @@ def _current_report() -> ValidationReport:
     return report
 
 
-def _render_importer() -> None:
+def render_importer() -> None:
     """園業務支援システム（CoDMON / キッズリー）の CSV 取り込み UI。"""
     with st.expander("🔗 園業務支援システムから取り込む", expanded=False):
         st.caption(
@@ -413,12 +509,9 @@ def _render_importer() -> None:
             key="import_profile",
         )
         standard = state.current_standard()
-        result = importers.convert(
-            source, chosen, standard_time=standard.standard_time
-        )
+        result = importers.convert(source, chosen, standard_time=standard.standard_time)
         st.caption(
-            f"取り込み元: {uploaded.name} ／ {len(source)} 行 "
-            f"→ 本アプリ形式 {len(result.frame)} 行"
+            f"取り込み元: {uploaded.name} ／ {len(source)} 行 → 本アプリ形式 {len(result.frame)} 行"
         )
         if result.missing:
             st.warning(
@@ -467,10 +560,10 @@ def _offer_templates(kind: str, title: str) -> None:
         st.error(f"テンプレートを生成できませんでした: {exc}")
 
 
-def _build_load_result() -> Any:
+def build_load_result() -> Any:
     """3 つのエディタ表から ``LoadResult`` を作る。"""
     frames = {}
-    for kind, _title, _desc in TABLE_KINDS:
+    for kind, _title, _label, _detail in TABLE_KINDS:
         frame = st.session_state.get(f"frame_{kind}", None)
         frames[kind] = None if frame is None or frame.empty else frame
     return data_loader.load_bundle(
@@ -480,7 +573,7 @@ def _build_load_result() -> Any:
     )
 
 
-def _apply_load_result(result: Any) -> None:
+def apply_load_result(result: Any) -> None:
     """読み込み結果を session_state に反映する。途中で失敗したら元に戻す。"""
     with state.editing_guard(state.KEY_STAFF):
         state.set(state.KEY_LOAD_RESULT, result)
@@ -490,7 +583,7 @@ def _apply_load_result(result: Any) -> None:
         state.invalidate_pipeline()
 
 
-def _render_result_panel() -> None:
+def render_result_panel() -> None:
     """読み込み結果のサマリとエラー表。"""
     result = state.get(state.KEY_LOAD_RESULT)
     if result is None:
@@ -530,7 +623,7 @@ def _render_result_panel() -> None:
             )
 
 
-def _render_validation_summary(report: ValidationReport) -> None:
+def render_validation_summary(report: ValidationReport) -> None:
     """3 表ぶんの検証結果をまとめて表示する。"""
     if not report.issues:
         st.success("✅ 入力チェック: 指摘はありません。")
@@ -550,43 +643,27 @@ def _render_validation_summary(report: ValidationReport) -> None:
     )
 
 
-def render() -> None:
-    """タブ1 の本体。"""
-    theme.step_indicator(0)
-    st.markdown("### 1. データ投入")
-    st.caption(
-        "園児の登降園予定・職員・希望休の 3 つを投入します。"
-        "ファイルがない場合はサンプルデータから始めて、実際の運用に合わせて少しずつ差し替えてください。"
-    )
-    settings = state.current_settings()
-    st.caption(
-        f"現在の園設定: {settings.facility_name} ／ "
-        f"{settings.day_open.strftime('%H:%M')}-{settings.day_close.strftime('%H:%M')} ／ "
-        f"粒度 {settings.granularity_min} 分"
-    )
-    seed = st.number_input(
-        "サンプルデータの共通シード",
-        min_value=0,
-        max_value=9999,
-        value=42,
-        step=1,
-        key="sample_seed",
-        help="変えると、各表の「乱数シード」も同じ値に戻ります。同じシードなら同じデータが入ります。",
-    )
-    _sync_seed_inputs(int(seed))
-    days = state.current_days()
-    if not days:
-        st.warning("サイドバーで計画期間を設定してください。")
-        return
+def reset_inputs() -> None:
+    """3 表ぶんの入力を破棄して既定状態に戻す。"""
+    for kind, _t, _l, _d in TABLE_KINDS:
+        st.session_state.pop(f"frame_{kind}", None)
+        st.session_state.pop(f"editor_{kind}", None)
+        st.session_state.pop(f"upload_{kind}", None)
+    state.reset_edit_histories()
+    state.reset_all()
 
-    for kind, title, description in TABLE_KINDS:
-        with st.expander(title, expanded=kind == "children"):
-            _preview_table(kind, title, description)
-            _render_history_controls(kind)
 
+def render_apply_block() -> None:
+    """検証サマリ・読み込みボタン・読み込み結果パネル（両モード共通）。
+
+    「まとめて入力」（``render``）と「ウィザード」（``wizard.render``）の
+    最後の画面が同じなので、描画だけをここへ寄せる。ボタンの ``key`` は
+    どちらのモードでも 1 つだけ存在することを前提にして共有している
+    （同じ実行内で二重に描画されない）。
+    """
     st.divider()
-    report = _current_report()
-    _render_validation_summary(report)
+    report = current_report()
+    render_validation_summary(report)
     left, right = st.columns(2)
     with left:
         apply_clicked = st.button(
@@ -603,27 +680,65 @@ def render() -> None:
         )
     with right:
         if st.button("🗑 すべてクリア", width="stretch", key="clear_all"):
-            for kind, _t, _d in TABLE_KINDS:
-                st.session_state.pop(f"frame_{kind}", None)
-                st.session_state.pop(f"editor_{kind}", None)
-                st.session_state.pop(f"upload_{kind}", None)
-            state.reset_edit_histories()
-            state.reset_all()
+            reset_inputs()
             st.rerun()
     if apply_clicked:
         try:
             with st.spinner("設定を読み込んでいます…"):
-                _apply_load_result(_build_load_result())
-            st.success(
-                "読み込みました。上のタブ「2️⃣ シフト作成」で自動作成できます。"
-            )
+                apply_load_result(build_load_result())
+            st.success("読み込みました。上のタブ「2️⃣ シフト作成」で自動作成できます。")
         except Exception as exc:  # noqa: BLE001 - 読み込み失敗で画面を落とさない
             st.error(f"読み込みに失敗しました: {exc}")
 
-    _render_result_panel()
+    render_result_panel()
+
+
+def render_sample_tip(seed: int) -> None:
+    """サンプルデータの規模をツールチップで示す。"""
+    theme.tip(
+        "ℹ️ サンプルデータの規模",
+        f"<p>園児 {sample_data.TOTAL_CHILDREN} 名 / 職員 {sample_data.TOTAL_STAFF} 名。</p>"
+        f"<p>乱数シード <b>{int(seed)}</b> のあいだは必ず同じ内容が入ります。</p>",
+    )
+
+
+def render() -> None:
+    """タブ1 の本体（まとめて入力する画面）。"""
+    theme.step_indicator(0)
+    st.markdown("### 1. データ投入")
+    settings = state.current_settings()
+    st.caption(
+        f"現在の園設定: {settings.facility_name} ／ "
+        f"{settings.day_open.strftime('%H:%M')}-{settings.day_close.strftime('%H:%M')} ／ "
+        f"粒度 {settings.granularity_min} 分"
+    )
+    theme.tip(
+        "❓ このタブで何をするの？",
+        "<p>園児の登降園予定・職員・希望休の 3 つを投入します。</p>"
+        "<p>ファイルがない場合は、まず<b>サンプルデータを読み込む</b>ボタンから始めて、"
+        "実際の運用に合わせて少しずつ差し替えてください。</p>",
+    )
+    seed = st.number_input(
+        "サンプルデータの共通シード",
+        min_value=0,
+        max_value=9999,
+        value=42,
+        step=1,
+        key="sample_seed",
+        help="変えると、各表の「乱数シード」も同じ値に戻ります。同じシードなら同じデータが入ります。",
+    )
+    sync_seed_inputs(int(seed))
+    days = state.current_days()
+    if not days:
+        st.warning("サイドバーで計画期間を設定してください。")
+        return
+
+    for kind, title, label, detail in TABLE_KINDS:
+        with st.expander(title, expanded=kind == "children"):
+            _preview_table(kind, title, label, detail)
+            _render_history_controls(kind)
+
+    render_apply_block()
     theme.caveat_box()
     theme.next_step_hint(0)
-    st.caption(
-        f"サンプルデータの規模: 園児 {sample_data.TOTAL_CHILDREN} 名 / "
-        f"職員 {sample_data.TOTAL_STAFF} 名（seed={int(seed)} で毎回同じ内容になります）"
-    )
+    render_sample_tip(int(seed))

@@ -45,7 +45,9 @@ def _kids(*specs, day: date = DAY) -> list[ChildPlan]:
         child_id, age_class, arrive, depart = spec[:4]
         extra = spec[4] if len(spec) > 4 else {}
         out.append(
-            ChildPlan(f"C{index + 1:03d}", f"園児{index + 1}", day, age_class, arrive, depart, **extra)
+            ChildPlan(
+                f"C{index + 1:03d}", f"園児{index + 1}", day, age_class, arrive, depart, **extra
+            )
         )
     return out
 
@@ -188,7 +190,11 @@ def test_延長緩和_福岡市は保育士が少于必要人員(fq_standard):
     assert fq_standard.late_care_relaxed is True
     kids = _kids(*[(f"C{i}", AgeClass.INFANT, time(17, 30), time(18, 30)) for i in range(4)])
     table = build_requirements(
-        kids, [DAY], fq_standard, day_open=time(17, 15), day_close=time(18, 30),
+        kids,
+        [DAY],
+        fq_standard,
+        day_open=time(17, 15),
+        day_close=time(18, 30),
         enforce_min_two=False,
     )
     rows = table.for_day(DAY)
@@ -204,7 +210,11 @@ def test_延長緩和_offでは必要保育士数と必要人員が等しい(sta
     assert standard.late_care_relaxed is False
     kids = _kids(*[(f"C{i}", AgeClass.INFANT, time(17, 30), time(19, 0)) for i in range(4)])
     table = build_requirements(
-        kids, [DAY], standard, day_open=time(17, 15), day_close=time(19, 30),
+        kids,
+        [DAY],
+        standard,
+        day_open=time(17, 15),
+        day_close=time(19, 30),
         enforce_min_two=False,
     )
     assert table.for_day(DAY)
@@ -215,7 +225,11 @@ def test_延長緩和なしは常に必要保育士数と必要人員が等し�
     """``LATE_STRICT``（緩和期限以降）は代替措置が使えず全和水になること。"""
     kids = _kids(*[(f"C{i}", AgeClass.INFANT, time(19, 0), time(19, 30)) for i in range(4)])
     table = build_requirements(
-        kids, [DAY], fq_standard, day_open=time(19, 0), day_close=time(19, 30),
+        kids,
+        [DAY],
+        fq_standard,
+        day_open=time(19, 0),
+        day_close=time(19, 30),
         enforce_min_two=False,
     )
     rows = table.for_day(DAY)
@@ -234,8 +248,11 @@ def test_短時間保育児は保育標準時間帯にだけ在園(fq_standard):
     ).slots
     counts = count_children_by_slot(kids, DAY, tuple(slots), fq_standard)
     row = counts[AgeClass.INFANT]
-    outside = [slots[i].label for i, n in enumerate(row)
-               if n > 0 and not fq_standard.is_standard_time(slots[i])]
+    outside = [
+        slots[i].label
+        for i, n in enumerate(row)
+        if n > 0 and not fq_standard.is_standard_time(slots[i])
+    ]
     assert outside == []
     assert sum(row) > 0
 
@@ -332,8 +349,17 @@ def test_to_long_dataframeが例外なく列を持つ(week_days, fq_standard):
     )
     frame = table.to_long_dataframe()
     assert list(frame.columns) == [
-        "日付", "時間帯", "開始", "終了", "年齢クラス",
-        "在園児数", "必要人員", "必要保育士数", "時間帯区分", "根拠", "必須",
+        "日付",
+        "時間帯",
+        "開始",
+        "終了",
+        "年齢クラス",
+        "在園児数",
+        "必要人員",
+        "必要保育士数",
+        "時間帯区分",
+        "根拠",
+        "必須",
     ]
     assert len(frame) == len(table.all_requirements())
     assert frame["日付"].is_monotonic_increasing
@@ -346,8 +372,14 @@ def test_count_children_by_slotが例外を投げない(week_days, fq_standard):
     children, _, _ = sample_data.make_dataset(week_days, seed=42)
     slots = build_slots(time(7, 15), time(19, 30), 30)
     counts = count_children_by_slot(children, week_days[0], slots, fq_standard)
-    assert set(counts) == {AgeClass.INFANT, AgeClass.AGE_1, AgeClass.AGE_2,
-                           AgeClass.AGE_3, AgeClass.AGE_4, AgeClass.AGE_5}
+    assert set(counts) == {
+        AgeClass.INFANT,
+        AgeClass.AGE_1,
+        AgeClass.AGE_2,
+        AgeClass.AGE_3,
+        AgeClass.AGE_4,
+        AgeClass.AGE_5,
+    }
     assert all(len(v) == len(slots) for v in counts.values())
 
 

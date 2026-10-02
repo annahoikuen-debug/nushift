@@ -1,7 +1,7 @@
 """``shiftai.ui.components`` のテスト。
 
 ``components.py`` は「純粋な DataFrame ヘルパー」と「Streamlit ウィジェットを
-直接描く関数」が混在している。这里では
+直接描く関数」が混在している。ここでは
 
 * Streamlit 実行コンテキストが無くても動く関数 → 通常の関数呼び出しで検証
 * ``st.markdown`` / ``st.columns`` / ``st.expander`` を必要とする関数 →
@@ -120,8 +120,7 @@ def _run_widget_script(tmp_path: Path, body: str, *, payload: Any = None) -> Any
         blob = tmp_path / "payload.pkl"
         blob.write_bytes(pickle.dumps(payload))
     prelude = (
-        "import pickle\n"
-        f"PAYLOAD = pickle.load(open({str(blob)!r}, 'rb'))\n"
+        f"import pickle\nPAYLOAD = pickle.load(open({str(blob)!r}, 'rb'))\n"
         if blob is not None
         else "PAYLOAD = None\n"
     )
@@ -170,7 +169,7 @@ def test_violation_labelsは空辞書のとき内蔵辞書へフォールバッ�
 
 
 def test_violation_titleは未知コードをそのまま返す():
-    """未知のコードは「名前csharpなし」で自己説明できること。"""
+    """未知のコードは「名前なし」で自己説明できること。"""
     assert components.violation_title("MYSTERY_CODE") == "MYSTERY_CODE"
     assert components.violation_title("COVERAGE_SHORTFALL") != "COVERAGE_SHORTFALL"
 
@@ -240,18 +239,12 @@ def test_shift_grid_frameは固定情報がなければ素の値を返す(
     """``fixed`` 未指定 or 空でも値がロックされず、そのまま入ること。"""
     day = one_day[0]
     plain = components.shift_grid_frame(day_shift, slots_list, small_staff, day=day)
-    assert not any(
-        str(v).startswith(components.LOCK) for v in plain.to_numpy().ravel()
-    )
-    empty = components.shift_grid_frame(
-        day_shift, slots_list, small_staff, day=day, fixed={}
-    )
+    assert not any(str(v).startswith(components.LOCK) for v in plain.to_numpy().ravel())
+    empty = components.shift_grid_frame(day_shift, slots_list, small_staff, day=day, fixed={})
     assert empty.equals(plain)
 
 
-def test_editable_grid_frameは職員列が先頭でindexが0始まり(
-    day_shift, slots_list, small_staff
-):
+def test_editable_grid_frameは職員列が先頭でindexが0始まり(day_shift, slots_list, small_staff):
     """``st.data_editor`` の差分検出用に index ではなく列で対応付けること。"""
     frame = components.editable_grid_frame(day_shift, slots_list, small_staff)
     assert list(frame.columns) == ["職員", *[s.label for s in slots_list]]
@@ -380,7 +373,7 @@ def test_heat_stylerは文字列列があっても落ちない():
     修正前は ``style.format("{:.0f}")`` が文字列列にも適用され
     ``ValueError: Unknown format code 'f' for object of type 'str'`` になっていた。
     ``tab_requirements._render_gap_preview`` が日付列つきの ``gap_matrix`` を
-    ``subset`` 指定で渡しているため、优化後にタブを開き直すと必ず落ちていた。
+    ``subset`` 指定で渡しているため、最適化後にタブを開き直すと必ず落ちていた。
     """
     frame = pd.DataFrame({"日付": ["2026-09-28"], "不足": [1]})
     assert components.heat_styler(frame, subset=["不足"]).to_html()
@@ -451,9 +444,7 @@ def test_style_shift_gridは全セルを色付けする(day_shift, slots_list, s
 # --------------------------------------------------------------------------
 
 
-def test_staff_day_summary_frameは勤務の開始終了を計算する(
-    day_shift, slots_list, small_staff
-):
+def test_staff_day_summary_frameは勤務の開始終了を計算する(day_shift, slots_list, small_staff):
     """勤務の最初/最後の時間帯が HH:MM で、実働時間が時間単位になること。"""
     frame = components.staff_day_summary_frame(day_shift, slots_list, small_staff)
     assert list(frame.columns) == [
@@ -474,9 +465,7 @@ def test_staff_day_summary_frameは勤務の開始終了を計算する(
     assert (frame["実働時間"] == (frame["勤務分数"] / 60.0).round(2)).all()
 
 
-def test_staff_day_summary_frameは未勤務をダッシュで埋める(
-    slots_list, small_staff
-):
+def test_staff_day_summary_frameは未勤務をダッシュで埋める(slots_list, small_staff):
     """1 勤務もない職員は ``—`` のまま例外にならないこと。"""
     frame = components.staff_day_summary_frame(None, slots_list, small_staff)
     assert (frame["勤務開始"] == "—").all()
@@ -494,7 +483,11 @@ def test_weekday_pivot_frameは月火水木金土日順で合計を持つ(solved
     frame = components.weekday_pivot_frame(solved_day, slots_list)
     if frame.empty:
         pytest.skip("今回の解に割当がない")
-    order = [c for c in ("月(h)", "火(h)", "水(h)", "木(h)", "金(h)", "土(h)", "日(h)") if c in frame.columns]
+    order = [
+        c
+        for c in ("月(h)", "火(h)", "水(h)", "木(h)", "金(h)", "土(h)", "日(h)")
+        if c in frame.columns
+    ]
     assert list(frame.columns) == [*order, "合計(h)"]
     assert frame["合計(h)"].equals(frame[order].sum(axis=1).round(2))
 
@@ -543,9 +536,7 @@ def test_staffing_curve_frameは未計算なら空を返す(small_requirements, 
     assert components.staffing_curve_frame(small_requirements, None, one_day[0], []).empty
 
 
-def test_requirement_heatmapは時間帯と年齢クラスの表を作る(
-    small_requirements, one_day
-):
+def test_requirement_heatmapは時間帯と年齢クラスの表を作る(small_requirements, one_day):
     """行が年齢クラス順、列が時間帯順で「合計」行/列があること。"""
     frame = components.requirement_heatmap(small_requirements, one_day[0])
     assert not frame.empty
@@ -703,9 +694,7 @@ def test_load_issue_dataframeは属性のないオブジェクトでも落ちな
 # --------------------------------------------------------------------------
 
 
-def test_requirement_basis_rowsは時間帯ごとに説明を作る(
-    small_requirements, one_day
-):
+def test_requirement_basis_rowsは時間帯ごとに説明を作る(small_requirements, one_day):
     """「時間帯／年齢クラス」見出しと基準からの導出説明が揃うこと。"""
     st.session_state.clear()
     state.init_state()
@@ -776,9 +765,7 @@ def test_metric_rowは1行のカード数で折り返す(tmp_path):
 
 def test_metric_rowはper_rowが0以下でも1列に整える(tmp_path):
     """``per_row=0`` でも無限ループせず描画できること。"""
-    at = _run_widget_script(
-        tmp_path, "components.metric_row([('a', '1', None)], per_row=0)"
-    )
+    at = _run_widget_script(tmp_path, "components.metric_row([('a', '1', None)], per_row=0)")
     assert len(at.markdown) == 1
 
 
@@ -850,7 +837,9 @@ def test_render_violationsは深刻度ごとにまとめる(tmp_path, slots_list
     slot = slots_list[0]
     sample = [
         _make_violation(ViolationSeverity.BLOCKER, "COVERAGE_SHORTFALL", "不足", day, slot, "S001"),
-        _make_violation(ViolationSeverity.BLOCKER, "COVERAGE_SHORTFALL", "不足2", day, slot, "S002"),
+        _make_violation(
+            ViolationSeverity.BLOCKER, "COVERAGE_SHORTFALL", "不足2", day, slot, "S002"
+        ),
         _make_violation(
             ViolationSeverity.WARNING, "PREFERENCE_MISSED", "希望未達", day, slot, "S001"
         ),
@@ -881,3 +870,193 @@ def test_render_violationsは実データでも描画できる(tmp_path, violati
     assert not at.exception
     if violations:
         assert at.expander
+
+
+# --------------------------------------------------------------------------
+# 「🧾 最適化の詳細」表 — Arrow 変換の回帰防止
+#
+# 実際に起きた不具合:
+#   ``SolveResult.stats`` は型引数なしの ``dict`` で、既定設定だと
+#   ``relaxed_constraints`` と ``patterns`` が**空のリスト**になる。
+#   ``tab_solve`` がそれをそのまま「値」列に並べて ``st.dataframe`` に渡すと、
+#   ``pyarrow`` が object 列を推論できず ``ArrowInvalid`` を投げる。
+#   Streamlit はそこで**例外を投げずに**警告だけ出し、
+#   「automatic fixes」で黙って表示を間違う状態になる。
+#   → テストは全部緑なのに、画面が壊れていた。
+# --------------------------------------------------------------------------
+
+#: ``solver.solve_shift`` が既定で作る ``stats``（``solver.py`` の ``_build_result`` 相当）。
+#: str / int / float / list が同居しており、``relaxed_constraints`` と
+#: ``patterns`` は既定では**空のリスト**になる（= Arrow 変換が壊れる条件）。
+#: 変数・制約数は ``docs/02_ソルバ仕様.md`` §2.7 の実測値（2026-10-01）。
+DEFAULT_LIKE_STATS: dict[str, object] = {
+    "solver": "PULP_CBC_CMD",
+    "solver_status": "Optimal / Optimal Solution Found",
+    "num_variables": 14039,
+    "num_constraints": 18906,
+    "num_staff": 28,
+    "num_days": 7,
+    "num_slots": 25,
+    "elapsed_sec": 5.25314,
+    "objective_value": 202432.35,
+    "relaxation": 0,
+    "relaxation_label": "緩和なし",
+    "relaxed_constraints": [],
+    "patterns": [],
+}
+
+
+def _assert_arrow_serializable(frame: pd.DataFrame, label: str) -> None:
+    """DataFrame が Arrow 化できること（= Streamlit が無加工で表示できること）を保証する。
+
+    ``pa.Table.from_pandas`` が落ちると Streamlit は警告だけ出して
+    「automatic fixes」で**表示を間違う状態のまま描画を続ける**ため、
+    テスト側で先に落とす。
+    """
+    import pyarrow as pa
+
+    try:
+        pa.Table.from_pandas(frame, preserve_index=False)
+    except Exception as exc:  # pragma: no cover - 失敗したときは詳細を残す
+        pytest.fail(
+            f"{label} が Arrow 変換できない（Streamlit が黙って表示を間違う）: "
+            f"{type(exc).__name__}: {exc}\n dtypes={dict(frame.dtypes)}"
+        )
+
+
+def _make_solved_result_with_stats(stats: dict[str, object]) -> Any:
+    """``stats`` を持つ ``SolveResult`` を作る。"""
+    from shiftai.domain import SolveResult, SolveStatus
+
+    return SolveResult(
+        status=SolveStatus.OPTIMAL,
+        shift_days=[],
+        assignments=[],
+        violations=[],
+        messages=[],
+        stats=stats,
+        objective_value=stats.get("objective_value"),
+    )
+
+
+def test_最適化詳細表はstatsが既定でもArrow化できる():
+    """既定の stats（空リストを含む）を表にしても Arrow 変換が成功すること。
+
+    前版は「値」列に生の値を並べていたため、ここで ``ArrowInvalid`` になっていた。
+    """
+    result = _make_solved_result_with_stats(dict(DEFAULT_LIKE_STATS))
+    frame = components.solve_stats_frame(result)
+    assert not frame.empty
+    _assert_arrow_serializable(frame, "solve_stats_frame")
+
+
+def test_最適化詳細表は値が文字列列に揃っている():
+    """object 列のままだと Arrow が推論できないため、「値」列は str で揃えること。"""
+    result = _make_solved_result_with_stats(dict(DEFAULT_LIKE_STATS))
+    frame = components.solve_stats_frame(result)
+    assert list(frame.columns) == ["項目", "値"]
+    assert all(isinstance(v, str) for v in frame["値"])
+
+
+def test_最適化詳細表は空リストをそのまま見せる():
+    """空のリストは「空欄」ではなく「（なし）」と出す（0 件と誤読させない）。"""
+    result = _make_solved_result_with_stats({"relaxed_constraints": [], "patterns": ["早番中心"]})
+    frame = components.solve_stats_frame(result).set_index("項目")["値"]
+    assert frame["relaxed_constraints"] == "（なし）"
+    assert frame["patterns"] == "早番中心"
+    _assert_arrow_serializable(
+        components.solve_stats_frame(result), "solve_stats_frame(非空リスト)"
+    )
+
+
+def test_最適化詳細表はNoneとboolとfloatを文字列に寄せる():
+    """``None`` / ``bool`` / ``float`` が同居しても Arrow 化できること。"""
+    result = _make_solved_result_with_stats(
+        {"a": None, "b": True, "c": False, "d": 0.5, "e": 13873, "f": "text"}
+    )
+    frame = components.solve_stats_frame(result).set_index("項目")["値"]
+    assert frame["a"] == "—"
+    assert frame["b"] == "はい"
+    assert frame["c"] == "いいえ"
+    assert frame["d"] == "0.5"
+    assert frame["e"] == "13873"
+    assert frame["f"] == "text"
+    _assert_arrow_serializable(components.solve_stats_frame(result), "solve_stats_frame(混合型)")
+
+
+def test_最適化詳細表はfloatの桁を落とさない():
+    """6 桁以上の整数部を持つ float も桁落ちさせてはならない。
+
+    ``f"{value:g}"`` は有効数字 6 桁に丸めるため、目的関数相当の値
+    （例: 202432.35）が ``202432`` になり、表示として情報量を落とす。
+    ``str(float)`` は最短往復表記なので桁落ちしない。
+    """
+    result = _make_solved_result_with_stats({"a": 202432.35, "b": 1234567.5, "c": 5.25314})
+    frame = components.solve_stats_frame(result).set_index("項目")["値"]
+    assert frame["a"] == "202432.35", f"桁落ちしている: {frame['a']}"
+    assert frame["b"] == "1234567.5", f"桁落ちしている: {frame['b']}"
+    assert frame["c"] == "5.25314"
+
+
+def test_最適化詳細表はsetを安定順に並べる():
+    """``set`` は反復順が実行ごとに変わるため、並べてから表示すること。
+
+    同じ ``stats`` でも実行ごとに別の文字列になると、
+    スクリーンショット比較や差分レビューが成立しなくなる。
+    """
+    result = _make_solved_result_with_stats({"k": {"c", "a", "b"}})
+    values = {components.solve_stats_frame(result).at[0, "値"] for _ in range(20)}
+    assert values == {"a、b、c"}, f"set の表示が安定していない: {sorted(values)}"
+
+
+def test_最適化詳細表はキー順に並ぶ():
+    """行は「項目」キーの昇順（値の種類とは無関係）に並ぶこと。
+
+    キーが ``str`` 以外でも壊れないよう、比較は ``str(key)`` で行う。
+    """
+    result = _make_solved_result_with_stats({"zeta": 1, "alpha": 2, "mid": 3})
+    frame = components.solve_stats_frame(result)
+    assert list(frame["項目"]) == ["alpha", "mid", "zeta"]
+
+
+def test_最適化詳細表は数値以外のキーでも壊れない():
+    """キーが ``str`` でなくても、並べ替えも Arrow 変換も例外にしないこと。
+
+    ``str`` と ``int`` が混ざると object 列になり、「値」列と同じ理由で
+    Arrow 変換が壊れる。両列とも文字列に寄せてあることを確認する。
+    """
+    result = _make_solved_result_with_stats({2: "b", 10: "a", "z": "c"})
+    frame = components.solve_stats_frame(result)
+    assert list(frame["項目"]) == ["10", "2", "z"]
+    assert all(isinstance(v, str) for v in frame["項目"])
+    assert all(isinstance(v, str) for v in frame["値"])
+    _assert_arrow_serializable(frame, "solve_stats_frame(非 str キー)")
+
+
+def test_最適化詳細表は目的関数を小数3桁で出す():
+    """``objective_value`` は小数3桁の文字列になること（表示揺れ防止）。"""
+    result = _make_solved_result_with_stats({})
+    result.objective_value = 181978.8012
+    frame = components.solve_stats_frame(result).set_index("項目")["値"]
+    assert frame["目的関数"] == "181978.801"
+
+
+def test_最適化詳細表は対象なしなら空():
+    """``result=None`` や stats が空なら空 DataFrame（例外にしない）。"""
+    assert components.solve_stats_frame(None).empty
+    assert components.solve_stats_frame(_make_solved_result_with_stats({})).empty
+
+
+def test_stat_displayはスカラーとシーケンスを文字列にする():
+    """``_stat_display`` 単体の契約（列の型を揃えるのが目的）。"""
+    display = components._stat_display
+    assert display(None) == "—"
+    assert display(True) == "はい"
+    assert display(False) == "いいえ"
+    assert display(3) == "3"
+    assert display(1.25) == "1.25"
+    assert display("x") == "x"
+    assert display([]) == "（なし）"
+    assert display(()) == "（なし）"
+    assert display(["a", "b"]) == "a、b"
+    assert display(("a",)) == "a"

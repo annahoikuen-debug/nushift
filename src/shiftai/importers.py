@@ -3,7 +3,7 @@
 **このモジュールが解決する問題**
 
 園児の登降園予定は、実運用では園業務支援システム（CoDMON、キッズリー 他）の
-CSV 出力から入れる。:~data_loader`` のループvariousの ``load_children`` は
+CSV 出力から入れる。:mod:`shiftai.data_loader` の ``load_children`` は
 本アプリ独自の列名を前提にしているため、そのままだと **列名の付け替えだけで**
 取り込める。
 
@@ -23,6 +23,7 @@ import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 import pandas as pd
@@ -156,7 +157,9 @@ _GENERIC = ImportProfile(
         "延長保育": ("延長保育", "延長"),
         "備考": ("備考", "メモ"),
     },
-    notes=("対応する列が見つからないものは空欄になります。取り込み後に下表で目視確認してください。",),
+    notes=(
+        "対応する列が見つからないものは空欄になります。取り込み後に下表で目視確認してください。",
+    ),
 )
 
 _PROFILES: tuple[ImportProfile, ...] = (_CODEMON, _KIDS_RYU, _GENERIC)
@@ -213,18 +216,74 @@ def _era_date(value: Any) -> date | None:
         return None
 
 
+#: 月齢の表記に付く単位。「○ヶ月」「○か月」「○カ月」「○ケ月」「○ヵ月」。
+_MONTH_UNIT = re.compile(r"[ヶヵかケカ][ \t]*月")
+
+#: 年齢の表記に付く単位。「○歳」「○才」。現場では「才」も使われる。
+_YEAR_UNIT = re.compile(r"[ \t]*[歳才]")
+
+#: 全文から数字だけを取り出す前の、符号付きの数値（``-1`` を 1 に誤読しないため）。
+_SIGNED_INT = re.compile(r"^[ \t]*([+-]?[0-9]+)[ \t]*$")
+
+
 def _age_years(value: Any) -> str:
-    """年齢の値を ``0``〜``5`` の文字列に落とす。解釈できなければ ``"0"``。"""
+    """年齢の値を ``0``〜``5`` の文字列に落とす。解釈できなければ ``"0"``。
+
+    園業務支援システムの年齢欄は ``3歳6ヶ月`` のように
+    **「年 + 月」の両方を書く**ことがある。ここで数字を全部つなげて
+    ``36`` にしてから月判定すると、全園児が 0 歳児になってしまう
+    （0 歳児は必要人員が最も大きい区分なので、必要人員が過剰になる）。
+
+    したがって **年の部分を先に確定し**、月表記は
+    「年が無い月齢（``11ヶ月`` など）」のときの 0 歳根拠としてのみ使う。
+    """
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return "0"
     text = unicodedata.normalize("NFKC", str(value)).strip()
+    if not text:
+        return "0"
+
+    # 年が明示されていれば、その年を採用する（月は無視）
+    if _YEAR_UNIT.search(text):
+        year_part = _YEAR_UNIT.split(text, maxsplit=1)[0]
+        signed_year = _SIGNED_INT.match(year_part)
+        if signed_year:
+            return str(max(0, min(5, int(signed_year.group(1)))))
+        year_digits = re.sub(r"[^0-9]", "", year_part)
+        return str(max(0, min(5, int(year_digits)))) if year_digits else "0"
+
+    # 符号付き数値だけならそのまま解釈する（-1 を 1 にしない）
+    signed = _SIGNED_INT.match(text)
+    if signed:
+        return str(max(0, min(5, int(signed.group(1)))))
+
+    # 年が無く月単位の表記（11ヶ月 / 11カ月 …）なら、まだ 0 歳
+    if _MONTH_UNIT.search(text):
+        return "0"
+
+    # 数値（float / int / Decimal）として渡された場合
+    #
+    # ``pandas`` は年齢列に空欄が 1 つでもあれば **float64** として推論する
+    # （``pd.read_excel`` / ``pd.read_csv`` の既定）。
+    # その結果 ``3.0`` のような値が ``_age_years`` に届くと、
+    # 文字列化すると ``"3.0"`` になり、**数字だけを取り出す処理が
+    # ``"30"`` となって 5 歳（最も低い定員比）に丸められてしまう**。
+    # つまり 3 歳の園児が 5 歳扱いになり、必要人員が **過少に算出**される。
+    # したがって数値は小数点以下を切り捨てて整数として扱う。
+    if isinstance(value, bool):
+        return "0"
+    if isinstance(value, int):
+        return str(max(0, min(5, value)))
+    if isinstance(value, (float, Decimal)):
+        if value != value:  # NaN
+            return "0"
+        return str(max(0, min(5, int(value))))
+
+    # 残りは数字だけの表記
     digits = re.sub(r"[^0-9]", "", text)
     if not digits:
         return "0"
-    years = int(digits)
-    if "ヶ月" in text or "か月" in text or "カ月" in text:
-        return "0"
-    return str(max(0, min(5, years)))
+    return str(max(0, min(5, int(digits))))
 
 
 #: 園業務支援システムで「欠席・利用あり」を表す語（``data_loader.parse_bool`` に無いもの）。
@@ -244,9 +303,7 @@ def _flag(value: Any, default: bool = False) -> bool:
     return parse_bool(value, default)
 
 
-def _is_short_time(
-    arrive: Any, depart: Any, standard_window: tuple[int, int] | None
-) -> bool:
+def _is_short_time(arrive: Any, depart: Any, standard_window: tuple[int, int] | None) -> bool:
     """在園時間帯が保育標準時間帯と完全に一致するなら短時間保育とみなす。"""
     if standard_window is None or arrive is None or depart is None:
         return False

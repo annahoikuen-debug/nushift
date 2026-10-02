@@ -6,6 +6,7 @@ Streamlit アプリの起動に加え、ブラウザ無しで完結するヘッ�
 
 * ``ui``      Streamlit アプリを起動する
 * ``presets`` 自治体別の配置基準プリセットを一覧表示する
+* ``compliance`` 制度別の適合チェックを実行する（届出・月次報告・巡回指導の場面用）
 * ``sample``  サンプル CSV（園児・職員・希望休）を出力する
 * ``template`` 空テンプレート CSV を出力する
 * ``solve``   ヘッドレスで必要人員計算 → シフト最適化 → 過不足分析 → 出力を行う
@@ -18,6 +19,7 @@ Streamlit アプリの起動に加え、ブラウザ無しで完結するヘッ�
    2  法令違反（BLOCKER）が 1 件以上
    3  ``--strict`` 指定時かつ要調整（WARNING）が 1 件以上
        （INFO だけの違反は 0 件として扱い、終了コード 3 にはしない）
+       ``compliance`` では不適合または未確認がある場合に 3
 ===== ==========================================================
 """
 
@@ -34,6 +36,16 @@ from pathlib import Path
 from typing import Any
 
 from shiftai import diagnostics, local_rules, sample_data
+from shiftai.compliance import (
+    FacilitySpec,
+    Regulation,
+    StaffRecord,
+    audit_facility,
+    to_markdown,
+)
+from shiftai.compliance import (
+    to_dataframe as compliance_dataframe,
+)
 from shiftai.config import (
     APP_ICON,
     APP_TITLE,
@@ -43,8 +55,16 @@ from shiftai.config import (
     DEFAULT_GRANULARITY_MIN,
 )
 from shiftai.data_loader import parse_time, read_bundle, write_template_csvs
-from shiftai.domain import FacilitySettings, ViolationSeverity, daterange
+from shiftai.domain import (
+    AgeClass,
+    FacilitySettings,
+    Role,
+    StaffingStandard,
+    ViolationSeverity,
+    daterange,
+)
 from shiftai.exporter import (
+    _neutralize_formula_cells,
     export_bundle_zip,
     payroll_dataframe,
     requirements_dataframe,
@@ -125,8 +145,16 @@ def _app_file() -> Path | None:
 
 
 def _write_csv(frame: Any, path: Path) -> Path:
+    """CSV を 1 ファイル書き出す（BOM 付き UTF-8、数式インジェクション対策済み）。
+
+    ``shift.csv`` / ``payroll.csv`` にはユーザー由来の氏名・資格が入るため、
+    Excel で開いたときに数式として実行されないよう
+    :func:`shiftai.exporter._neutralize_formula_cells` を通す。
+    ここではバイト列を作らずファイルへ直接書くため、
+    ZIP 出力側（``exporter.to_csv_bytes``）と同じ無害化を明示的に適用する。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    frame.to_csv(path, index=False, encoding="utf-8-sig")
+    _neutralize_formula_cells(frame).to_csv(path, index=False, encoding="utf-8-sig")
     return path
 
 
@@ -161,9 +189,7 @@ def _parse_patterns(value: str, settings: FacilitySettings) -> tuple:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
-def _target_days(
-    children_days: Sequence[date], start: str | None, end: str | None
-) -> list[date]:
+def _target_days(children_days: Sequence[date], start: str | None, end: str | None) -> list[date]:
     """対象日を決める。``start``/``end`` が指定されていれば園児データと積む。"""
     days = sorted(set(children_days))
     if not days:
@@ -234,6 +260,118 @@ def cmd_presets(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# compliance
+# ---------------------------------------------------------------------------
+
+
+def _facility_spec_from_csv(
+    args: argparse.Namespace, standard: StaffingStandard | None
+) -> FacilitySpec:
+    """``--children`` / ``--staff`` の CSV から :class:`FacilitySpec` を作る。"""
+    loaded = read_bundle(args.children, args.staff, None)
+
+    # 園児は「1 人 1 り」ではなく「1 行 1 日分」で並ぶため、職員 ID で重複を除く。
+    # 基礎乳幼児数は月極めの人数なので、園児 ID ごとに 1 回だけ数える。
+    monthly: dict[AgeClass, int] = {}
+    seen_children: set[str] = set()
+    for plan in loaded.children:
+        if plan.child_id in seen_children:
+            continue
+        seen_children.add(plan.child_id)
+        monthly[plan.age_class] = monthly.get(plan.age_class, 0) + 1
+
+    records: list[StaffRecord] = []
+    for member in loaded.staff:
+        # 調理員は保育基準の配置人数には入らない（is_placeable=False）が、
+        # 調理員配置の**必置要件**を判定するので名簿には残す。
+        if not member.is_placeable and not member.has_role(Role.CHUUBOU):
+            continue
+        certified: bool | None = None
+        if member.is_qualified_under(None) or member.has_role(Role.CHUUBOU):
+            certified = True
+        elif args.support_certified:
+            # 子育て支援員研修（地域型保育）修了者・市町村研修受講予定者として扱う
+            certified = True
+        records.append(
+            StaffRecord(
+                staff_id=member.staff_id,
+                name=member.name,
+                roles=member.roles,
+                weekly_hours=member.contract.weekly_hours,
+                is_certified=certified,
+            )
+        )
+
+    regulation = Regulation(args.regulation)
+
+    return FacilitySpec(
+        regulation=regulation,
+        name=args.facility,
+        capacity=int(args.capacity),
+        is_shared_operator=bool(args.shared_operator),
+        opening=args.open,
+        closing=args.close,
+        monthly_children=monthly,
+        staff=tuple(records),
+        standard=standard,
+    )
+
+
+def cmd_compliance(args: argparse.Namespace) -> int:
+    """制度別の適合チェックを実行する。"""
+    try:
+        Regulation(args.regulation)
+    except ValueError:
+        _error(f"制度名が不正です: {args.regulation}")
+        return EXIT_ERROR
+    standard = local_rules.get_standard(args.standard) if args.standard else None
+    try:
+        spec = _facility_spec_from_csv(args, standard)
+    except ValueError as exc:
+        _error(str(exc))
+        return EXIT_ERROR
+    try:
+        report = audit_facility(spec)
+    except ValueError as exc:
+        _error(str(exc))
+        return EXIT_ERROR
+    if args.json:
+        _echo(
+            json.dumps(
+                {
+                    "施設名": report.facility_name,
+                    "制度": report.regulation.value,
+                    "不適合": len(report.violations),
+                    "未確認": len(report.unknowns),
+                    "報告可": report.is_filing_ready,
+                    "チェック": [c.to_dict() for c in report.checks],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return EXIT_OK if report.is_filing_ready else EXIT_WARNING
+    _echo(to_markdown(report))
+    _echo("")
+    if args.out:
+        target = Path(args.out)
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            _write_csv(compliance_dataframe(report), target)
+        except OSError as exc:
+            _error(f"CSV を書き出せませんでした: {exc}")
+            return EXIT_ERROR
+        _echo(f"チェック結果を CSV に出力しました: {target}")
+    if report.violations:
+        _error(f"不適合 {len(report.violations)} 件があります。")
+        return EXIT_WARNING
+    if report.unknowns:
+        _echo(f"未確認 {len(report.unknowns)} 件があります。報告する前に人が判断してください。")
+        return EXIT_WARNING
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
 # sample / template
 # ---------------------------------------------------------------------------
 
@@ -250,7 +388,8 @@ def cmd_sample(args: argparse.Namespace) -> int:
     except OSError as exc:
         _error(f"サンプルを書き出せませんでした: {exc}")
         return EXIT_ERROR
-    _echo(f"サンプルデータを出力しました（{len(days) if days else '既定'} 日分）:")
+    span = days or sample_data.default_days()
+    _echo(f"サンプルデータを出力しました（{len(span)} 日分 / {span[0]} 〜 {span[-1]}）:")
     for key, path in written.items():
         _echo(f"  {_SAMPLE_NAMES[key]:<18} {path}")
     return EXIT_OK
@@ -345,16 +484,30 @@ def cmd_solve(args: argparse.Namespace) -> int:
         _error(str(exc.args[0] if exc.args else exc))
         return EXIT_ERROR
 
+    # 休園日・行事日のパースは try で包む。
+    # これが無いと ``--closed 2026-13-45`` で ValueError が
+    # traceback として出力され、終了コードも契約（1）にならない。
+    try:
+        closed_days = frozenset(_parse_day(d) for d in args.closed)
+        holiday_dates = frozenset(_parse_day(d) for d in args.holiday)
+    except ValueError as exc:
+        _error(f"日付の形式が不正です: {exc}")
+        return EXIT_ERROR
+
     settings = FacilitySettings(
         facility_name=args.facility,
         day_open=args.open,
         day_close=args.close,
         granularity_min=args.granularity,
-        closed_days=frozenset(_parse_day(d) for d in args.closed),
-        holiday_dates=frozenset(_parse_day(d) for d in args.holiday),
+        closed_days=closed_days,
+        holiday_dates=holiday_dates,
     )
 
-    days = _target_days([c.day for c in loaded.children], args.start, args.end)
+    try:
+        days = _target_days([c.day for c in loaded.children], args.start, args.end)
+    except ValueError as exc:
+        _error(f"日付の形式が不正です: {exc}")
+        return EXIT_ERROR
     if not days:
         _error("対象日が決まりませんでした。--start / --end を確認してください")
         return EXIT_ERROR
@@ -382,10 +535,7 @@ def cmd_solve(args: argparse.Namespace) -> int:
         return EXIT_ERROR
     relaxation = normalize_level(args.relax)
     if patterns:
-        _echo(
-            "勤務パターン: "
-            + " / ".join(f"{p.label} {p.span()}" for p in patterns)
-        )
+        _echo("勤務パターン: " + " / ".join(f"{p.label} {p.span()}" for p in patterns))
     if relaxation:
         _echo(f"緩和モード: L{relaxation} {RELAX_LEVELS[relaxation].label}")
 
@@ -417,9 +567,7 @@ def cmd_solve(args: argparse.Namespace) -> int:
             settings=settings,
         )
         moved = [c for c in snap_changes if c.applied]
-        _echo(
-            f"勤務パターンの整列: {len(moved)} 日分 / 全 {len(snap_changes)} 日分"
-        )
+        _echo(f"勤務パターンの整列: {len(moved)} 日分 / 全 {len(snap_changes)} 日分")
         if args.verbose:
             for change in snap_changes:
                 _echo(f"  {change.to_dict()}")
@@ -458,7 +606,9 @@ def cmd_solve(args: argparse.Namespace) -> int:
     out_dir = Path(args.out)
     written: list[Path] = [
         _write_csv(shift_to_dataframe(result, slots, loaded.staff), out_dir / "shift.csv"),
-        _write_csv(payroll_dataframe(result, slots, loaded.staff, settings), out_dir / "payroll.csv"),
+        _write_csv(
+            payroll_dataframe(result, slots, loaded.staff, settings), out_dir / "payroll.csv"
+        ),
         _write_csv(shift_matrices(result, slots, loaded.staff), out_dir / "shift_matrix.csv"),
         _write_csv(requirements_dataframe(table), out_dir / "requirements.csv"),
         _write_csv(report.to_dataframe(), out_dir / "gap.csv"),
@@ -494,13 +644,20 @@ def cmd_solve(args: argparse.Namespace) -> int:
         zip_path = out_dir / "bundle.zip"
         zip_path.write_bytes(
             export_bundle_zip(
-                result, table, slots, loaded.staff, settings,
-                gap_report=report, violations=violations,
+                result,
+                table,
+                slots,
+                loaded.staff,
+                settings,
+                gap_report=report,
+                violations=violations,
             )
         )
         written.append(zip_path)
 
-    _echo(f"配置カバー率: {report.coverage_ratio * 100:.1f}%（不足 {report.total_shortfall_slots} 時間帯）")
+    _echo(
+        f"配置カバー率: {report.coverage_ratio * 100:.1f}%（不足 {report.total_shortfall_slots} 時間帯）"
+    )
     for violation in violations:
         _echo(f"  [{violation.severity.value}] {violation.code}: {violation.message}")
     _echo(f"出力先: {out_dir}")
@@ -520,17 +677,17 @@ def resolve_exit_code(
 ) -> int:
     """``solve`` の終了コードを決定する。
 
-    ==========  ==========================================  ==============
-    条件         内容                                        終了コード
-    ==========  ==========================================  ==============
-    解なし       ``result.ok`` が False                     1
-    法令違反あり  BLOCKER が 1 件以上（``--strict`` 无关）    2
-    要調整のみ    ``--strict`` ありかつ WARNING が 1 件以上   3
-    それ以外     —                                          0
-    ==========  ==========================================  ==============
+        ==========  ==========================================  ==============
+        条件         内容                                        終了コード
+        ==========  ==========================================  ==============
+        解なし       ``result.ok`` が False                     1
+    法令違反あり  BLOCKER が 1 件以上（``--strict`` 無し）    2
+        要調整のみ    ``--strict`` ありかつ WARNING が 1 件以上   3
+        それ以外     —                                          0
+        ==========  ==========================================  ==============
 
-    ``INFO``（HOURS_IMBALANCE など「参考」の情報）は判定に含めない。
-    ``--strict`` を付けても INFO だけでは 3 にならない。
+        ``INFO``（HOURS_IMBALANCE など「参考」の情報）は判定に含めない。
+        ``--strict`` を付けても INFO だけでは 3 にならない。
     """
     if not result.ok:
         return EXIT_ERROR
@@ -566,6 +723,44 @@ def build_parser() -> argparse.ArgumentParser:
     presets = sub.add_parser("presets", help="配置基準プリセットを一覧表示する")
     presets.add_argument("--json", action="store_true", help="JSON で出力する")
     presets.set_defaults(func=cmd_presets)
+
+    compliance = sub.add_parser(
+        "compliance", help="制度別の適合チェックを実行する（届出・報告の場面用）"
+    )
+    compliance.add_argument("--children", default=None, help="園児 CSV / Excel / JSON")
+    compliance.add_argument("--staff", default=None, help="職員 CSV / Excel / JSON")
+    compliance.add_argument(
+        "--regulation",
+        default="認可外保育施設",
+        help="制度名（認可保育所／認可外保育施設／企業主導型保育事業／小規模保育事業／事業所内保育事業）",
+    )
+    compliance.add_argument(
+        "--standard", default=None, help="配置基準プリセット名（既定: 制度から自動選択）"
+    )
+    compliance.add_argument("--facility", default="あさひ保育園", help="園名")
+    compliance.add_argument("--capacity", type=int, default=0, help="利用定員")
+    compliance.add_argument(
+        "--shared-operator",
+        action="store_true",
+        help="保育事業者型事業（共同利用枠）を実施しているとする",
+    )
+    compliance.add_argument(
+        "--open", type=_parse_clock, default=DEFAULT_DAY_OPEN, help="開所時刻 (既定: 07:15)"
+    )
+    compliance.add_argument(
+        "--close", type=_parse_clock, default=DEFAULT_DAY_CLOSE, help="閉所時刻 (既定: 19:30)"
+    )
+    compliance.add_argument("--out", default=None, help="チェック結果を CSV で出力する先")
+    compliance.add_argument(
+        "--support-certified",
+        action="store_true",
+        help=(
+            "保育士・看護師・調理員以外の職員を、"
+            "子育て支援員研修（地域型保育）修了者または市町村研修受講予定者として扱う"
+        ),
+    )
+    compliance.add_argument("--json", action="store_true", help="JSON で出力する")
+    compliance.set_defaults(func=cmd_compliance)
 
     sample = sub.add_parser("sample", help="サンプル CSV を出力する")
     sample.add_argument("--out", default="sample", help="出力先ディレクトリ（既定: sample）")
@@ -622,11 +817,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         choices=range(0, MAX_RELAX_LEVEL + 1),
         metavar="LEVEL",
-        help=(
-            "緩和モード（0=厳格 … "
-            f"{MAX_RELAX_LEVEL}=希望休・休園日を無視）。"
-            "既定は 0（厳格）。"
-        ),
+        help=(f"緩和モード（0=厳格 … {MAX_RELAX_LEVEL}=希望休・休園日を無視）。既定は 0（厳格）。"),
     )
     solve.add_argument(
         "--diagnose",

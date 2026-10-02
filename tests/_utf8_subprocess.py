@@ -30,10 +30,19 @@ from pathlib import Path
 IO_ENCODING_ENV = "PYTHONIOENCODING"
 
 
-def utf8_env(base: dict[str, str] | None = None) -> dict[str, str]:
-    """``PYTHONIOENCODING=utf-8`` を差し込んだ環境変数のコピーを返す。"""
+def utf8_env(base: dict[str, str] | None = None, *, force: bool = True) -> dict[str, str]:
+    """子プロセスに UTF-8 出力をさせる環境変数を返す。
+
+    ``force=False`` のときは **呼び出し側が指定した値を尊重する**。
+    ロケール依存を検証するテストは ``PYTHONIOENCODING`` に cp1252 等を
+    設定するので、こちらで上書きされてしまうと検証が空振りになる
+    （``test_CLIは非UTF8ロケールでも終了コード0になる`` がその例）。
+    """
     env = dict(os.environ if base is None else base)
-    env[IO_ENCODING_ENV] = "utf-8"
+    if force:
+        env[IO_ENCODING_ENV] = "utf-8"
+    else:
+        env.setdefault(IO_ENCODING_ENV, "utf-8")
     return env
 
 
@@ -43,18 +52,22 @@ def run_utf8(
     cwd: Path | str | None = None,
     timeout: int = 600,
     env: dict[str, str] | None = None,
+    force_io_encoding: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """子プロセスを実行し、stdout / stderr を **必ず UTF-8 として**読む。
 
     デコードに失敗しても例外にしない（``errors="replace"``）。
     原因を後で追えるよう、文字列を返す。
+
+    ``force_io_encoding=False`` を渡すと、子プロセスの ``PYTHONIOENCODING``
+    を上書きしない（ロケール非依存性の検証用）。
     """
     return subprocess.run(
         list(args),
         capture_output=True,
         encoding="utf-8",
         errors="replace",
-        env=utf8_env(env),
+        env=utf8_env(env, force=force_io_encoding),
         cwd=str(cwd) if cwd is not None else None,
         timeout=timeout,
         check=False,
@@ -67,10 +80,15 @@ def run_module_utf8(
     cwd: Path | str | None = None,
     timeout: int = 600,
     env: dict[str, str] | None = None,
+    force_io_encoding: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """``python -m <module> <args...>`` を UTF-8 で実行する。"""
     return run_utf8(
-        [sys.executable, "-m", module, *args], cwd=cwd, timeout=timeout, env=env
+        [sys.executable, "-m", module, *args],
+        cwd=cwd,
+        timeout=timeout,
+        env=env,
+        force_io_encoding=force_io_encoding,
     )
 
 

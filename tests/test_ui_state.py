@@ -61,8 +61,13 @@ def test_init_stateがDEFAULT_KEYSのキーを全て埋める():
 def test_init_stateの既定値はDEFAULT_KEYSと一致する():
     """スカラー既定値は ``DEFAULT_KEYS`` の値と厳密に一致すること。"""
     for key, expected in state.DEFAULT_KEYS.items():
-        if key in (state.KEY_SETTINGS, state.KEY_WEIGHTS, state.KEY_STANDARD, state.KEY_PRESETS,
-                   state.KEY_SOLVER_NAMES):
+        if key in (
+            state.KEY_SETTINGS,
+            state.KEY_WEIGHTS,
+            state.KEY_STANDARD,
+            state.KEY_PRESETS,
+            state.KEY_SOLVER_NAMES,
+        ):
             continue  # 派生値は下で個別に検証する
         assert st.session_state[key] == expected, key
 
@@ -411,9 +416,7 @@ def test_invalidate_pipelineは最適化結果だけを破棄する():
 
 def test_normalize_fixedはISO文字列の日付をdateに変換する():
     """UI 側の ISO 文字列をソルバ要求の ``datetime.date`` に正規化すること。"""
-    normalized = state.normalize_fixed(
-        {("S001", "2026-09-28", "09:00-09:30"): "勤務"}
-    )
+    normalized = state.normalize_fixed({("S001", "2026-09-28", "09:00-09:30"): "勤務"})
     assert normalized == {("S001", date(2026, 9, 28), "09:00-09:30"): CellState.WORK}
 
 
@@ -581,9 +584,7 @@ def test_contract_hoursはソルバと同じ式を使う(small_staff, small_requ
         st.session_state[state.KEY_STAFF] = small_staff
         st.session_state[state.KEY_REQUIREMENTS] = small_requirements
         assert state.contract_hours() == pytest.approx(
-            solver.supply_hours(
-                small_staff, small_requirements, {}, state.current_settings()
-            )
+            solver.supply_hours(small_staff, small_requirements, {}, state.current_settings())
         )
     finally:
         st.session_state.clear()

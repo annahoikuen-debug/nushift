@@ -20,7 +20,7 @@
 # したがって pytest-benchmark / pytest-mock / pytest-asyncio は「使われていない」ので
 # 意図的に入れていない（入れても害はないが、壊れたときに原因を掴みづらくする）。
 #
-# 検証環境の実測（2026-09-28 / Python 3.12.3）:
+# 検証環境の実測（2026-10-01 / Python 3.13.15）:
 #   pytest 9.1.1 / pytest-cov 7.1.0 / pytest-timeout 2.4.0 / pytest-xdist 3.8.0 / ruff 0.16.9
 
 -r requirements.txt

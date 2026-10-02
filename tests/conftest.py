@@ -15,6 +15,7 @@ from __future__ import annotations
 import ast
 import inspect
 import pathlib
+import re
 import textwrap
 import warnings
 from datetime import date, time
@@ -50,7 +51,6 @@ DAY_CLOSE = time(14, 0)
 
 STANDARD_KEY = "全国基準（厚労省）"
 FQ_KEY = "福岡市"
-
 
 
 def sei_contract(**overrides) -> Contract:
@@ -169,9 +169,7 @@ def small_preferences(small_staff, one_day) -> dict[str, StaffPreferences]:
     day = one_day[0]
     prefs: dict[str, StaffPreferences] = {m.staff_id: StaffPreferences() for m in small_staff}
     prefs["S006"] = StaffPreferences(
-        unavailable=[
-            Unavailability(day=day, start=time(0, 0), end=time(23, 59), reason="希望休")
-        ]
+        unavailable=[Unavailability(day=day, start=time(0, 0), end=time(23, 59), reason="希望休")]
     )
     return prefs
 
@@ -250,58 +248,9 @@ def solved_week(week_inputs):
     )
 
 
-
 # ---------------------------------------------------------------------------
 # CBC を起動するテストの自動マーク（T-06）
 # ---------------------------------------------------------------------------
-
-CBC_ENTRYPOINTS = frozenset({"solve_shift", "solve_shift_greedy", "check_violations"})
-"""CBC（MILP ソルバ）を起動しうる関数名。"""
-
-
-def _called_names(node: ast.AST) -> set[str]:
-    """AST 内で呼び出されている関数名をすべて集める。"""
-    found: set[str] = set()
-    for child in ast.walk(node):
-        if isinstance(child, ast.Call):
-            if isinstance(child.func, ast.Attribute):
-                found.add(child.func.attr)
-            elif isinstance(child.func, ast.Name):
-                found.add(child.func.id)
-    return found
-
-
-def _fixture_uses_cbc() -> set[str]:
-    """CBC を起動する（あるいは thereof に依存する）フィクスチャ名を集める。"""
-    here = pathlib.Path(__file__).resolve()
-    by_name: dict[str, ast.FunctionDef] = {}
-    for candidate in sorted(here.parent.glob("conftest*.py")):
-        tree = ast.parse(candidate.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
-                by_name[node.name] = node
-
-    def resolve(name: str, seen: frozenset[str]) -> bool:
-        if name in seen or name not in by_name:
-            return False
-        node = by_name[name]
-        if _called_names(node) & CBC_ENTRYPOINTS:
-            return True
-        args = [a.arg for a in node.args.args]
-        return any(resolve(a, seen | {name}) for a in args)
-
-    return {name for name in by_name if resolve(name, frozenset())}
-
-
-def _cbc_fixtures() -> set[str]:
-    global _CBC_FIXTURES
-    if _CBC_FIXTURES is None:
-        _CBC_FIXTURES = _fixture_uses_cbc()
-    return _CBC_FIXTURES
-
-
-_CBC_FIXTURES: set[str] | None = None
-
 
 CLI_ENTRYPOINTS = frozenset({"main", "_cli", "cmd_solve"})
 """CLI を起動する関数名。``shiftai.__main__.main`` とテスト内のラッパ。"""
@@ -344,11 +293,198 @@ def _calls_cli_solve(node: ast.AST) -> bool:
     return False
 
 
+CBC_ENTRYPOINTS = frozenset({"solve_shift", "solve_shift_greedy"})
+"""CBC（MILP ソルバ）を起動する関数名。
+
+``check_violations`` は **ここに含めない**。
+GapReport を組み立てるだけの純粋な Python 関数で、
+``pulp`` も ``.solve()`` も参照しない（実測済み）。
+含めると ``tests/test_weekly_normalization.py`` のように
+「CBC を起動しないことが設計上のゴール」のファイルが
+丸ごと ``test-fast`` から除外されてしまう（過マーク）。
+"""
+
+#: ``shiftai.solver`` から import して直接呼ぶ CBC 起動関数。
+#: テストが ``_run_cbc(ctx, 5, False)`` と呼ぶと、この関数が
+#: ``ctx.prob.solve(pulp.PULP_CBC_CMD(...))`` を実行する。
+#: ``solve_shift`` を通らないので :data:`CBC_ENTRYPOINTS` では検出できない。
+SOLVER_CBC_ENTRYPOINTS = frozenset({"_run_cbc"})
+"""ソルバ内部の CBC 起動関数（import して直接呼ぶ）。"""
+
+#: ``pulp`` を直接触って CBC を起動する呼び出し。
+#: ``solve_shift`` を経由せずに ``ctx.prob.solve(pulp.PULP_CBC_CMD(...))`` と
+#: 呼ぶテストは、上のエントリポイント名では **検出できない**。
+RAW_CBC_MARKERS = frozenset({"PULP_CBC_CMD", "COIN_CMD", "GLPK_CMD", "CBC_CMD"})
+"""生 PuLP で CBC を起動する関数名。"""
+
+_ALL_CBC_CALLEES = CBC_ENTRYPOINTS | SOLVER_CBC_ENTRYPOINTS
+"""CBC を起動しうる関数名の総集。"""
+
+
+def _called_names(node: ast.AST) -> set[str]:
+    """AST 内で呼び出されている関数名をすべて集める。"""
+    found: set[str] = set()
+    for child in ast.walk(node):
+        if isinstance(child, ast.Call):
+            if isinstance(child.func, ast.Attribute):
+                found.add(child.func.attr)
+            elif isinstance(child.func, ast.Name):
+                found.add(child.func.id)
+    return found
+
+
+def _raw_cbc_calls(node: ast.AST) -> bool:
+    """``PULP_CBC_CMD`` などを直接起動していないか。
+
+    ``solve_shift`` を経由しない生 PuLP 経路
+    （``ctx.prob.solve(pulp.PULP_CBC_CMD(timeLimit=20))``）は
+    :data:`CBC_ENTRYPOINTS` では検出できないため、別途見る。
+    """
+    return (
+        bool(_called_names(node) & RAW_CBC_MARKERS)
+        or bool(re.search(r"\bPULP_CBC_CMD\b|\bCOIN_CMD\b", ast.dump(node)))
+        or any(
+            isinstance(child, ast.Attribute) and child.attr == "solve" for child in ast.walk(node)
+        )
+    )
+
+
+def _module_functions_that_use_cbc() -> dict[str, bool]:
+    """各テストモジュール内の関数について「CBC を起動しうるか」を返す。
+
+    ``tests/test_solver.py`` の ``_solve`` や ``tests/test_solver_perf.py`` の
+    ``_solve`` のように、**モジュールレベルのヘルパーを経由する**と
+    テスト本体には ``solve_shift`` が現れないため、
+    テスト本体の AST だけでは検出できない。
+
+    返り値は **(モジュール名, 関数名) -> CBC を起動しうるか**。
+
+    .. warning::
+       **キーを「関数名」だけにすると衝突する。**
+       実際、``tests/test_cli_exit_codes.py`` にある入れ子の ``def run(...)``
+       （CLI の ``solve`` を呼ぶ）は ``helpers["run"] = True`` を-rules、
+       それを**名前だけで**引くため、Streamlit の ``AppTest.run()`` を
+       呼ぶ 7 モジュールの UI テスト（計 68 件）すべてが ``slow`` 扱いになり、
+       ``make test-fast`` から消えていた。
+       そのため **モジュール単位でスコープし、
+       定義しているモジュールが同じ場合だけ** 参照する。
+       また入れ子関数（``def run`` がテスト関数の中にあるケース）は
+       モジュールレベルの補助関数ではないため、判定対象に含めない。
+    """
+    result: dict[tuple[str, str], bool] = {}
+    for module in sorted(pathlib.Path(__file__).resolve().parent.glob("test_*.py")):
+        try:
+            tree = ast.parse(module.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):  # pragma: no cover - 壊れたファイル
+            continue
+        # **モジュールレベル**の関数だけを集める（入れ子を除外する）
+        nodes = {
+            n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+
+        def uses_cbc(
+            node: ast.FunctionDef,
+            seen: frozenset[str],
+            table: dict[str, ast.FunctionDef] = nodes,
+        ) -> bool:
+            if node.name in seen:
+                return False
+            if _called_names(node) & _ALL_CBC_CALLEES or _raw_cbc_calls(node):
+                return True
+            if _calls_cli_solve(node):
+                return True
+            for callee in _called_names(node):
+                if callee.startswith("test_") or callee not in table:
+                    continue
+                if uses_cbc(table[callee], seen | {node.name}):
+                    return True
+            return False
+
+        for name, node in nodes.items():
+            result.setdefault((module.name, name), uses_cbc(node, frozenset()))
+    return result
+
+
+_HELPER_USES_CBC: dict[tuple[str, str], bool] | None = None
+
+
+def _helper_uses_cbc() -> dict[tuple[str, str], bool]:
+    global _HELPER_USES_CBC
+    if _HELPER_USES_CBC is None:
+        _HELPER_USES_CBC = _module_functions_that_use_cbc()
+    return _HELPER_USES_CBC
+
+
+def _is_fixture(node: ast.FunctionDef) -> bool:
+    """``@pytest.fixture`` が付いている関数か。"""
+    for deco in node.decorator_list:
+        target = deco.func if isinstance(deco, ast.Call) else deco
+        name = getattr(target, "attr", None) or getattr(target, "id", None)
+        if name == "fixture":
+            return True
+    return False
+
+
+def _fixture_uses_cbc() -> set[str]:
+    """CBC を起動する（あるいは thereof に依存する）フィクスチャ名を集める。
+
+    ``conftest*.py`` だけでなく **全テストモジュール** の
+    モジュールレベル ``@pytest.fixture`` も対象にする。
+    ``tests/test_cost_basis.py`` の ``solved``（``scope="module"``）のように
+    テスト本体のローカルにないフィクスチャが CBC を起動するため、
+    ここに載せないと「テスト本体に CBC 呼び出しが無い」ので
+    slow が付かないまま実行されてしまう。
+
+    テスト関数そのもの（``test_*``）はフィクスチャではないので集めない。
+    """
+    here = pathlib.Path(__file__).resolve()
+    modules = [here, *sorted(here.parent.glob("test_*.py"))]
+    by_name: dict[str, ast.FunctionDef] = {}
+    for candidate in modules:
+        try:
+            tree = ast.parse(candidate.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):  # pragma: no cover - 壊れたファイル
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and _is_fixture(node):
+                by_name.setdefault(node.name, node)
+
+    def resolve(name: str, seen: frozenset[str]) -> bool:
+        if name in seen or name not in by_name:
+            return False
+        node = by_name[name]
+        if _called_names(node) & _ALL_CBC_CALLEES or _raw_cbc_calls(node):
+            return True
+        if _calls_cli_solve(node):
+            return True
+        helpers = _helper_uses_cbc()
+        if any(n for n in _called_names(node) if not n.startswith("test_") and helpers.get(n)):
+            return True
+        args = [a.arg for a in node.args.args]
+        return any(resolve(a, seen | {name}) for a in args)
+
+    return {name for name in by_name if resolve(name, frozenset())}
+
+
+def _cbc_fixtures() -> set[str]:
+    global _CBC_FIXTURES
+    if _CBC_FIXTURES is None:
+        _CBC_FIXTURES = _fixture_uses_cbc()
+    return _CBC_FIXTURES
+
+
+_CBC_FIXTURES: set[str] | None = None
+
+
 def _item_uses_cbc(item: pytest.Item) -> bool:
     """収集済みのテストが CBC を起動しうるか。
 
     呼び出しの直接検出に加えて、(1) CBC を使うフィクスチャを要求している場合、
-    (2) CLI の ``solve`` サブコマンドを呼んでいる場合も対象とする。
+    (2) CLI の ``solve`` サブコマンドを呼んでいる場合、
+    (3) **モジュールレベルのヘルパー関数**（``_solve(...)`` など）を
+    呼んでいる場合、
+
+    のいずれも CBC を起動しうるものとして扱う。
     """
     func = getattr(item, "function", None)
     if func is None:
@@ -356,14 +492,40 @@ def _item_uses_cbc(item: pytest.Item) -> bool:
     try:
         tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
     except (OSError, TypeError, SyntaxError):
-        return False
-    if _called_names(tree) & CBC_ENTRYPOINTS or _calls_cli_solve(tree):
+        # ソースが取れないとき「CBC を起動しない」とは断定できない
+        # （保守側に倒す：判断できないので slow にする）。
         return True
+    if _called_names(tree) & _ALL_CBC_CALLEES or _raw_cbc_calls(tree) or _calls_cli_solve(tree):
+        return True
+    # テスト本体が**同じモジュール.define**のヘルパー（``_solve`` など）を
+    # 呼んでいて、そのヘルパーが CBC を起動する場合。
+    #
+    # モジュールでスコープし直すのは、
+    # 別モジュールの同名ヘルパー（``run`` など）が
+    # ``AppTest.run()`` まで巻き添えに ``slow`` にしていたため。
+    helpers = _helper_uses_cbc()
+    mod_name = _module_name_of(item)
+    for name in _called_names(tree):
+        if name.startswith("test_"):
+            continue
+        # 属性呼び出し（``at.run()`` / ``proc.run()``）は、
+        # そのモジュールが定義した関数ではない可能性が高い。
+        # メソッド名とヘルパー名の偶然の一致で誤検出しないよう、
+        # **同じモジュールでモジュールレベル定義されている場合だけ** 見る。
+        if mod_name is not None and helpers.get((mod_name, name)):
+            return True
     cbc_fixtures = _cbc_fixtures()
-    return any(
-        arg in cbc_fixtures
-        for arg in inspect.signature(func).parameters
-    )
+    return any(arg in cbc_fixtures for arg in inspect.signature(func).parameters)
+
+
+def _module_name_of(item: pytest.Item) -> str | None:
+    """テストが属するモジュールのファイル名（``test_ui_tabs.py`` 等）を返す。"""
+    module = getattr(item, "module", None)
+    path = getattr(module, "__file__", None)
+    if path:
+        return pathlib.Path(path).name
+    name = getattr(module, "__name__", None)
+    return name.rpartition(".")[2] if name else None
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

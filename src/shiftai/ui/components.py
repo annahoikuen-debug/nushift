@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import date
+from html import escape
 from typing import Any
 
 import numpy as np
@@ -88,6 +89,43 @@ def violation_title(code: str) -> str:
     return violation_labels().get(str(code), str(code))
 
 
+def metric_html(label: Any, value: Any, note: str | None) -> tuple[str, str]:
+    """KPI カード 1 枚の HTML と CSS クラスを組み立てる（描画はしない）。
+
+    **必ずエスケープする**。``label`` / ``value`` / ``note`` には
+    ユーザー由来の値が入るため：
+
+    * ``note`` にサイドバーの「園名」（``facility_name``）が flow する
+      （``tab_requirements.render`` が ``(ラベル, 値, settings.facility_name)`` を渡す）
+    * ``value`` に内部生成の文字列が入る
+
+    Streamlit の ``unsafe_allow_html=True`` は**サーバー側でサニタイズしない**
+    （Markdown レンダラの ``rehype-raw`` を有効にするだけ）。
+    エスケープしないと、園名入力欄に
+    ``<img src=x onerror=...>`` を入れただけでブラウザ上で JS が実行される。
+
+    戻り値を分けているのは、AppTest 無しでも「この関数だけ」を
+    検証できるようにするため（``tests/test_security_hardening.py``）。
+    """
+    tone = ""
+    text = str(value)
+    if text.startswith("!"):
+        tone = " warn"
+        text = text[1:]
+    elif text.startswith("~"):
+        tone = " info"
+        text = text[1:]
+    body = (
+        f'<div class="shiftai-metric{tone}">'
+        f'<div class="shiftai-metric-label">{escape(str(label))}</div>'
+        f'<div class="shiftai-metric-value">{escape(text)}</div>'
+    )
+    if note:
+        body += f'<div class="shiftai-metric-note">{escape(str(note))}</div>'
+    body += "</div>"
+    return body, "shiftai-metric" + tone
+
+
 def metric_row(
     items: Sequence[tuple[str, Any, str | None]],
     *,
@@ -105,23 +143,8 @@ def metric_row(
         group = items[start : start + per_row]
         columns = st.columns(per_row)
         for column, (label, value, note) in zip(columns, group, strict=False):
-            tone = ""
-            text = str(value)
-            if text.startswith("!"):
-                tone = " warn"
-                text = text[1:]
-            elif text.startswith("~"):
-                tone = " info"
-                text = text[1:]
+            body, _css_class = metric_html(label, value, note)
             with column:
-                body = (
-                    f'<div class="shiftai-metric{tone}">'
-                    f'<div class="shiftai-metric-label">{label}</div>'
-                    f'<div class="shiftai-metric-value">{text}</div>'
-                )
-                if note:
-                    body += f'<div class="shiftai-metric-note">{note}</div>'
-                body += "</div>"
                 st.markdown(body, unsafe_allow_html=True)
 
 
@@ -173,9 +196,7 @@ def shift_grid_frame(
                 value = f"{LOCK} {value}"
             row[slot.label] = value
         records.append(row)
-    index = pd.Index(
-        [row_label(m.staff_id, m.name) for m in staff], name="職員（ID 氏名）"
-    )
+    index = pd.Index([row_label(m.staff_id, m.name) for m in staff], name="職員（ID 氏名）")
     return pd.DataFrame.from_records(records, columns=columns, index=index)
 
 
@@ -354,9 +375,7 @@ def editable_grid_frame(
         return pd.DataFrame(columns=columns)
     records: list[dict[str, Any]] = []
     for member in staff:
-        row: dict[str, Any] = {
-            "職員": row_label(member.staff_id, member.name)
-        }
+        row: dict[str, Any] = {"職員": row_label(member.staff_id, member.name)}
         for slot in slots:
             row[slot.label] = shift_day.get(member.staff_id, slot).value
         records.append(row)
@@ -435,9 +454,7 @@ def fairness_frame(
     """職員ごとの早番・遅番・土曜出勤の回数表（:mod:`shiftai.fairness` を利用）。"""
     if result is None or not slots:
         return pd.DataFrame(columns=["職員ID", "氏名"])
-    return fairness.report_frame(
-        result, staff, slots, standard=standard, patterns=patterns
-    )
+    return fairness.report_frame(result, staff, slots, standard=standard, patterns=patterns)
 
 
 def style_fairness_table(frame: pd.DataFrame, threshold: int = 2) -> Any:
@@ -475,15 +492,11 @@ def render_fairness_panel(
     patterns: Sequence[Any] = (),
 ) -> None:
     """公平性レポートを expander の中に描画する（タブ3・タブ4 共通）。"""
-    frame = fairness_frame(
-        result, staff, slots, standard=standard, patterns=patterns
-    )
+    frame = fairness_frame(result, staff, slots, standard=standard, patterns=patterns)
     if frame.empty:
         return
     with st.expander("⚖️ 公平性（早番・遅番・土曜出勤の配分）", expanded=False):
-        tally = fairness.counts(
-            result, staff, slots, standard=standard, patterns=patterns
-        )
+        tally = fairness.counts(result, staff, slots, standard=standard, patterns=patterns)
         stats = [fairness.spread_stats(tally, key) for key in fairness.CATEGORIES]
         metric_row(
             [
@@ -545,9 +558,7 @@ def staff_day_summary_frame(
     return pd.DataFrame.from_records(records)
 
 
-def weekday_pivot_frame(
-    result: SolveResult | None, slots: Sequence[Slot]
-) -> pd.DataFrame:
+def weekday_pivot_frame(result: SolveResult | None, slots: Sequence[Slot]) -> pd.DataFrame:
     """職員×曜日の勤務分数ピボット表。"""
     if result is None or not result.assignments:
         return pd.DataFrame()
@@ -580,9 +591,7 @@ def weekday_pivot_frame(
     return pivot.round(2)
 
 
-def staff_hours_frame(
-    result: SolveResult | None, staff: Sequence[Any]
-) -> pd.DataFrame:
+def staff_hours_frame(result: SolveResult | None, staff: Sequence[Any]) -> pd.DataFrame:
     """職員別勤務時間（bar_chart 用）。"""
     if result is None or not staff:
         return pd.DataFrame()
@@ -601,6 +610,55 @@ def staff_hours_frame(
     )
 
 
+def _stat_display(value: object) -> str:
+    """``SolveResult.stats`` の 1 値を、表示用の文字列へ正規化する。
+
+    ``stats`` は ``dict``（型引数なし）で、``str`` / ``int`` / ``float`` /
+    ``bool`` / ``list`` が同居している（``relaxed_constraints`` と
+    ``patterns`` は既定で空のリスト）。
+
+    そのまま値を並べて DataFrame にすると、``pyarrow`` は object 列を
+    推論できず ``ArrowInvalid`` を投げ、Streamlit は警告だけ出して
+    「automatic fixes」で黙って表示を間違う状態にする
+    （実際に「🧾 最適化の詳細」表で毎回発生していた）。
+    **列の型が混ざると復元できない**ため、すべてを ``str`` に寄せる。
+    """
+    if value is None:
+        return "—"
+    if isinstance(value, (set, frozenset)):
+        # ``set`` の反復順は乱数依存なので、表示が実行ごとに変わらないよう並べる
+        value = sorted(value, key=str)
+    if isinstance(value, (list, tuple, set, frozenset)):
+        items = [str(v) for v in value]
+        return "、".join(items) if items else "（なし）"
+    if isinstance(value, bool):
+        return "はい" if value else "いいえ"
+    # float も ``str()`` に任せる。``f"{value:g}"`` は有効数字 6 桁に丸められて
+    # ``202432.35`` が ``202432`` になり、表示として情報量を落とす。
+    # ``str(float)`` は最短往復表記なので桁落ちしない。
+    return str(value)
+
+
+def solve_stats_frame(result: SolveResult | None) -> pd.DataFrame:
+    """「🧾 最適化の詳細」表（``項目`` / ``値``）を作る。
+
+    ``値`` 列は常に文字列型なので、``stats`` にどんな値が入っていても
+    Arrow 変換で失敗しない。
+    """
+    if result is None:
+        return pd.DataFrame()
+    # キーでだけ並べる（値が str / list / float と混在しても比較しない）。
+    # 「項目」列も ``str`` に寄せる: キーが str と int が混ざっていても
+    # object 列のままだと Arrow 変換が壊れる（値列と同じ理由）。
+    rows = [
+        {"項目": str(key), "値": _stat_display(value)}
+        for key, value in sorted((result.stats or {}).items(), key=lambda kv: str(kv[0]))
+    ]
+    if result.objective_value is not None:
+        rows.append({"項目": "目的関数", "値": f"{float(result.objective_value):.3f}"})
+    return pd.DataFrame.from_records(rows, columns=["項目", "値"])
+
+
 def staffing_curve_frame(
     requirements: RequirementTable | None,
     result: SolveResult | None,
@@ -611,17 +669,13 @@ def staffing_curve_frame(
     if requirements is None or result is None:
         return pd.DataFrame()
     slots = requirements.slots
-    lookup = {
-        (a.staff_id, a.day, a.slot.label): a.state for a in result.assignments
-    }
+    lookup = {(a.staff_id, a.day, a.slot.label): a.state for a in result.assignments}
     records = []
     for slot in slots:
         needed = requirements.needed_staff(day, slot)
         needed_q = requirements.needed_qualified(day, slot)
         actual = sum(
-            1
-            for m in staff
-            if lookup.get((m.staff_id, day, slot.label)) is CellState.WORK
+            1 for m in staff if lookup.get((m.staff_id, day, slot.label)) is CellState.WORK
         )
         records.append(
             {
@@ -660,12 +714,7 @@ def requirement_heatmap(
     )
     columns = [s.label for s in requirements.slots if s.label in pivot.columns]
     pivot = pivot.reindex(columns=columns).fillna(0).astype(int)
-    age_order = [
-        a.value
-        for a in sorted(
-            {r.age_class for r in rows}, key=lambda x: x.sort_key
-        )
-    ]
+    age_order = [a.value for a in sorted({r.age_class for r in rows}, key=lambda x: x.sort_key)]
     pivot = pivot.reindex(index=[a for a in age_order if a in pivot.index])
     pivot["合計"] = pivot.sum(axis=1)
     pivot.loc["合計"] = pivot.sum(axis=0)
@@ -720,9 +769,7 @@ def style_gap_table(frame: pd.DataFrame) -> Any:
     style = frame.style.map(_paint, subset=["不足"])
     if "過剰" in frame.columns:
         style = style.map(
-            lambda v: "background-color: #1E88E530; color: #0d47a1;"
-            if float(v or 0) > 0
-            else "",
+            lambda v: "background-color: #1E88E530; color: #0d47a1;" if float(v or 0) > 0 else "",
             subset=["過剰"],
         )
     return style.set_table_styles(
@@ -774,15 +821,16 @@ def render_violations(violations: Sequence[Violation]) -> None:
             ViolationSeverity.WARNING: "🟠",
             ViolationSeverity.INFO: "🔵",
         }[severity]
-        with st.expander(f"{tone} {severity.value}（{len(group)} 件）", expanded=severity is ViolationSeverity.BLOCKER):
+        with st.expander(
+            f"{tone} {severity.value}（{len(group)} 件）",
+            expanded=severity is ViolationSeverity.BLOCKER,
+        ):
             by_code: dict[str, list[Violation]] = {}
             for violation in group:
                 by_code.setdefault(violation.code, []).append(violation)
             ordered = sorted(by_code.items(), key=lambda kv: -len(kv[1]))
             for code, items in ordered:
-                st.markdown(
-                    f"**{labels.get(code, code)}**（`{code}`） — {len(items)} 件"
-                )
+                st.markdown(f"**{labels.get(code, code)}**（`{code}`） — {len(items)} 件")
                 st.dataframe(
                     violation_dataframe(items),
                     width="stretch",

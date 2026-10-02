@@ -37,9 +37,7 @@ def _render_grid(result: SolveResult, day: date, slots: Any, staff: list[Any]) -
     components.cell_legend()
     left, right = st.columns([3, 1])
     with left:
-        frame = components.shift_grid_frame(
-            shift_day, slots, staff, day=day, fixed=fixed
-        )
+        frame = components.shift_grid_frame(shift_day, slots, staff, day=day, fixed=fixed)
         if frame.empty:
             st.info("この日のシフトがありません。")
         else:
@@ -92,9 +90,7 @@ def _apply_edits(
     return fixed, changes
 
 
-def _render_editor(
-    result: SolveResult, day: date, slots: Any, staff: list[Any]
-) -> None:
+def _render_editor(result: SolveResult, day: date, slots: Any, staff: list[Any]) -> None:
     """``st.data_editor`` による手動微調整。"""
     shift_day = result.day(day)
     baseline = components.editable_grid_frame(shift_day, slots, staff)
@@ -124,7 +120,7 @@ def _render_editor(
         return
 
     labels = [components.row_label(m.staff_id, m.name) for m in staff]
-    _render_live_check(edited, day, slots, staff, key="edited")
+    live_report = _render_live_check(edited, day, slots, staff, key="edited")
     st.warning(f"未確定の変更が {len(changes)} セルあります。")
     st.dataframe(
         pd.DataFrame.from_records(
@@ -143,12 +139,24 @@ def _render_editor(
     )
 
     left, right = st.columns(2)
+    has_errors = bool(live_report is not None and live_report.has_errors)
     with left:
         if st.button(
             f"✅ 変更を確定して再最適化する（{len(changes)} セル）",
             type="primary",
             width="stretch",
             key=f"apply_edits_{day.isoformat()}",
+            # 配置基準・契約に抵触する変更は確定させない。
+            # 修正前: ``disabled`` が無く、重大違反（人員不足・希望休出勤など）を
+            # 含む変更でも確定でき、その結果 必要人員が法定基準を満たさない
+            # 勤務表として公開されていた。
+            disabled=has_errors,
+            help=(
+                "配置基準または契約に抵触する変更があります。"
+                "上の「検証つきのビュー」で赤いセルを確認して修正してください。"
+                if has_errors
+                else None
+            ),
         ):
             _commit_edits(fixed, len(changes))
     with right:
@@ -215,6 +223,9 @@ def _render_live_check(
         key=f"live_grid_{key}_{day.isoformat()}",
     )
     st.caption("赤枠＝配置基準・契約に抵触、橙枠＝運用上の注意、下線＝時間帯全体で人数が不足。")
+    # 呼び出し側（確定ボタン）が ``disabled=`` に使うため、
+    # 検証レポートを返す。返さないと重大違反のある変更でも確定できてしまう。
+    return report
 
 
 def _commit_edits(fixed: dict[tuple[str, date, str], CellState], count: int) -> None:
@@ -224,9 +235,7 @@ def _commit_edits(fixed: dict[tuple[str, date, str], CellState], count: int) -> 
     state.set(state.KEY_FIXED_ASSIGNMENTS, fixed)
     st.session_state.pop("shift_editor", None)
     try:
-        with st.status(
-            f"{count} セルを確定し、再最適化しています…", expanded=True
-        ) as status:
+        with st.status(f"{count} セルを確定し、再最適化しています…", expanded=True) as status:
             tab_solve.run_solve()
             status.update(label="再最適化が完了しました", state="complete")
         st.rerun()
@@ -284,12 +293,14 @@ def _render_coverage_matrix(result: SolveResult) -> None:
             st.info("表示できるデータがありません。")
             return
         styled = frame.style.map(
-            lambda v: ""
-            if "/" not in str(v)
-            else (
-                "background-color: #E5393533; color: #8e0000; font-weight:600;"
-                if int(str(v).split("/")[0]) < int(str(v).split("/")[1])
-                else "background-color: #2E7D321a; color: #1b5e20;"
+            lambda v: (
+                ""
+                if "/" not in str(v)
+                else (
+                    "background-color: #E5393533; color: #8e0000; font-weight:600;"
+                    if int(str(v).split("/")[0]) < int(str(v).split("/")[1])
+                    else "background-color: #2E7D321a; color: #1b5e20;"
+                )
             )
         )
         st.dataframe(styled, width="stretch", key="coverage_matrix")
@@ -329,7 +340,10 @@ def render() -> None:
     _render_coverage_matrix(result)
     st.divider()
     components.render_fairness_panel(
-        result, staff, slots, standard=state.current_standard(),
+        result,
+        staff,
+        slots,
+        standard=state.current_standard(),
         patterns=state.current_patterns(),
     )
     theme.caveat_box()

@@ -50,29 +50,40 @@ def _reset_ratio_widgets() -> None:
         st.session_state.pop(f"ratio_{age_class.value}", None)
 
 
-def _render_facility() -> None:
-    """園設定（園名・開所・閉所・粒度・休業日）。"""
+def _render_facility(*, times: bool = True) -> None:
+    """園設定（園名・開所・閉所・粒度・休業日）。
+
+    ``times=False`` は **ウィザードが同じキーのウィジェットを
+    別に描画している**場合の描画。开所・閉所時刻のウィジェットは作らず、
+    ウィザードが書き込んだ値を読み取るだけにする。同じキーを 2 つの
+    ウィジェットで使わないようにするため（Streamlit は DuplicateWidgetID で
+    落ちる）、どちらかが所有する。
+    """
     st.markdown("#### 🏫 園設定")
     st.text_input(
         "園名",
         value=DEFAULT_SETTINGS.facility_name,
         key="facility_name",
     )
-    left, right = st.columns(2)
-    with left:
-        day_open = st.time_input(
-            "開所時刻",
-            value=DEFAULT_SETTINGS.day_open,
-            step=900,
-            key="day_open",
-        )
-    with right:
-        day_close = st.time_input(
-            "閉所時刻",
-            value=DEFAULT_SETTINGS.day_close,
-            step=900,
-            key="day_close",
-        )
+    if times:
+        left, right = st.columns(2)
+        with left:
+            day_open = st.time_input(
+                "開所時刻",
+                value=DEFAULT_SETTINGS.day_open,
+                step=900,
+                key="day_open",
+            )
+        with right:
+            day_close = st.time_input(
+                "閉所時刻",
+                value=DEFAULT_SETTINGS.day_close,
+                step=900,
+                key="day_close",
+            )
+    else:
+        day_open = st.session_state.get("day_open", DEFAULT_SETTINGS.day_open)
+        day_close = st.session_state.get("day_close", DEFAULT_SETTINGS.day_close)
     granularity = st.select_slider(
         "時間帯の粒度",
         options=list(GRANULARITIES),
@@ -91,6 +102,19 @@ def _render_facility() -> None:
         key="closed_days",
         help="選択した日は必要人員もシフトも生成されません。",
     )
+    holidays = st.multiselect(
+        "祝日・行事日（開所するが基準を適用しない日）",
+        options=candidates,
+        default=[],
+        format_func=theme.format_day,
+        key="holiday_dates",
+        help=(
+            "該当日は必要人員の基準が適用外（is_binding=False）になり、"
+            "休日勤務不可の職員は出勤できません。"
+            "年間休業日と併記した場合は年間休業日が優先されます。"
+            "CLI の --holiday に相当します。"
+        ),
+    )
     labor_cost = st.number_input(
         "人件費目安（円／時間・パート係数）",
         min_value=500.0,
@@ -107,7 +131,7 @@ def _render_facility() -> None:
             day_close=day_close,
             granularity_min=int(granularity),
             closed_days=frozenset(closed),
-            holiday_dates=frozenset(),
+            holiday_dates=frozenset(holidays),
             labor_cost_per_hour=float(labor_cost),
         ),
     )
@@ -159,7 +183,9 @@ def _render_standard() -> None:
 def _render_overrides(preset: Any) -> None:
     """園ごとの上乗せ設定（定員比・最低配置人数・延長緩和）。"""
     with st.expander("上乗せ設定（園ごとの差分）", expanded=False):
-        st.caption("自治体の基準に、園の事情による差分を重ねます。数値を変更した項目だけが上乗せされます。")
+        st.caption(
+            "自治体の基準に、園の事情による差分を重ねます。数値を変更した項目だけが上乗せされます。"
+        )
         ratios: dict[AgeClass, float] = {}
         columns = st.columns(3)
         for position, age_class in enumerate(AGE_CLASSES):
@@ -207,9 +233,7 @@ def _render_overrides(preset: Any) -> None:
             "late_care_relaxed": bool(relaxed),
             "ratios": ratios,
         }
-        effective = local_rules.build_standard(
-            state.get(state.KEY_STANDARD_KEY), overrides
-        )
+        effective = local_rules.build_standard(state.get(state.KEY_STANDARD_KEY), overrides)
         state.set(state.KEY_STANDARD_OVERRIDES, overrides)
         state.set(state.KEY_STANDARD, effective)
         state.set(state.KEY_ENFORCE_MIN_TWO, bool(enforce))
@@ -218,6 +242,13 @@ def _render_overrides(preset: Any) -> None:
             f"保育標準時間 {effective.standard_time[0].strftime('%H:%M')}-"
             f"{effective.standard_time[1].strftime('%H:%M')}"
         )
+        if effective.headcount_mode == "facility_formula":
+            st.caption(
+                f"⚠️ 認可外保育施設の算手法: {local_rules.headcount_mode_label(effective)}"
+                f"（合計＋{effective.headcount_extra} 名）。"
+                "保育標準時間の制度ではなく、"
+                "**主たる開所時間 11 時間**として扱っている。",
+            )
 
 
 def _render_period() -> None:
@@ -474,7 +505,7 @@ def _pattern_presets(settings: FacilitySettings) -> dict[str, tuple[ShiftPattern
     }
 
 
-def render(*, simple: bool = False) -> None:
+def render(*, simple: bool = False, period: bool = True, times: bool = True) -> None:
     """サイドバー全体をレンダリングして session_state に反映する。
 
     ``simple=True``（既定のシンプルモード）のときは、はじめに必要な
@@ -482,17 +513,29 @@ def render(*, simple: bool = False) -> None:
     （配置基準プリセット・最適化オプション・GAS 連携）は閉じた
     expander の中に畳む。**expander は閉じていても中身は描画される**ため、
     上級者モードとの切り替えで設定が消えることはない。
+
+    ``period=False`` / ``times=False`` は、入力をウィザードへ移すために使う。
+    ``wizard.render`` が同じキー（``range_start`` / ``day_open`` など）の
+    ウィジェットを描くため、こちらは描画しない。**両方とも既定 True の
+    ままで呼ぶと DuplicateWidgetID で落ちる**ので、呼び出し側が必ず選ぶ。
     """
     with st.sidebar:
         st.markdown(f"## {APP_ICON} 設定")
-        _render_facility()
+        _render_facility(times=times)
         st.divider()
-        _render_period()
+        if period:
+            _render_period()
+        else:
+            st.markdown("#### 📅 計画期間")
+            st.caption("計画期間はウィザードの「🏫 園の条件」で設定します。")
         if simple:
             with st.expander("⚙️ 詳細設定（上級者向け）", expanded=False):
-                st.caption(
-                    "所轄自治体の配置基準・勤務パターン・目的関数の重み・シート連携など。"
-                    "通常は変更する必要はありません。"
+                theme.tip(
+                    "❓ 何を変更できるの？",
+                    "<p>所轄自治体の配置基準・勤務パターン（早番／日勤／遅番）"
+                    "・目的関数の重み・シート連携など。</p>"
+                    "<p>通常は変更する必要はありません。園ごとの事情がある場合に"
+                    "使ってください。</p>",
                 )
                 _render_standard()
                 st.divider()
@@ -518,11 +561,12 @@ def render(*, simple: bool = False) -> None:
                 (f"オフ ({COLOR_OFF})", "#BDBDBD"),
             ]
         )
-        st.caption(
-            f"本アプリが使う週の内部目安は {STATUTORY_WEEKLY_WORK_HOURS} 時間です"
-            "（労働基準法の枠組みは月45時間・年360時間で、旧来の週44時間は"
+        theme.tip(
+            "ℹ️ 労働基準の取り扱いについて",
+            f"<p>本アプリが使う週の内部目安は <b>{STATUTORY_WEEKLY_WORK_HOURS} 時間</b>です。</p>"
+            "<p>労働基準法の枠組みは月45時間・年360時間で、旧来の週44時間は"
             "2019年の改正で法定の上限ではなくなっています。厳しい方に"
-            "合わせているため法令違反は生じません）。"
-            "本アプリの最適解は法令・基準への適合を優先しますが、"
-            "最終判断は園長・設置責任者の確認を推奨します。"
+            "合わせているため法令違反は生じません。</p>"
+            "<p>最適解は法令・基準への適合を優先しますが、"
+            "最終判断は園長・設置責任者の確認を推奨します。</p>",
         )

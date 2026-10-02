@@ -38,4 +38,4 @@ def _resolve_version() -> str:
 
 __version__ = _resolve_version()
 
-__all__ = ["__version__", "domain"]
+__all__ = ["__version__", "compliance", "domain", "local_rules", "standards"]

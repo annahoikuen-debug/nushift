@@ -272,8 +272,12 @@ def test_sync_allは成功時に全結果を返す(config, monkeypatch):
     """全テーブルが成功したら ``{名前: 応答}`` を返すこと。"""
     client = GoogleAppsScriptClient(config)
     monkeypatch.setattr(client, "_post", lambda payload: {"ok": True, "sheet": payload["sheet"]})
-    out = client.sync_all({"children": pd.DataFrame({"園児ID": ["C001"]}),
-                           "staff": pd.DataFrame({"職員ID": ["S001"]})})
+    out = client.sync_all(
+        {
+            "children": pd.DataFrame({"園児ID": ["C001"]}),
+            "staff": pd.DataFrame({"職員ID": ["S001"]}),
+        }
+    )
     assert set(out) == {"children", "staff"}
     assert all(v["ok"] for v in out.values())
 
@@ -374,9 +378,7 @@ def test_配列応答はGasError(monkeypatch):
 def test_ok_falseの応答はGasError(monkeypatch):
     """``{"ok": false, "error": ...}`` が ``GasError`` にすること。"""
     body = json.dumps({"ok": False, "error": "SECRET mismatch"}).encode("utf-8")
-    monkeypatch.setattr(
-        "urllib.request.urlopen", lambda request, timeout=None: _FakeResponse(body)
-    )
+    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout=None: _FakeResponse(body))
     with pytest.raises(GasError) as excinfo:
         _request_json(DEAD_URL, timeout=1)
     assert "SECRET mismatch" in str(excinfo.value)
@@ -385,9 +387,7 @@ def test_ok_falseの応答はGasError(monkeypatch):
 def test_正常応答をdictで返す(monkeypatch):
     """正常な ``{"ok": true, ...}`` は辞書で返ること。"""
     body = json.dumps({"ok": True, "action": "ping", "version": "1.0.0"}).encode("utf-8")
-    monkeypatch.setattr(
-        "urllib.request.urlopen", lambda request, timeout=None: _FakeResponse(body)
-    )
+    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout=None: _FakeResponse(body))
     assert _request_json(DEAD_URL, timeout=1)["action"] == "ping"
 
 
@@ -428,7 +428,9 @@ def test_GETはmethodがGET(monkeypatch):
 
 def test_frame_to_payload():
     """DataFrame が ``{columns, data}`` になること。"""
-    frame = pd.DataFrame({"園児ID": ["C001", "C002"], "登園日": [date(2026, 9, 28), date(2026, 9, 29)]})
+    frame = pd.DataFrame(
+        {"園児ID": ["C001", "C002"], "登園日": [date(2026, 9, 28), date(2026, 9, 29)]}
+    )
     payload = frame_to_payload(frame)
     assert payload["columns"] == ["園児ID", "登園日"]
     assert payload["data"][0] == ["C001", "2026-09-28"]

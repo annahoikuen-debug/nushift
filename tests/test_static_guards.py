@@ -27,7 +27,14 @@ SRC = ROOT / "src" / "shiftai"
 TESTS = ROOT / "tests"
 DOCS = ROOT / "docs"
 
-CBC_ENTRYPOINTS = frozenset({"solve_shift", "solve_shift_greedy", "check_violations"})
+CBC_ENTRYPOINTS = frozenset({"solve_shift", "solve_shift_greedy"})
+
+#: このガードは **実行時の判定と同じ定義** を使わなければならない。
+#: 別途ハードコードすると、「conftest が直ったのにガードが古いまま」で
+#: 逆向きの偽検出（全てを slow と判定）も起きるため、
+#: ``tests/conftest.py`` から読むのが唯一信頼できる。
+#: ``check_violations`` は CBC を起動しない（GapReport を組むだけ）ため、
+#: :data:`CBC_ENTRYPOINTS` には含めない。
 
 
 # ---------------------------------------------------------------------------
@@ -81,9 +88,7 @@ def _load_tests_conftest():
     """``tests/conftest.py`` をモジュールとして読み込む。"""
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location(
-        "_shiftai_tests_conftest", TESTS / "conftest.py"
-    )
+    spec = importlib.util.spec_from_file_location("_shiftai_tests_conftest", TESTS / "conftest.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -96,6 +101,11 @@ def _cbc_nodes() -> set[str]:
     ``tests/test_x.py::test_y`` の形（``/``）で、``str(Path)`` は Windows では
     ``\\`` になる。両者をそのまま比較すると **全件が不一致** になり、
     このガードは Windows で必ず落ちてしまう。
+
+    ``check_violations`` は CBC を起動しない（GapReport を組み立てるだけの
+    純粋な Python 関数）ため、CBC を起動するテストには含めない。
+    含めると ``tests/test_weekly_normalization.py`` のような
+    「CBC を起動しないことがゴール」のファイルが過マークされる。
     """
     cbc_fixtures = _load_tests_conftest()._fixture_uses_cbc()
     nodes: set[str] = set()
@@ -122,14 +132,9 @@ def test_slow未付与のCBCテストは存在しない() -> None:
     cbc_nodes = _cbc_nodes()
     assert cbc_nodes, "CBC を起動するテストの検出に失敗している"
     slow_by_node = {nodeid: marked for nodeid, marked in items}
-    offenders = [
-        nodeid
-        for nodeid in sorted(cbc_nodes)
-        if not slow_by_node.get(nodeid, False)
-    ]
+    offenders = [nodeid for nodeid in sorted(cbc_nodes) if not slow_by_node.get(nodeid, False)]
     assert not offenders, (
-        f"CBC を起動するテストに slow が無い（{len(offenders)} 件）:\n"
-        + "\n".join(offenders[:15])
+        f"CBC を起動するテストに slow が無い（{len(offenders)} 件）:\n" + "\n".join(offenders[:15])
     )
 
 
@@ -145,9 +150,7 @@ def _calls_any(node: ast.AST, names: frozenset[str]) -> bool:
 
 def test_slow対象が実際に集められること() -> None:
     """``slow`` マークのテストが 0 件になっていないこと（マーカーの付け忘れ）。"""
-    proc = run_module_utf8(
-        "pytest", "--collect-only", "-q", "-m", "slow", cwd=ROOT, timeout=180
-    )
+    proc = run_module_utf8("pytest", "--collect-only", "-q", "-m", "slow", cwd=ROOT, timeout=180)
     assert proc.returncode == 0, proc.stdout[-2000:] + proc.stderr[-2000:]
     total = sum(
         1 for line in proc.stdout.splitlines() if line.startswith("tests/") and "::" in line
@@ -164,12 +167,8 @@ def test_死んだ公開関数がない() -> None:
     """``src`` 内にも ``tests`` 内にも参照が無い公開関数が残っていないこと。"""
     # エントリポイント（streamlit_app.py / conftest.py）も参照元として数える
     extras = [p for p in (ROOT / "streamlit_app.py", ROOT / "conftest.py") if p.exists()]
-    sources = "\n".join(
-        path.read_text(encoding="utf-8") for path in [*SRC.rglob("*.py"), *extras]
-    )
-    tests = "\n".join(
-        path.read_text(encoding="utf-8") for path in list(TESTS.rglob("*.py"))
-    )
+    sources = "\n".join(path.read_text(encoding="utf-8") for path in [*SRC.rglob("*.py"), *extras])
+    tests = "\n".join(path.read_text(encoding="utf-8") for path in list(TESTS.rglob("*.py")))
     offenders: list[str] = []
     for path in sorted(SRC.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -186,15 +185,28 @@ def test_死んだ公開関数がない() -> None:
 # T-12-R1: 簡体字が混入していない
 # ---------------------------------------------------------------------------
 
-#: 日本語としても使う字（簡体字と字形が同じ、または日本語の異体字）。
+#: **日本語として正当な字**の一覧。
+#:
+#: かつ **簡体字（中国語専用字）でもある**ため、通常は混入とみなす字のうち、
+#: 日本語の正字法でも実際に使う字だけを列挙する。
+#:
+#: .. warning::
+#:    ここに字を足すときは「字形が似ている」だけでは理由にならない。
+#:    簡体字の ``经``（U+7ECF）と日本語の ``経``（U+7D4C）は**別符号位置**であり、
+#:    日本語の文書に ``经`` が現れるのは誤字であって「異体字」ではない。
+#:    実際にコード中で使われている字だけをここで許可する（未使用の字を
+#:    許可すると、ガードが混入を検出できなくなる）。
+#:
+#: 現在の内訳:
+#: * ``会`` / ``体`` / ``内`` / ``当`` / ``写`` / ``骨`` … 日本語の常用漢字そのもの
+#: * ``赤`` / ``黄`` … 色の日本語表記として使う
 ALLOWED_KANJI = set(
-    "会内写体乱赤余与调个义骨随严经龄门币儿兴举乐乡价众优伙传关农决况净凉减几凤凭击刘则刚创删荐荣"
-    "药获营蓝虑虽补见观视览认订训议讯记讲访设许诉诊词译试诚误说课贝负贡财责贤败货质贪贫购贯贱贴贵贷"
-    "贸费贺资赋赏赔赖赚赛赞赵趋跃适选逊递遗邓郑邻释针钟钢钥钩钱钻铁铃铅铜铝铭铲银铸铺链销锁锄锅错"
-    "锦键锯锻镀镇闪闭闯闲间闷闹闻阁阅队阳阴阵阶际陆陈险隐隶雏雾顶顷项顺须顾顿颁预领颇颈频颗题颜额"
-    "飘饥饭饮饱饿馆馒驱驳驶驾验骂骄骗骤骨鲁鲜鸣鹅麦齐齿龄龙龟"
-    # 日本語の正字法として許容されるもの
-    "当毎遅条数担当遅刻黄黒青緑白"
+    # 日本語の正字法として普通の漢字
+    "会体内当写骨"
+    # 日本語としても使う色・形の語
+    "赤黄黒青緑白"
+    # 「随」は「随時」など日本語の語の一部として使う（隨の略体ではなく現代字）
+    "随"
 )
 
 #: 簡体字（中国語専用）で、日本語として誤った文字。
@@ -212,11 +224,31 @@ SIMPLIFIED_ONLY = set(
 )
 
 
+#: 文字化けガードの対象から外すファイル（サブストリングで判定）。
+#:
+#: 理由: これらの文書は **「簡体字が混入していた」という事実そのものを
+#: 記録している**。修正事例として原文の誤字を引用しているため、
+#: 検査すると必ず検出されてしまう。
+#:
+#: ``tests/test_static_guards.py`` 自身も ``SIMPLIFIED_ONLY`` を
+#: リテラルとして保持しているので、同様に除外する。
+CJK_GUARD_EXEMPT_FILES = (
+    "07_実装計画_回帰防止",
+    "09_実装計画_商業品質向上",
+    "test_static_guards.py",
+)
+
+
 def test_簡体字が混入していない() -> None:
     """日本語の文字列に簡体字（中国語専用）が混ざっていないこと。
 
     実際に ``保育補助经验`` / ``严格な定員比`` / ``保育主管部门`` のような
     混入が起きていたため、静的に検査する。
+
+    **検査対象は ``src/`` と ``docs/`` と README だけでなく ``tests/`` も含む。**
+    テストの docstring も日本語の文章であり、実際に
+    ``优化`` / ``详见`` / ``这里`` などの混入が複数見つかった。
+    ``tests/`` を検査しないと、テストのコメントだけ中文の混入が残る。
 
     検出された場合は (1) 本文の誤字なら本文を直し、
     (2) 日本語として正当な字なら :data:`ALLOWED_KANJI` へ追加し、
@@ -224,20 +256,49 @@ def test_簡体字が混入していない() -> None:
     """
     offenders: list[str] = []
     targets = [p for p in sorted(SRC.rglob("*.py"))]
+    targets += [p for p in sorted((ROOT / "tests").rglob("*.py"))]
     targets += [p for p in sorted(DOCS.rglob("*.md"))]
+    targets += [p for p in sorted((ROOT / "gas").rglob("*.md"))]
     targets.append(ROOT / "README.md")
     for path in targets:
+        rel = path.relative_to(ROOT).as_posix()
+        if any(name in rel for name in CJK_GUARD_EXEMPT_FILES):
+            continue
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             for char in line:
                 if char in SIMPLIFIED_ONLY and char not in ALLOWED_KANJI:
-                    offenders.append(f"{path.relative_to(ROOT)}:{lineno}: 「{char}」 {line.strip()[:60]}")
+                    offenders.append(f"{rel}:{lineno}: 「{char}」 {line.strip()[:60]}")
                     break
                 # 日本語の文書に韓国語・中国簡体字以外の外国語の文字が混ざっていないこと
                 # （実際に README の 1 行に韓国語の 2 文字が混ざっていた）
-                if "\uac00" <= char <= "\ud7af" or "\u1100" <= char <= "\u11ff":
-                    offenders.append(f"{path.relative_to(ROOT)}:{lineno}: 韓国語「{char}」 {line.strip()[:60]}")
+                if "가" <= char <= "힯" or "ᄀ" <= char <= "ᇿ":
+                    offenders.append(f"{rel}:{lineno}: 韓国語「{char}」 {line.strip()[:60]}")
                     break
+                # U+FFFD（置換文字）は「文字化けを検出するテスト」が
+                # 意図的に文献として持つ場合がある（``assert "\ufffd" not in ...``）。
+                # そのため本ガードでは**置換文字を検出しない**。
+                # 実際の文字化けは上記の簡体字・韓国語条件で検出される。
     assert not offenders, "簡体字が見つかった:\n" + "\n".join(offenders)
+
+
+def test_文字化けガードの除外対象が正当か() -> None:
+    """除外したファイルが「混入の記録」であって「本文の誤字」ではないこと。
+
+    除外により検査の実効性が失われるため、除外理由が明確であることを固定する。
+    """
+    for name in CJK_GUARD_EXEMPT_FILES:
+        # 除外対象は ``docs/*.md`` の，也可能は ``tests/*.py`` 自身
+        matches = [
+            p
+            for p in (list((ROOT / "docs").glob("*.md")) + list((ROOT / "tests").glob("*.py")))
+            if name in p.name
+        ]
+        assert matches, f"除外対象のファイルが見つからない: {name}"
+        text = matches[0].read_text(encoding="utf-8")
+        # 除外できるのは「混入の記録」「検出方法の説明」を含むファイルだけ
+        assert any(
+            keyword in text for keyword in ("混入", "簡体字", "韓国語", "SIMPLIFIED_ONLY")
+        ), f"{name}: 除外理由となる記述（混入の記録）が見つからない"
 
 
 # ---------------------------------------------------------------------------

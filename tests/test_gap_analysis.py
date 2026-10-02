@@ -14,12 +14,17 @@ import pytest
 
 from shiftai import local_rules
 from shiftai.domain import (
+    CellState,
     ChildPlan,
     FacilitySettings,
     RequirementTable,
     Role,
+    ShiftAssignment,
+    ShiftDay,
     Slot,
     SlotKind,
+    SolveResult,
+    SolveStatus,
     StaffMember,
     StaffPreferences,
     Unavailability,
@@ -76,9 +81,20 @@ def test_SlotGapのto_dict():
     """UI 表向けの列名が固定であること。"""
     slot = Slot(time(9, 0), time(9, 30))
     data = SlotGap(DAY, slot, SlotKind.LATE, 2, 1, 1, 1, 0).to_dict()
-    assert list(data) == ["日付", "時間帯", "開始", "終了", "時間帯区分",
-                          "必要人員", "必要保育士数", "配置人員", "配置保育士数",
-                          "不足", "不足保育士数", "過剰"]
+    assert list(data) == [
+        "日付",
+        "時間帯",
+        "開始",
+        "終了",
+        "時間帯区分",
+        "必要人員",
+        "必要保育士数",
+        "配置人員",
+        "配置保育士数",
+        "不足",
+        "不足保育士数",
+        "過剰",
+    ]
     assert data["時間帯"] == "09:00-09:30"
     assert data["時間帯区分"] == "延長保育"
 
@@ -134,8 +150,42 @@ def test_to_htmlは文字列(day_report):
 
 
 def test_最も不足の大きい日(day_report):
-    """最も不足の大きい日が入ること（不足が無ければ None）。"""
-    assert day_report.worst_day in (None, DAY)
+    """最も不足の大きい日が入ること（不足が無ければ None）。
+
+    修正前: ``worst_day in (None, DAY)`` は ``None`` も許すため、
+    ``worst_day`` が常に ``None`` でも通っていた。
+
+    ``day_report`` fixture は不足が無い構成なので ``None`` が正となるため、
+    **「不足がある日では必ず日が入ること」** を別途の主張として
+    主張する（恒久に None のままでも検出できる）。
+    """
+    from datetime import date as _date
+
+    # 前提: この fixture には不足が無いので None が正しい
+    worst = day_report.worst_day
+    assert worst is None, f"不足が無いのに worst_day が立っている: {worst}"
+
+    # 不足があるケースでは None ではなく日が入ること
+    from shiftai.domain import AgeClass
+
+    kids = [
+        ChildPlan("C001", "園児A", DAY, AgeClass.INFANT, time(9, 0), time(17, 0)),
+        ChildPlan("C002", "園児B", DAY, AgeClass.INFANT, time(9, 0), time(17, 0)),
+    ]
+    understaffed = build_requirements(
+        kids,
+        [DAY],
+        STANDARD,
+        day_open=DAY_OPEN,
+        day_close=DAY_CLOSE,
+        granularity_min=60,
+    )
+    result = _greedy(kids, [], understaffed)
+    under_report = analyze_gap(understaffed, result, [], standard=STANDARD)
+    assert under_report.worst_day == DAY, (
+        f"不足があるのに worst_day が None: {under_report.worst_day}"
+    )
+    assert isinstance(under_report.worst_day, _date)
 
 
 # ---------------------------------------------------------------------------
@@ -193,11 +243,37 @@ def test_check_violationsはViolationのみを返す(small_requirements, solved_
 def test_check_violationsは_blockersと_warningsが機能する(
     small_requirements, solved_day, small_staff
 ):
-    """``blockers()``/``warnings()`` が深刻度で正しく振り分けられること。"""
+    """``blockers()``/``warnings()`` が深刻度で正しく振り分けられること。
+
+    修正前: ``len(blockers) + len(warnings) <= len(found)`` のみで、
+    ``blockers`` と ``warnings`` は ``found`` の互いに素な部分リストなので
+    **常に真**（何も主張しない）。違反が 1 件も出ないデータセットでも
+    「振り分けが動作した」と誤認していた。
+
+    ``ViolationSeverity`` には ``INFO`` もあるため、
+    3 つのバケット（BLOCKER / WARNING / INFO）で**過不足なく**分かれることを主張する。
+    """
     found = check_violations(small_requirements, solved_day, small_staff)
-    blockers = [v for v in found if v.severity is ViolationSeverity.BLOCKER]
-    warnings = [v for v in found if v.severity is ViolationSeverity.WARNING]
-    assert len(blockers) + len(warnings) <= len(found)
+    assert found, "検証前提: この解には違反があること"
+    buckets = {sev: [v for v in found if v.severity is sev] for sev in ViolationSeverity}
+    # 全ての違反がいずれかの深刻度にちょうど 1 回だけ分類される
+    assert sum(len(vs) for vs in buckets.values()) == len(found), (
+        "深刻度が分類されていない違反がある"
+    )
+    # バケット同士が重複していない（同じ違反が 2 つのバケットに入っていない）
+    seen: list[str] = []
+    for vs in buckets.values():
+        seen.extend(id(v) for v in vs)
+    assert len(seen) == len(set(seen)), "同じ違反が複数のバケットに入っている"
+    # 実際に違反が 1 件以上分類されていること
+    assert any(buckets.values()), "違反が全て未分類のまま"
+    # この fixture の解は INFO 級（MONTHLY_HOURS_SHORT など）しか出ないため、
+    # 「BLOCKER/WARNING を含む」は前提にしない。代わりに
+    # 各バケットが正しい深刻度で構成されていることを主張する。
+    for sev, vs in buckets.items():
+        assert all(v.severity is sev for v in vs), f"{sev} バケットに別の深刻度が入っている"
+    # 深刻度は必ず enum のいずれかであって、裸の文字列 etc ではない
+    assert {v.severity for v in found} <= set(ViolationSeverity)
 
 
 def test_人員不足はBLOCKERになる(small_children, small_requirements):
@@ -207,11 +283,20 @@ def test_人員不足はBLOCKERになる(small_children, small_requirements):
     found = check_violations(small_requirements, result, pool)
     codes = {v.code for v in found}
     assert "SHORTFALL_STAFF" in codes
-    assert all(v.severity is ViolationSeverity.BLOCKER for v in found if v.code == "SHORTFALL_STAFF")
+    assert all(
+        v.severity is ViolationSeverity.BLOCKER for v in found if v.code == "SHORTFALL_STAFF"
+    )
 
 
 def test_希望休に出勤するとBLOCKER(small_children, small_staff, small_requirements):
-    """希望休 staffingStaffが勤務したら ``WORK_ON_UNAVAILABLE`` が出る（検査ロジック）。"""
+    """希望休に職員が勤務したら ``WORK_ON_UNAVAILABLE`` の BLOCKER が出る（検査ロジック）。
+
+    修正前: ``codes <= KNOWN_VIOLATION_CODES``（部分集合の主張）のみで、
+    ``WORK_ON_UNAVAILABLE`` の検査コードを**削除してもテストは通っていた**。
+    ``prefs`` は ``check_violations`` にしか渡していないので、
+    サンプル解は検査ロジックとは無関係なので、このテストは
+    `check_violations` 側の検出だけを検証する。
+    """
     prefs = {
         "S002": StaffPreferences(
             unavailable=[
@@ -226,25 +311,69 @@ def test_希望休に出勤するとBLOCKER(small_children, small_staff, small_r
     from tests.test_solver import KNOWN_VIOLATION_CODES
 
     assert codes <= KNOWN_VIOLATION_CODES
+    # 期待する違反コードが実際に出ていること
+    assert "WORK_ON_UNAVAILABLE" in codes, (
+        f"WORK_ON_UNAVAILABLE が出ていない（出たコード: {sorted(codes)}）"
+    )
+    # かつ BLOCKER であること（テスト名が BLOCKER を主張している）
+    unavailable = [v for v in found if v.code == "WORK_ON_UNAVAILABLE"]
+    assert unavailable, "WORK_ON_UNAVAILABLE が出ていない"
+    assert all(v.severity is ViolationSeverity.BLOCKER for v in unavailable), (
+        f"WORK_ON_UNAVAILABLE が BLOCKER でない: {[(v.code, v.severity) for v in unavailable]}"
+    )
 
 
 def test_休園日に出勤するとBLOCKER(small_children, small_staff, small_requirements):
-    """休園日に勤務が入ると ``WORK_ON_CLOSED_DAY`` の BLOCKER になること。"""
+    """休園日に勤務が入ると ``WORK_ON_CLOSED_DAY`` の BLOCKER になること。
+
+        修正前: ``assert all(isinstance(v, Violation) for v in found)`` のみで、
+        空のリストでも真（``all()`` は空反復で真）。
+        ``WORK_ON_CLOSED_DAY`` の分岐を削除してもテストは通っていた。
+
+        ``_greedy`` を使うと **休園日を正しく OFF にする**ため違反が
+        原理的に発生しない（本修正で実際に確認した）。
+        さらに ``check_violations`` は ``requirements.all_days()`` の日を
+    走査するので、休園日を含む ``RequirementTable`` が必要。
+        よって **休園日に勤務させた違反解** を明示的に作る。
+    """
     day2 = date(2026, 9, 29)
-    kids = small_children + [
-        ChildPlan(c.child_id, c.name, day2, c.age_class, c.arrive, c.depart)
-        for c in small_children
+    kids = list(small_children) + [
+        ChildPlan(c.child_id, c.name, day2, c.age_class, c.arrive, c.depart) for c in small_children
     ]
+    days = sorted({c.day for c in kids})
     requirements = build_requirements(
-        kids, [DAY, day2], STANDARD, day_open=DAY_OPEN, day_close=DAY_CLOSE, granularity_min=30,
+        kids,
+        days,
+        STANDARD,
+        day_open=DAY_OPEN,
+        day_close=DAY_CLOSE,
+        granularity_min=30,
         closed_days={day2},
     )
-    result = _greedy(kids, small_staff, requirements)
+    assert day2 in requirements.all_days(), "検証前提: 休園日が対象日に含まれること"
+
+    slot = requirements.slots[0]
+    sid = small_staff[0].staff_id
+    violating = SolveResult(
+        status=SolveStatus.FEASIBLE,
+        shift_days=[ShiftDay(day=day2, assignments={sid: {slot.label: CellState.WORK}})],
+        assignments=[ShiftAssignment(sid, day2, slot, CellState.WORK)],
+    )
     found = check_violations(
-        requirements, result, small_staff,
+        requirements,
+        violating,
+        small_staff,
         settings=FacilitySettings(closed_days=frozenset({day2})),
     )
     assert all(isinstance(v, Violation) for v in found)
+    closed = [v for v in found if v.code == "WORK_ON_CLOSED_DAY"]
+    assert closed, (
+        f"WORK_ON_CLOSED_DAY が出ていない（出たコード: {sorted({v.code for v in found})}）"
+    )
+    assert all(v.severity is ViolationSeverity.BLOCKER for v in closed), (
+        f"WORK_ON_CLOSED_DAY が BLOCKER でない: {[v.severity for v in closed]}"
+    )
+    assert all(v.day == day2 for v in closed), "違反の日の記録が誤っている"
 
 
 def test_違反コードは既知の集合に収まる(week_inputs, solved_week):
@@ -279,9 +408,7 @@ def test_compute_costは正の値(day_report, solved_day, small_staff):
 def test_compute_costは人件費単価に比例(facility, solved_day, small_staff):
     """単価を 2 倍すれば試算額も 2 倍になること。"""
     base = compute_cost(solved_day, small_staff)
-    doubled = compute_cost(
-        solved_day, small_staff, FacilitySettings(labor_cost_per_hour=3000.0)
-    )
+    doubled = compute_cost(solved_day, small_staff, FacilitySettings(labor_cost_per_hour=3000.0))
     assert doubled == pytest.approx(base * 2, rel=0.01)
 
 
@@ -305,16 +432,16 @@ def test_compute_costは正職員に1_25倍かかる():
     def one_staff_result(staff_id: str) -> SolveResult:
         return SolveResult(
             status=SolveStatus.FEASIBLE,
-            shift_days=[
-                ShiftDay(day=DAY, assignments={staff_id: {slot.label: CellState.WORK}})
-            ],
+            shift_days=[ShiftDay(day=DAY, assignments={staff_id: {slot.label: CellState.WORK}})],
             assignments=[ShiftAssignment(staff_id, DAY, slot, CellState.WORK)],
         )
 
-    sei = StaffMember("S001", "正職", (Role.HOIKUSHI,),
-                      sei_contract(employment_type=EmploymentType.SEI))
-    part = StaffMember("S002", "パート", (Role.SHIENSHIIN,),
-                       part_contract(employment_type=EmploymentType.PART))
+    sei = StaffMember(
+        "S001", "正職", (Role.HOIKUSHI,), sei_contract(employment_type=EmploymentType.SEI)
+    )
+    part = StaffMember(
+        "S002", "パート", (Role.SHIENSHIIN,), part_contract(employment_type=EmploymentType.PART)
+    )
     settings = FacilitySettings(labor_cost_per_hour=1000.0)
     # 係数は exporter.COST_COEFFICIENT（domain に一元化）に従う。
     # 旧実装は正職員 1.6 倍・パート 1.0 倍と exporter 側（1.25 倍）と
@@ -344,8 +471,9 @@ def test_compute_costは休憩を算入しない():
         shift_days=[ShiftDay(day=DAY, assignments={"S002": {slot.label: CellState.BREAK}})],
         assignments=[ShiftAssignment("S002", DAY, slot, CellState.BREAK)],
     )
-    part = StaffMember("S002", "パート", (Role.SHIENSHIIN,),
-                       part_contract(employment_type=EmploymentType.PART))
+    part = StaffMember(
+        "S002", "パート", (Role.SHIENSHIIN,), part_contract(employment_type=EmploymentType.PART)
+    )
     assert compute_cost(
         result, [part], FacilitySettings(labor_cost_per_hour=1000.0)
     ) == pytest.approx(0.0), "休憩だけの日は人件費にならないこと"
@@ -356,9 +484,23 @@ def test_summarizeのキー(solved_day, day_report, small_staff):
     from shiftai.gap_analysis import summarize
 
     summary = summarize(solved_day, day_report, small_staff)
-    for key in ("職員数", "総勤務時間", "平均勤務時間", "必要人員時間", "配置人員時間",
-                "不足時間帯数", "不足時間", "充足率", "人件費", "法令違反件数",
-                "要調整件数", "所要秒数", "目的関数", "勤務セル数", "時間方差"):
+    for key in (
+        "職員数",
+        "総勤務時間",
+        "平均勤務時間",
+        "必要人員時間",
+        "配置人員時間",
+        "不足時間帯数",
+        "不足時間",
+        "充足率",
+        "人件費",
+        "法令違反件数",
+        "要調整件数",
+        "所要秒数",
+        "目的関数",
+        "勤務セル数",
+        "時間方差",
+    ):
         assert key in summary, key
     assert all(isinstance(v, float) for v in summary.values())
     assert summary["職員数"] == 6.0
@@ -399,7 +541,21 @@ def test_休園日だけの必要人員表は例外を投げない(small_childre
     assert report.gaps == []
     assert report.coverage_ratio == 1.0
     assert report.to_dataframe().empty
-    assert check_violations(requirements, result, small_staff) is not None
+    # 修正前: ``is not None`` は「list を返すので常に真」。
+    # 全日が休園なので **BLOCKER / WARNING は出ない**ことを主張する
+    # （INFO 級の ``MONTHLY_HOURS_SHORT``「月間の労働時間が契約より少ない」
+    #  は出るのが正当なので、深刻度で切り分ける）。
+    violations = check_violations(requirements, result, small_staff)
+    assert isinstance(violations, list), "list が返ること"
+    severe = [
+        v
+        for v in violations
+        if v.severity in (ViolationSeverity.BLOCKER, ViolationSeverity.WARNING)
+    ]
+    assert severe == [], (
+        f"休園日のみなのに BLOCKER/WARNING が出ている: "
+        f"{[(v.code, v.severity.value) for v in severe]}"
+    )
 
 
 def test_空のRequirementTableでも動く(small_staff):

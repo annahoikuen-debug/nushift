@@ -42,8 +42,12 @@ def make_table():
     """3 歳児 1 名の 1 日分。保育基準は 2 名/時間帯。"""
     children = [ChildPlan("C001", "", DAY, AgeClass.AGE_3, DAY_OPEN, DAY_CLOSE)]
     return build_requirements(
-        children, [DAY], local_rules.get_standard(STANDARD_KEY),
-        day_open=DAY_OPEN, day_close=DAY_CLOSE, granularity_min=30,
+        children,
+        [DAY],
+        local_rules.get_standard(STANDARD_KEY),
+        day_open=DAY_OPEN,
+        day_close=DAY_CLOSE,
+        granularity_min=30,
     )
 
 
@@ -52,11 +56,7 @@ def work_labels(result, staff_id: str, table) -> list[str]:
     shift_day = result.shift_days[0] if result.shift_days else None
     if shift_day is None:
         return []
-    return [
-        slot.label
-        for slot in table.slots
-        if shift_day.get(staff_id, slot) is CellState.WORK
-    ]
+    return [slot.label for slot in table.slots if shift_day.get(staff_id, slot) is CellState.WORK]
 
 
 # --- R1: is_placeable の判定 ------------------------------------------------

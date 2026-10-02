@@ -256,7 +256,10 @@ def analyze_children(
         if not child_id:
             out.append(
                 ValidationIssue(
-                    ERROR, "children", pos, "園児ID",
+                    ERROR,
+                    "children",
+                    pos,
+                    "園児ID",
                     "園児IDが空です。1人1つのIDを設定してください。",
                 )
             )
@@ -265,14 +268,20 @@ def analyze_children(
         if arrive_day is None:
             out.append(
                 ValidationIssue(
-                    ERROR, "children", pos, "登園日",
+                    ERROR,
+                    "children",
+                    pos,
+                    "登園日",
                     "登園日が解釈できません。YYYY-MM-DD で入力してください。",
                 )
             )
         elif period and arrive_day not in period:
             out.append(
                 ValidationIssue(
-                    WARNING, "children", pos, "登園日",
+                    WARNING,
+                    "children",
+                    pos,
+                    "登園日",
                     f"登園日 {arrive_day.isoformat()} は計画期間の外です。"
                     "期間設定か園児データを確認してください。",
                 )
@@ -283,7 +292,10 @@ def analyze_children(
             if key in seen:
                 out.append(
                     ValidationIssue(
-                        ERROR, "children", pos, "園児ID",
+                        ERROR,
+                        "children",
+                        pos,
+                        "園児ID",
                         f"園児ID {child_id} / {arrive_day.isoformat()} が重複しています"
                         f"（{seen[key] + 2} 行目と重複）。必要人員が二重に計算されます。",
                     )
@@ -295,7 +307,10 @@ def analyze_children(
         if age and not age.isdigit():
             out.append(
                 ValidationIssue(
-                    WARNING, "children", pos, "年齢",
+                    WARNING,
+                    "children",
+                    pos,
+                    "年齢",
                     f"年齢「{age}」は 0〜5 の整数として解釈します（読み込み時に 0 歳児扱いになります）。",
                 )
             )
@@ -310,14 +325,20 @@ def analyze_children(
             if arrive is None:
                 out.append(
                     ValidationIssue(
-                        ERROR, "children", pos, "登園時刻",
+                        ERROR,
+                        "children",
+                        pos,
+                        "登園時刻",
                         "登園時刻が空です。HH:MM で入力してください。",
                     )
                 )
             if depart is None:
                 out.append(
                     ValidationIssue(
-                        ERROR, "children", pos, "降園時刻",
+                        ERROR,
+                        "children",
+                        pos,
+                        "降園時刻",
                         "降園時刻が空です。HH:MM で入力してください。",
                     )
                 )
@@ -325,7 +346,10 @@ def analyze_children(
         if arrive_min is not None and depart_min is not None and depart_min <= arrive_min:
             out.append(
                 ValidationIssue(
-                    ERROR, "children", pos, "降園時刻",
+                    ERROR,
+                    "children",
+                    pos,
+                    "降園時刻",
                     f"降園時刻 {depart.strftime('%H:%M')} が登園時刻 "
                     f"{arrive.strftime('%H:%M')} と同じか後になっています。"
                     "在園時間が 0 分以下となり最適化できません。",
@@ -341,7 +365,10 @@ def analyze_children(
                 if minutes < open_min:
                     out.append(
                         ValidationIssue(
-                            WARNING, "children", pos, name,
+                            WARNING,
+                            "children",
+                            pos,
+                            name,
                             f"{name} {value.strftime('%H:%M')} が園の開所 "
                             f"{day_open.strftime('%H:%M')} より前です。",
                         )
@@ -349,7 +376,10 @@ def analyze_children(
                 elif minutes > close_min:
                     out.append(
                         ValidationIssue(
-                            WARNING, "children", pos, name,
+                            WARNING,
+                            "children",
+                            pos,
+                            name,
                             f"{name} {value.strftime('%H:%M')} が園の閉所 "
                             f"{day_close.strftime('%H:%M')} より後です。",
                         )
@@ -359,24 +389,30 @@ def analyze_children(
         if absent and not reason:
             out.append(
                 ValidationIssue(
-                    ERROR, "children", pos, "欠席理由",
+                    ERROR,
+                    "children",
+                    pos,
+                    "欠席理由",
                     "欠席がオンですが理由が空です。欠席理由を入力してください。",
                 )
             )
         if not absent and reason:
             out.append(
                 ValidationIssue(
-                    WARNING, "children", pos, "欠席",
+                    WARNING,
+                    "children",
+                    pos,
+                    "欠席",
                     "欠席理由が入力されていますが「欠席」がオフです。在園として扱われます。",
                 )
             )
-        if (
-            parse_bool(col.get("短時間保育"), False)
-            and parse_bool(col.get("延長保育"), False)
-        ):
+        if parse_bool(col.get("短時間保育"), False) and parse_bool(col.get("延長保育"), False):
             out.append(
                 ValidationIssue(
-                    WARNING, "children", pos, "延長保育",
+                    WARNING,
+                    "children",
+                    pos,
+                    "延長保育",
                     "短時間保育と延長保育の両方がオンです。延長保育が選択されます"
                     "（保育標準時間帯の集計対象から外れます）。",
                 )
@@ -415,14 +451,20 @@ def analyze_staff(
         if not staff_id:
             out.append(
                 ValidationIssue(
-                    ERROR, "staff", pos, "職員ID",
+                    ERROR,
+                    "staff",
+                    pos,
+                    "職員ID",
                     "職員IDが空です。希望休と紐づかないので必ず設定してください。",
                 )
             )
         elif staff_id in seen:
             out.append(
                 ValidationIssue(
-                    ERROR, "staff", pos, "職員ID",
+                    ERROR,
+                    "staff",
+                    pos,
+                    "職員ID",
                     f"職員ID {staff_id} が重複しています（{seen[staff_id] + 2} 行目と重複）。"
                     "同じ職員が二重に数えられ、必要人員の判定が変わります。",
                 )
@@ -435,7 +477,10 @@ def analyze_staff(
         if weekly is None or weekly <= 0:
             out.append(
                 ValidationIssue(
-                    ERROR, "staff", pos, "週契約時間",
+                    ERROR,
+                    "staff",
+                    pos,
+                    "週契約時間",
                     f"週契約時間が空または 0 以下です（現在 {_text(col.get('週契約時間'))!r}）。"
                     "読み込み時に既定値へ置き換えられ、勤務時間が意図とズレます。",
                 )
@@ -443,21 +488,21 @@ def analyze_staff(
         if daily is None or daily <= 0:
             out.append(
                 ValidationIssue(
-                    ERROR, "staff", pos, "1日契約時間",
+                    ERROR,
+                    "staff",
+                    pos,
+                    "1日契約時間",
                     f"1日の契約時間が空または 0 以下です（現在 {_text(col.get('1日契約時間'))!r}）。"
                     "読み込み時に既定値へ置き換えられ、勤務時間が意図とズレます。",
                 )
             )
-        if (
-            weekly is not None
-            and daily is not None
-            and weekly > 0
-            and daily > 0
-            and daily > weekly
-        ):
+        if weekly is not None and daily is not None and weekly > 0 and daily > 0 and daily > weekly:
             out.append(
                 ValidationIssue(
-                    ERROR, "staff", pos, "1日契約時間",
+                    ERROR,
+                    "staff",
+                    pos,
+                    "1日契約時間",
                     f"1日の契約時間 {daily:g} 時間が週契約時間 {weekly:g} 時間を超えています。"
                     "契約として成立しません。",
                 )
@@ -468,7 +513,10 @@ def analyze_staff(
         if min_month is not None and max_month is not None and max_month < min_month:
             out.append(
                 ValidationIssue(
-                    ERROR, "staff", pos, "月間最大時間",
+                    ERROR,
+                    "staff",
+                    pos,
+                    "月間最大時間",
                     f"月間最大時間 {max_month:g} 時間が月間最小時間 {min_month:g} 時間未満です。"
                     "読み込み時に 2 つの値が入れ替わります。",
                 )
@@ -478,7 +526,10 @@ def analyze_staff(
         if weekly_days is not None and not 0 <= weekly_days <= 7:
             out.append(
                 ValidationIssue(
-                    ERROR, "staff", pos, "週最大出勤日数",
+                    ERROR,
+                    "staff",
+                    pos,
+                    "週最大出勤日数",
                     "週最大出勤日数は 0（上限なし）〜 7 で入力してください"
                     f"（現在 {_text(col.get('週最大出勤日数'))!r}）。",
                 )
@@ -487,7 +538,10 @@ def analyze_staff(
         if consecutive is not None and consecutive < 1:
             out.append(
                 ValidationIssue(
-                    ERROR, "staff", pos, "最大連続勤務日数",
+                    ERROR,
+                    "staff",
+                    pos,
+                    "最大連続勤務日数",
                     "最大連続勤務日数は 1 以上で入力してください"
                     f"（現在 {_text(col.get('最大連続勤務日数'))!r}）。",
                 )
@@ -498,14 +552,20 @@ def analyze_staff(
         if earliest is None:
             out.append(
                 ValidationIssue(
-                    ERROR, "staff", pos, "最早始業",
+                    ERROR,
+                    "staff",
+                    pos,
+                    "最早始業",
                     "最早始業が空です。HH:MM で入力してください。",
                 )
             )
         if latest is None:
             out.append(
                 ValidationIssue(
-                    ERROR, "staff", pos, "最遅終業",
+                    ERROR,
+                    "staff",
+                    pos,
+                    "最遅終業",
                     "最遅終業が空です。HH:MM で入力してください。",
                 )
             )
@@ -513,7 +573,10 @@ def analyze_staff(
         if e_min is not None and l_min is not None and e_min >= l_min:
             out.append(
                 ValidationIssue(
-                    ERROR, "staff", pos, "最遅終業",
+                    ERROR,
+                    "staff",
+                    pos,
+                    "最遅終業",
                     f"最早始業 {earliest.strftime('%H:%M')} が最遅終業 "
                     f"{latest.strftime('%H:%M')} 以上です。この職員は一度も配置できません"
                     "（読み込み時に 23:59 へ置き換えられます）。",
@@ -527,7 +590,10 @@ def analyze_staff(
         ):
             out.append(
                 ValidationIssue(
-                    WARNING, "staff", pos, "最遅終業",
+                    WARNING,
+                    "staff",
+                    pos,
+                    "最遅終業",
                     f"契約時間帯（〜{latest.strftime('%H:%M')}）が園の開所 "
                     f"{day_open.strftime('%H:%M')} と 1 分も重なりません。"
                     "配置可能人時が 0 になります。",
@@ -537,19 +603,27 @@ def analyze_staff(
         if not _text(col.get("資格（主）")):
             out.append(
                 ValidationIssue(
-                    ERROR, "staff", pos, "資格（主）",
+                    ERROR,
+                    "staff",
+                    pos,
+                    "資格（主）",
                     "資格（主）が空です。保育士・子育て支援員などを 1 つ以上指定してください。",
                 )
             )
         elif day_close is not None:
             earliest_txt = _text(col.get("最早始業"))
             latest_txt = _text(col.get("最遅終業"))
-            if e_min is not None and l_min is not None and (
-                e_min >= _minutes(day_close) or l_min <= open_min
+            if (
+                e_min is not None
+                and l_min is not None
+                and (e_min >= _minutes(day_close) or l_min <= open_min)
             ):
                 out.append(
                     ValidationIssue(
-                        WARNING, "staff", pos, "最早始業",
+                        WARNING,
+                        "staff",
+                        pos,
+                        "最早始業",
                         f"契約時間帯 {earliest_txt or '-'}〜{latest_txt or '-'} が園の営業時間 "
                         f"{day_open.strftime('%H:%M')}〜{day_close.strftime('%H:%M')} と"
                         "ほぼ重なりません。配置可能人時が 0 に近い値です。",
@@ -590,7 +664,10 @@ def analyze_preferences(
             listed = "、".join(sorted(known_ids)[:8])
             out.append(
                 ValidationIssue(
-                    ERROR, "preferences", pos, "職員ID",
+                    ERROR,
+                    "preferences",
+                    pos,
+                    "職員ID",
                     f"職員ID {staff_id} は職員表にありません（この行は読み込み時に捨てられます）。"
                     f"職員表のID例: {listed}",
                 )
@@ -600,14 +677,20 @@ def analyze_preferences(
         if target is None:
             out.append(
                 ValidationIssue(
-                    ERROR, "preferences", pos, "日付",
+                    ERROR,
+                    "preferences",
+                    pos,
+                    "日付",
                     "日付が空です。YYYY-MM-DD で入力してください。",
                 )
             )
         elif period and target not in period:
             out.append(
                 ValidationIssue(
-                    WARNING, "preferences", pos, "日付",
+                    WARNING,
+                    "preferences",
+                    pos,
+                    "日付",
                     f"日付 {target.isoformat()} は計画期間の外です。期間設定を確認してください。",
                 )
             )
@@ -616,7 +699,10 @@ def analyze_preferences(
         if raw_kind and raw_kind not in PREFERENCE_TYPES:
             out.append(
                 ValidationIssue(
-                    WARNING, "preferences", pos, "種別",
+                    WARNING,
+                    "preferences",
+                    pos,
+                    "種別",
                     f"種別「{raw_kind}」は解釈できません。"
                     " 希望休として扱われます（出勤不可・出勤希望・休み希望 も指定できます）。",
                 )
@@ -624,7 +710,10 @@ def analyze_preferences(
         elif not raw_kind:
             out.append(
                 ValidationIssue(
-                    WARNING, "preferences", pos, "種別",
+                    WARNING,
+                    "preferences",
+                    pos,
+                    "種別",
                     "種別が空です。希望休として扱われます。",
                 )
             )
@@ -633,7 +722,10 @@ def analyze_preferences(
             if normalized not in _KNOWN_PREF_KINDS:
                 out.append(
                     ValidationIssue(
-                        WARNING, "preferences", pos, "種別",
+                        WARNING,
+                        "preferences",
+                        pos,
+                        "種別",
                         f"種別「{raw_kind}」は未対応のため無視されます。",
                     )
                 )
@@ -646,14 +738,20 @@ def analyze_preferences(
         if raw_start and start is None:
             out.append(
                 ValidationIssue(
-                    ERROR, "preferences", pos, "開始",
+                    ERROR,
+                    "preferences",
+                    pos,
+                    "開始",
                     f"開始時刻「{raw_start}」が解釈できません。HH:MM で入力するか空にしてください。",
                 )
             )
         if raw_end and end is None:
             out.append(
                 ValidationIssue(
-                    ERROR, "preferences", pos, "終了",
+                    ERROR,
+                    "preferences",
+                    pos,
+                    "終了",
                     f"終了時刻「{raw_end}」が解釈できません。HH:MM で入力するか空にしてください。",
                 )
             )
@@ -661,7 +759,10 @@ def analyze_preferences(
         if raw_start and raw_end and s_min is not None and e_min is not None and e_min <= s_min:
             out.append(
                 ValidationIssue(
-                    ERROR, "preferences", pos, "終了",
+                    ERROR,
+                    "preferences",
+                    pos,
+                    "終了",
                     f"終了 {_hhmm(e_min)} が開始 {_hhmm(s_min)} と同じか前です。"
                     "読み込み時に 23:59 へ書き換わり、当日一日が丸ごと不在になります。",
                 )
@@ -691,9 +792,7 @@ def validate_frames(
     if staff is not None and "職員ID" in getattr(staff, "columns", []):
         staff_ids = [_text(v) for v in staff["職員ID"].tolist()]
     issues: list[ValidationIssue] = []
-    issues.extend(
-        analyze_children(children, days=days, day_open=day_open, day_close=day_close)
-    )
+    issues.extend(analyze_children(children, days=days, day_open=day_open, day_close=day_close))
     issues.extend(analyze_staff(staff, day_open=day_open, day_close=day_close))
     issues.extend(analyze_preferences(preferences, staff_ids=staff_ids, days=days))
     return ValidationReport(tuple(issues))

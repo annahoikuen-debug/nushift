@@ -8,7 +8,7 @@ from typing import Any
 import streamlit as st
 
 from shiftai import gap_analysis, local_rules, standards
-from shiftai.domain import AgeClass
+from shiftai.domain import AgeClass, Role
 from shiftai.ui import components, state, theme
 
 LONG_COLUMN_CONFIG: dict[str, Any] = {
@@ -121,9 +121,7 @@ def _render_heatmap(table: Any) -> None:
     if frame.empty:
         st.info("この日は在園児がいないか休園日です。")
         return
-    styled = components.heat_styler(
-        frame, scale="warm", subset=list(frame.columns[:-1])
-    )
+    styled = components.heat_styler(frame, scale="warm", subset=list(frame.columns[:-1]))
     st.dataframe(styled, width="stretch", key="requirement_heatmap")
 
     slot_kinds: dict[str, int] = {}
@@ -246,9 +244,7 @@ def _render_supply_warning(table: Any) -> float:
     ratio = state.supply_demand_ratio(required)
     shown = _ratio_text(ratio)
     with st.expander("✅ 必要人員の計算結果（内訳）", expanded=False):
-        st.markdown(
-            f"- 総必要人時: **{required:,.1f} h**（{len(table.all_days())} 日）"
-        )
+        st.markdown(f"- 総必要人時: **{required:,.1f} h**（{len(table.all_days())} 日）")
         st.markdown(f"- 供給可能人時（契約時間ベース）: **{supply:,.1f} h**")
         st.markdown(f"- 必要／供給 比: **{shown}**")
     if required <= 0:
@@ -272,9 +268,7 @@ def _render_supply_warning(table: Any) -> float:
             "時間どおりに配置できない時間帯が出る可能性があります。"
         )
     else:
-        st.success(
-            f"必要／供給比は {shown} で、総人時としては基準を満たせる状態です。"
-        )
+        st.success(f"必要／供給比は {shown} で、総人時としては基準を満たせる状態です。")
     return ratio
 
 
@@ -292,9 +286,12 @@ def _render_ratio_summary() -> None:
             {
                 "年齢クラス": age_class.value,
                 "定員比": standards.ratio_label(standard, age_class),
-                "丸め": {"ceil": "切り上げ", "floor": "切り捨て", "round": "四捨五入"}.get(
-                    ratio.rounding, ratio.rounding
-                ),
+                "丸め": {
+                    "ceil": "切り上げ",
+                    "floor": "切り捨て",
+                    "round": "四捨五入",
+                    "trunc1": "小数第2位以下切り捨て",
+                }.get(ratio.rounding, ratio.rounding),
             }
         )
     left, right = st.columns([1, 1])
@@ -308,8 +305,132 @@ def _render_ratio_summary() -> None:
             f"- 延長時の保育士代替: {'可' if standard.late_care_relaxed else '不可'}"
             f"（最低保育士 {standard.late_care_min_qualified} 名）\n"
             f"- 短時間保育のみ園: {'はい' if standard.is_short_time_only else 'いいえ'}\n"
+            f"- 必要人員の算手法: {local_rules.headcount_mode_label(standard)}\n"
+            f"- 必要保育士数の決め方: {local_rules.qualified_mode_label(standard)}"
+            f"（下限 {standard.min_qualified_floor} 名）\n"
+            f"- 看護師のみなし保育士: "
+            + (
+                f"{standard.nurse_as_qualified_cap} 名まで"
+                if standard.nurse_as_qualified_cap > 0
+                else (
+                    "比率の分子にそのまま計上"
+                    if standard.qualified_extra_roles & {Role.KANGSHI}
+                    else "数えない"
+                )
+            )
+            + "\n"
             f"- 備考: {standard.remarks or '—'}"
         )
+
+
+def _render_compliance(standard: Any) -> None:
+    """制度別の適合チェック（届出・月次報告・巡回指導の場面用）。
+
+    シフト作成の判定（:mod:`shiftai.gap_analysis`）とは別物で、
+    「その時間帯の在園人数」ではなく**1日の常勤換算人数と施設の属性**で判定する。
+    """
+    from shiftai import compliance as compliance_mod
+
+    st.markdown("#### 🧾 制度適合チェック")
+    regulation_keys = [r.value for r in compliance_mod.Regulation]
+    columns = st.columns([2, 1, 1, 1])
+    with columns[0]:
+        regulation_name = st.selectbox(
+            "制度",
+            options=regulation_keys,
+            index=regulation_keys.index(
+                "認可外保育施設" if standard.headcount_mode == "facility_formula" else "認可保育所"
+            ),
+            key="compliance_regulation",
+            help="届出・報告に使う制度。算手法の整合もここで確認します。",
+        )
+    with columns[1]:
+        capacity = int(
+            st.number_input(
+                "利用定員", min_value=0, max_value=500, value=60, step=1, key="compliance_capacity"
+            )
+        )
+    with columns[2]:
+        shared = st.checkbox(
+            "保育事業者型",
+            value=False,
+            key="compliance_shared",
+            help="共同利用枠を実施している場合、保育士が4分の3以上必要です。",
+        )
+    with columns[3]:
+        support_certified = st.checkbox(
+            "支援員は研修修了",
+            value=False,
+            key="compliance_support_certified",
+            help="子育て支援員研修（地域型）修了者・市町村研修受講予定者として扱います。",
+        )
+
+    settings = state.current_settings()
+    children = state.get(state.KEY_CHILDREN) or []
+    staff = state.get(state.KEY_STAFF) or []
+    monthly: dict[AgeClass, int] = {}
+    seen: set[str] = set()
+    for plan in children:
+        if plan.child_id in seen:
+            continue
+        seen.add(plan.child_id)
+        monthly[plan.age_class] = monthly.get(plan.age_class, 0) + 1
+
+    spec = compliance_mod.FacilitySpec(
+        regulation=compliance_mod.Regulation(regulation_name),
+        name=str(settings.facility_name or ""),
+        capacity=capacity,
+        is_shared_operator=bool(shared),
+        opening=settings.day_open,
+        closing=settings.day_close,
+        monthly_children=monthly,
+        staff=tuple(
+            compliance_mod.StaffRecord(
+                staff_id=member.staff_id,
+                name=member.name,
+                roles=member.roles,
+                weekly_hours=member.contract.weekly_hours,
+                is_certified=(
+                    True
+                    if (
+                        member.is_qualified_under(None)
+                        or member.has_role(Role.CHUUBOU)
+                        or support_certified
+                    )
+                    else None
+                ),
+            )
+            for member in staff
+            if member.is_placeable or member.has_role(Role.CHUUBOU)
+        ),
+        standard=standard,
+    )
+    try:
+        report = compliance_mod.audit_facility(spec)
+    except ValueError as exc:
+        st.info(f"この制度のプリセットは自動選択できません。{exc}")
+        return
+
+    if report.violations:
+        st.error(f"不適合 {len(report.violations)} 件があります。")
+    elif report.is_filing_ready:
+        st.success(report.summary())
+    else:
+        st.warning(report.summary())
+    st.dataframe(
+        compliance_mod.to_dataframe(report),
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "判定": st.column_config.TextColumn("判定", width="small"),
+            "根拠": st.column_config.TextColumn("根拠", width="medium"),
+        },
+        key="compliance_table",
+    )
+    st.caption(
+        "未確認（未入力）は不適合には数えませんが、報告・申請の前に人が判断する必要があります。"
+        "面積は園舎図面が必要です。嘱託医と調理業務の委託形態は仕様から読み取れません。"
+    )
 
 
 def render() -> None:
@@ -359,6 +480,9 @@ def render() -> None:
     _render_supply_warning(table)
     st.divider()
     _render_ratio_summary()
+    st.divider()
+    with st.expander("🧾 制度適合チェック（届出・月次報告向け）", expanded=False):
+        _render_compliance(state.current_standard())
     st.divider()
     _render_heatmap(table)
     st.divider()

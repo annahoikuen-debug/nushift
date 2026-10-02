@@ -15,9 +15,7 @@ import pytest
 from shiftai import local_rules
 from shiftai.ui import theme
 
-app_test = pytest.importorskip(
-    "streamlit.testing.v1", reason="AppTest が無い環境ではスキップ"
-)
+app_test = pytest.importorskip("streamlit.testing.v1", reason="AppTest が無い環境ではスキップ")
 
 
 # --- T-10-R1: 免責文言 ------------------------------------------------------
@@ -112,3 +110,98 @@ def test_inject_cssとlegendが例外を投げない(tmp_path) -> None:
     at = app_test.AppTest.from_file(str(script), default_timeout=120)
     at.run()
     assert not at.exception, [str(e) for e in at.exception]
+
+
+# --- T-10-R8: 説明チップ（ツールチップ） -------------------------------------
+
+
+def test_escapeがHTML特殊文字を実体参照にする() -> None:
+    """ラベルはそのまま HTML に入るため、``_escape`` が機能すること。
+
+    ここが素通しのまま（実体参照に変換していない）だと XSS する。
+    """
+    # 実体参照そのものをリテラルで書くと編集時に壊れやすいため、
+    # 文字列結合で作ってから検証する。
+    lt, gt, amp, quot = "&" + "lt;", "&" + "gt;", "&" + "amp;", "&" + "quot;"
+    raw_tag = "<" + "script>"
+    escaped = theme._escape(raw_tag + "alert(" + '"' + "x" + '"' + ")" + "&" + "y")
+    assert raw_tag not in escaped
+    assert lt + "script" + gt in escaped
+    assert amp in escaped
+    assert quot in escaped
+    assert '"' not in escaped
+
+
+def test_tipはdetailsで詳細を畳んで描画する(tmp_path) -> None:
+    """常時見えるのはラベル 1 行だけで、詳細が ``details`` に入っていること。"""
+    src = str(pathlib.Path(__file__).resolve().parents[1] / "src")
+    script = pathlib.Path(tmp_path) / "tip_driver_app.py"
+    script.write_text(
+        "import sys\n"
+        f"sys.path.insert(0, {src!r})\n"
+        "from shiftai.ui import theme\n"
+        "\n"
+        "theme.apply_page_config()\n"
+        "theme.tip('❓ 使い方', '<p>詳細の説明</p>')\n",
+        encoding="utf-8",
+    )
+    at = app_test.AppTest.from_file(str(script), default_timeout=120)
+    at.run()
+    assert not at.exception, [str(e) for e in at.exception]
+    html = "\n".join(m.value for m in at.markdown)
+    assert 'class="shiftai-tip"' in html
+    assert "<details" in html and "</details>" in html
+    assert "❓ 使い方" in html
+    assert "詳細の説明" in html
+
+
+def test_tipは本文が空なら何も描かない() -> None:
+    """説明が無い場合は空のチップを残さない（画面のノイズ防止）。"""
+    assert callable(theme.tip)
+    # body="" は early return するため例外も出ない
+    assert theme.tip.__doc__
+
+
+# --- T-10-R7: ステップ表示がモードに追従する -------------------------------
+
+
+def test_ステップ名がモードで切り替わる() -> None:
+    """シンプルモードは 3 ステップ、上級者モードは 5 ステップであること。
+
+    以前はどちらのモードでも 5 ステップ固定で、3 タブ画面のユーザーが
+    「② 必要人員」「④ シフト表・微調整」という**存在しないタブ**を
+    指していた。モードに追従しない回帰を防止する。
+    """
+    assert len(theme.STEP_NAMES_SIMPLE) == 3
+    assert len(theme.STEP_NAMES) == 5
+
+
+def test_ステップインデックスの写像が2モードを覆う() -> None:
+    """5 タブ番号 0〜4 がすべてシンプルモードのインデックスに写像されること。"""
+    assert set(theme.STEP_INDEX_SIMPLE) == set(range(5))
+    for value in theme.STEP_INDEX_SIMPLE.values():
+        assert 0 <= value < len(theme.STEP_NAMES_SIMPLE)
+
+
+def test_次ステップ案内がモードに追従する(tmp_path) -> None:
+    """シンプルモードでは「③ 出力」だけが案内され、5 タブの語が出ないこと。"""
+    src = str(pathlib.Path(__file__).resolve().parents[1] / "src")
+    script = pathlib.Path(tmp_path) / "step_driver_app.py"
+    script.write_text(
+        "import sys\n"
+        f"sys.path.insert(0, {src!r})\n"
+        "import streamlit as st\n"
+        "from shiftai.ui import theme\n"
+        "\n"
+        "theme.apply_page_config()\n"
+        "theme.step_indicator(2)\n"
+        "theme.next_step_hint(2)\n",
+        encoding="utf-8",
+    )
+    at = app_test.AppTest.from_file(str(script), default_timeout=120)
+    at.run()
+    assert not at.exception, [str(e) for e in at.exception]
+    html = "\n".join(m.value for m in at.markdown)
+    for name in theme.STEP_NAMES_SIMPLE:
+        assert name in html, f"{name} が描画されていない"
+    assert "必要人員" not in html, "3 タブに無いステップを案内している"

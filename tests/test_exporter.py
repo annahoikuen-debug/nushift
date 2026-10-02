@@ -41,9 +41,7 @@ STANDARD = local_rules.get_standard(STANDARD_KEY)
 @pytest.fixture(scope="module")
 def solved(small_children, small_staff, small_requirements):
     """貪欲法で作った小さな解（エクスポートのテストには最適解である必要なし）。"""
-    return solve_shift_greedy(
-        small_children, small_staff, small_requirements, standard=STANDARD
-    )
+    return solve_shift_greedy(small_children, small_staff, small_requirements, standard=STANDARD)
 
 
 @pytest.fixture(scope="module")
@@ -57,7 +55,7 @@ def slots_of(small_requirements):
 
 
 def test_to_csv_bytesはBOM付き():
-    """Excel で開いたiquid時に文字化けしないよう BOM が付くこと。"""
+    """Excel で開いた時に文字化けしないよう BOM が付くこと。"""
     frame = pd.DataFrame({"職員ID": ["S001"], "氏名": ["山田花子"]})
     data = to_csv_bytes(frame)
     assert isinstance(data, bytes)
@@ -137,7 +135,7 @@ def test_to_icsの前後とCRLF(solved, slots_of, small_staff):
     assert text.startswith("BEGIN:VCALENDAR")
     assert text.rstrip().endswith("END:VCALENDAR")
     assert "\r\n" in text
-    assert text.replace("\r\n", "") .count("\n") == 0
+    assert text.replace("\r\n", "").count("\n") == 0
 
 
 def test_to_icsは1勤務1イベント(solved, slots_of, small_staff):
@@ -148,8 +146,18 @@ def test_to_icsは1勤務1イベント(solved, slots_of, small_staff):
     working = sum(1 for a in solved.assignments if a.state is CellState.WORK)
     assert events >= 1
     assert working >= events
-    for required in ("VERSION:2.0", "PRODID:", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
-                     "UID:", "DTSTAMP:", "DTSTART:", "DTEND:", "SUMMARY:", "TRANSP:OPAQUE"):
+    for required in (
+        "VERSION:2.0",
+        "PRODID:",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        "UID:",
+        "DTSTAMP:",
+        "DTSTART:",
+        "DTEND:",
+        "SUMMARY:",
+        "TRANSP:OPAQUE",
+    ):
         assert required in text
 
 
@@ -189,8 +197,19 @@ def test_shift_to_dataframeの列(solved, slots_of, small_staff):
     """長形式シフト表の列名が UI と一致すること。"""
     frame = shift_to_dataframe(solved, slots_of, small_staff)
     assert list(frame.columns) == [
-        "職員ID", "氏名", "資格", "日付", "曜日", "時間帯", "開始", "終了",
-        "状態", "勤務分数", "休憩分数", "早出", "遅出",
+        "職員ID",
+        "氏名",
+        "資格",
+        "日付",
+        "曜日",
+        "時間帯",
+        "開始",
+        "終了",
+        "状態",
+        "勤務分数",
+        "休憩分数",
+        "早出",
+        "遅出",
     ]
     assert set(frame["状態"]) <= {"勤務", "休憩"}
 
@@ -268,8 +287,18 @@ def test_requirements_dataframeは空でも列が崩れない():
     frame = requirements_dataframe(empty)
     assert frame.empty
     assert list(frame.columns) == [
-        "日付", "表示日付", "時間帯", "開始", "終了", "年齢クラス",
-        "在園児数", "必要人員", "必要保育士数", "時間帯区分", "根拠", "必須",
+        "日付",
+        "表示日付",
+        "時間帯",
+        "開始",
+        "終了",
+        "年齢クラス",
+        "在園児数",
+        "必要人員",
+        "必要保育士数",
+        "時間帯区分",
+        "根拠",
+        "必須",
     ]
 
 
@@ -284,16 +313,22 @@ def test_payroll_dataframeの列(solved, slots_of, small_staff, facility):
 
 def test_payroll_dataframeは人件費設定に効く(solved, slots_of, small_staff):
     """単価を変えると推定人件費が変わること。"""
-    cheap = payroll_dataframe(solved, slots_of, small_staff, FacilitySettings(labor_cost_per_hour=1000.0))
-    dear = payroll_dataframe(solved, slots_of, small_staff, FacilitySettings(labor_cost_per_hour=2000.0))
+    cheap = payroll_dataframe(
+        solved, slots_of, small_staff, FacilitySettings(labor_cost_per_hour=1000.0)
+    )
+    dear = payroll_dataframe(
+        solved, slots_of, small_staff, FacilitySettings(labor_cost_per_hour=2000.0)
+    )
     assert dear["推定人件費"].sum() == pytest.approx(cheap["推定人件費"].sum() * 2, rel=0.01)
 
 
 def test_payroll_dataframeは職員数ぶん行がある(small_requirements):
     """勤務 0 人でも全職員の行が残ること。"""
     empty = solve_shift_greedy([], [], small_requirements, standard=STANDARD)
-    pool = [small_pool_member("P001", "正職", sei_contract()),
-            small_pool_member("P002", "パート", part_contract())]
+    pool = [
+        small_pool_member("P001", "正職", sei_contract()),
+        small_pool_member("P002", "パート", part_contract()),
+    ]
     frame = payroll_dataframe(empty, tuple(small_requirements.slots), pool)
     assert list(frame["職員ID"]) == ["P001", "P002"]
     assert (frame["実働時間"] == 0).all()
@@ -361,13 +396,20 @@ def test_export_bundle_zipの中身(solved, small_requirements, slots_of, small_
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         names = set(archive.namelist())
         assert names == {
-            "shift.csv", "payroll.csv", "shift_matrix.csv",
-            "requirements.csv", "shift.ics", "summary.md", "shift.xlsx",
+            "shift.csv",
+            "payroll.csv",
+            "shift_matrix.csv",
+            "requirements.csv",
+            "shift.ics",
+            "summary.md",
+            "shift.xlsx",
         }
         assert archive.testzip() is None
 
 
-def test_export_bundle_zipのCSVはBOM付き(solved, small_requirements, slots_of, small_staff, facility):
+def test_export_bundle_zipのCSVはBOM付き(
+    solved, small_requirements, slots_of, small_staff, facility
+):
     """ZIP 内の CSV も Excel 互換の BOM 付きであること。"""
     data = export_bundle_zip(solved, small_requirements, slots_of, small_staff, facility)
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
@@ -375,7 +417,9 @@ def test_export_bundle_zipのCSVはBOM付き(solved, small_requirements, slots_o
             assert archive.read(name).startswith(b"\xef\xbb\xbf")
 
 
-def test_export_bundle_zipの成果物が開ける(solved, small_requirements, slots_of, small_staff, facility):
+def test_export_bundle_zipの成果物が開ける(
+    solved, small_requirements, slots_of, small_staff, facility
+):
     """Excel・CSV・ICS を実際にパースできること。"""
     data = export_bundle_zip(solved, small_requirements, slots_of, small_staff, facility)
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
@@ -396,7 +440,9 @@ def test_export_bundle_zipはrequirements無しでも動く(solved, slots_of, sm
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         names = set(archive.namelist())
         assert "requirements.csv" not in names
-        assert "配置基準" not in set(load_workbook(io.BytesIO(archive.read("shift.xlsx"))).sheetnames)
+        assert "配置基準" not in set(
+            load_workbook(io.BytesIO(archive.read("shift.xlsx"))).sheetnames
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -404,7 +450,9 @@ def test_export_bundle_zipはrequirements無しでも動く(solved, slots_of, sm
 # ---------------------------------------------------------------------------
 
 
-def test_export_bundle_zipにgap_csvが含まれる(solved, small_requirements, slots_of, small_staff, facility):
+def test_export_bundle_zipにgap_csvが含まれる(
+    solved, small_requirements, slots_of, small_staff, facility
+):
     """``gap_report`` を渡すと gap.csv と gap_daily.csv が同梱されること。"""
     from shiftai.gap_analysis import analyze_gap
 
@@ -418,7 +466,9 @@ def test_export_bundle_zipにgap_csvが含まれる(solved, small_requirements, 
     assert "gap_daily.csv" in names
 
 
-def test_export_bundle_zipにviolations_csvが含まれる(solved, small_requirements, slots_of, small_staff, facility):
+def test_export_bundle_zipにviolations_csvが含まれる(
+    solved, small_requirements, slots_of, small_staff, facility
+):
     """``violations`` を渡すと violations.csv が同梱されること。"""
     from shiftai.domain import Violation, ViolationSeverity
 

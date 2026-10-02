@@ -155,16 +155,24 @@ def test_職員IDが重複するとエラーになる() -> None:
 
 def test_週契約時間0はエラーになる() -> None:
     report = validation.validate_frames(
-        None, pd.DataFrame.from_records([_staff(週契約時間=0)]), None,
-        days=[DAY], day_open=OPEN, day_close=CLOSE,
+        None,
+        pd.DataFrame.from_records([_staff(週契約時間=0)]),
+        None,
+        days=[DAY],
+        day_open=OPEN,
+        day_close=CLOSE,
     )
     assert any(i.is_error and i.column == "週契約時間" for i in report.errors)
 
 
 def test_1日の契約時間が週を超えるとエラーになる() -> None:
     report = validation.validate_frames(
-        None, pd.DataFrame.from_records([_staff(週契約時間=4, **{"1日契約時間": 8})]), None,
-        days=[DAY], day_open=OPEN, day_close=CLOSE,
+        None,
+        pd.DataFrame.from_records([_staff(週契約時間=4, **{"1日契約時間": 8})]),
+        None,
+        days=[DAY],
+        day_open=OPEN,
+        day_close=CLOSE,
     )
     assert any(i.is_error and i.column == "1日契約時間" for i in report.errors)
 
@@ -172,9 +180,7 @@ def test_1日の契約時間が週を超えるとエラーになる() -> None:
 def test_最早始業が最遅終業以降ならエラーになる() -> None:
     report = validation.validate_frames(
         None,
-        pd.DataFrame.from_records(
-            [_staff(最早始業=time(20, 0), 最遅終業=time(9, 0))]
-        ),
+        pd.DataFrame.from_records([_staff(最早始業=time(20, 0), 最遅終業=time(9, 0))]),
         None,
         days=[DAY],
         day_open=OPEN,
@@ -240,8 +246,12 @@ def test_報告はDataFrameとして描ける() -> None:
 
 def test_空表は指摘なしになる() -> None:
     report = validation.validate_frames(
-        pd.DataFrame(), pd.DataFrame(), pd.DataFrame(),
-        days=[DAY], day_open=OPEN, day_close=CLOSE,
+        pd.DataFrame(),
+        pd.DataFrame(),
+        pd.DataFrame(),
+        days=[DAY],
+        day_open=OPEN,
+        day_close=CLOSE,
     )
     assert report.issues == ()
 

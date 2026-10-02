@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from tests._utf8_subprocess import run_module_utf8
+from tests._utf8_subprocess import run_module_utf8, run_utf8
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "shiftai"
@@ -45,9 +45,7 @@ LIGHT_COMMANDS = [["--version"], ["presets"]]
 
 @pytest.mark.parametrize("encoding", ["cp1252", "cp932", "ascii", "latin-1"])
 @pytest.mark.parametrize("args", LIGHT_COMMANDS)
-def test_CLIは非UTF8ロケールでも終了コード0になる(
-    encoding: str, args: list[str]
-) -> None:
+def test_CLIは非UTF8ロケールでも終了コード0になる(encoding: str, args: list[str]) -> None:
     """日本語のロケール以外でも全サブコマンドが例外なく終わること。
 
     修正前は ``PYTHONIOENCODING=cp1252`` の環境で::
@@ -56,18 +54,55 @@ def test_CLIは非UTF8ロケールでも終了コード0になる(
 
     が traceback として出て終了コード 1 になっていた。日本語を大量に出力する
     ツールなので、ロケールに依存しないことが運用上の必須条件である。
+
+    **``force_io_encoding=False`` が無いと空振りになる**（重要）。
+    共通ヘルパは既定で子プロセスの ``PYTHONIOENCODING`` を utf-8 に上書きする
+    ため、テストが指定した cp1252 がそのまま子上に伝わり、
+    「実際にそのロケールで動いた」検証にならない。
+    ``test_ロケール指定が子上に伝わること`` がこの前提を別途固定する。
     """
     import os
 
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = encoding
-    proc = run_module_utf8("shiftai", *args, env=env, timeout=180)
+    proc = run_module_utf8("shiftai", *args, env=env, timeout=180, force_io_encoding=False)
     assert proc.returncode == 0, (
         f"PYTHONIOENCODING={encoding} で失敗した:\n{proc.stdout}\n{proc.stderr}"
     )
     assert "Traceback" not in proc.stderr, (
         f"PYTHONIOENCODING={encoding} で traceback が出ている:\n{proc.stderr}"
     )
+
+
+def test_ロケール指定が子上に伝わること() -> None:
+    """上のテストが本当に指定したロケールで子プロセスを動かしていること。
+
+    共通ヘルパが ``PYTHONIOENCODING`` を上書きしてしまうことに気づかないまま
+    「UTF-8 で動くから」で検証が通ってしまっていたため、
+    「子が見るロケール」を直接観測して固定する。
+    """
+    import os
+
+    for encoding in ("cp1252", "cp932"):
+        env = dict(os.environ)
+        env["PYTHONIOENCODING"] = encoding
+        proc = run_utf8(
+            [sys.executable, "-c", "import sys; print(sys.stdout.encoding)"],
+            env=env,
+            timeout=120,
+            force_io_encoding=False,
+        )
+        observed = proc.stdout.strip()
+        assert observed == encoding, f"子は PYTHONIOENCODING={encoding} ではなく {observed} を見た"
+
+
+def test_既定では子プロセスをUTF8で走らせる() -> None:
+    """既定（``force_io_encoding=True``）では UTF-8 に固定されること。
+
+    日本語出力を cp932 等で読むのは壊れているため、通常の呼び出しは UTF-8 固定。
+    """
+    proc = run_utf8([sys.executable, "-c", "import sys; print(sys.stdout.encoding)"], timeout=120)
+    assert proc.stdout.strip() == "utf-8"
 
 
 def test_CLIは常にUTF8バイト列で出力する() -> None:
@@ -129,7 +164,7 @@ def test_バージョンの唯一のsourceはpyprojectである() -> None:
     assert re.fullmatch(r"\d+\.\d+\.\d+", declared), f"pyproject の version が不正: {declared}"
 
     # __init__.py / config.py にリテラルとして現れてはならない
-    #（代入右辺に __version__ を使う形は許す）。
+    # （代入右辺に __version__ を使う形は許す）。
     for rel in ("__init__.py", "config.py"):
         source = (SRC / rel).read_text(encoding="utf-8")
         for lineno, line in enumerate(source.splitlines(), 1):
@@ -206,9 +241,8 @@ def test_signal_SIGALRMをテストが使わない() -> None:
                 continue
             if pattern.search(line.split("#", 1)[0]):
                 offenders.append(f"{path.relative_to(ROOT)}:{lineno}")
-    assert not offenders, (
-        "POSIX 固有の signal API を使っている（Windows で落ちる）:\n"
-        + "\n".join(sorted(set(offenders))[:15])
+    assert not offenders, "POSIX 固有の signal API を使っている（Windows で落ちる）:\n" + "\n".join(
+        sorted(set(offenders))[:15]
     )
 
 
@@ -259,6 +293,18 @@ def test_収集したnodeidと静的ガードのnodeidが同じ書式である()
 # T-16-R6: 韓国語・簡体字の混入（ガードの実効性）
 # ---------------------------------------------------------------------------
 
+#: 簡体字ガードが **必ず検出しなければならない** 3 例（positive control）。
+#:
+#: 簡体字ガードが書かれた最大の動機がまさにこの 3 例で、
+#: かつ Round 1 の実測で「許可リストに全部含まれていたため検出できなかった」ことを確認した。
+#: リテラルで書くと CJK 文字化けガード（``tests/`` も対象）に引っかかるため、
+#: コードポイントから組み立てて定義する。
+_POSITIVE_CONTROL_DEFECTS: tuple[str, ...] = (
+    "".join(chr(c) for c in (0x4FDD, 0x80B2, 0x88DC, 0x52A9, 0x7ECF, 0x9A8C)),  # 保育補助 + 経 + 験
+    "".join(chr(c) for c in (0x4E25, 0x683C, 0x306A, 0x5B9A, 0x54E1, 0x6BD4)),  # 厳 + 格 な 定員比
+    "".join(chr(c) for c in (0x4FDD, 0x80B2, 0x4E3B, 0x7BA1, 0x90E8, 0x95E8)),  # 保育主 管 + 門
+)
+
 
 def test_韓国語が混入していない() -> None:
     """日本語の文書にハングル（韓国語）が混ざっていないこと。
@@ -266,7 +312,7 @@ def test_韓国語が混入していない() -> None:
     ``test_static_guards.py`` の検査は「簡体字」「ハングル」を検出するが、
     **検査そのものを検査するテストが無い**と、リストを書き換えて
     検査を無効化したことに気づけない。ここではガードのロジックを
-    ライブラリとして呼べる形に切り出して、検出能力的を再確認する。
+    ライブラリとして呼べる形に切り出して、検出能力を再確認する。
     """
     from tests.test_static_guards import ALLOWED_KANJI, SIMPLIFIED_ONLY
 
@@ -282,15 +328,18 @@ def test_韓国語が混入していない() -> None:
                     break
         return found
 
-    # 検査対象は「SIMPLIFIED_ONLY にあり、かつ許可されていない字」。
-    # 許可リストにもある字（経・厳など）は「日本語の異体字」として
-    # 意図的に通しているので、検出テストには使わない。
-    non_allowed = sorted(SIMPLIFIED_ONLY - ALLOWED_KANJI)
-    assert non_allowed, "SIMPLIFIED_ONLY に未許可の字が1つもない"
-    sample = non_allowed[0]
-    assert detect(f"保育補助{sample}が混入している"), (
-        f"簡体字「{sample}」を検出できない"
-    )
+    # 許可リストに「字形が似ている」だけの理由で字を足すと、
+    # 混入が検出できなくなる（実際にその状態で 10 箇所の混入を検出できなかった）。
+    # したがって **ガードが書かれていた 3 例**を positive control として固定する。
+    #
+    # 例そのものは簡体字を含むため、リテラルで書くと
+    # CJK 文字化けガードの検査対象（``tests/``）に引っかかる。
+    # そこで **コードポイントから組み立てる**。守卫自身は完全にクリーンになる。
+    for defect in _POSITIVE_CONTROL_DEFECTS:
+        assert detect(f"{defect}が混ざっている"), (
+            f"ガードが書かれた実際の混入例「{defect}」を検出できない"
+        )
+
     # 正常な日本語を「韓国語」と誤検出しないこと。
     assert detect("正常系" + chr(0xC815)), "韓国語を検出できない"
     assert not detect("これは正常系です"), "日本語を韓国語と誤検出している"
@@ -299,8 +348,54 @@ def test_韓国語が混入していない() -> None:
     assert ALLOWED_KANJI, "許可リストが空だと誤検出が大量に出る"
 
 
+def test_許可リストは簡体字を大量に含まない() -> None:
+    """``ALLOWED_KANJI`` がガードを無効化していないこと。
+
+    Round 1 の査察で、許可リストが簡体字 210 字を含み、
+    **ガード自身の docstring が挙げた 3 例が全て通ってしまう**ことが判明した。
+    「字形が似ている」だけでは正当化できない
+    （簡体字の経 U+7ECF と日本語の経 U+7D4C は **別符号位置**）。
+    """
+    from tests.test_static_guards import ALLOWED_KANJI, SIMPLIFIED_ONLY
+
+    overlap = ALLOWED_KANJI & SIMPLIFIED_ONLY
+    # 実際にコード中で使われている字の数は限定的。過剰に許可しないこと。
+    assert len(overlap) <= 20, (
+        f"許可リストが簡体字を {len(overlap)} 字含む（ガードが無効化されている）: "
+        + "".join(sorted(overlap))
+    )
+
+
+def test_許可リストの字は実際に使われている() -> None:
+    """許可した字のうち、使用されていないものは削除できること。
+
+    「今使っていない字を許可する」のは将来の混入を隠すだけなので、
+    許可リストが実際の使用に正しく対応していることを固定する。
+    """
+    from tests.test_static_guards import (
+        ALLOWED_KANJI,
+        CJK_GUARD_EXEMPT_FILES,
+        SIMPLIFIED_ONLY,
+    )
+
+    targets = [*SRC.rglob("*.py"), *(ROOT / "docs").rglob("*.md"), ROOT / "README.md"]
+    used: set[str] = set()
+    for path in sorted(targets):
+        rel = path.relative_to(ROOT).as_posix()
+        if any(name in rel for name in CJK_GUARD_EXEMPT_FILES):
+            continue
+        used.update(path.read_text(encoding="utf-8"))
+
+    # SIMPLIFIED_ONLY に入っている許可字だけが検査の対象になる。
+    # それらは「実際に使われている」かどうかに意味を持つ。
+    suspects = {c for c in ALLOWED_KANJI & SIMPLIFIED_ONLY if c not in used}
+    assert not suspects, "許可されているがどこにも使われていない字（削除できる）: " + "".join(
+        sorted(suspects)
+    )
+
+
 def test_ソースとドキュメントに韓国語が混ざっていない() -> None:
-    """``src`` と ``docs`` と README の実数据进行検査する。"""
+    """``src`` と ``docs`` と README の実データを検査する。"""
     targets = [*SRC.rglob("*.py"), *(ROOT / "docs").rglob("*.md"), ROOT / "README.md"]
     offenders: list[str] = []
     for path in sorted(targets):

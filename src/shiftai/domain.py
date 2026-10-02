@@ -364,15 +364,99 @@ class StaffMember:
         return self.has_role(Role.HOIKUSHI)
 
     @property
+    def is_nurse(self) -> bool:
+        """看護師・准看護師の資格を持つか（みなし保育士の上限を数えるために使う）。"""
+        return self.has_role(Role.KANGSHI)
+
+    def is_qualified_under(self, standard: StaffingStandard | None) -> bool:
+        """この基準で「必要保育士数」を満たす資格を持つか。
+
+        看護師・准看護師が「必要保育士数」の分子に入る基準は2つあり、
+        別々の制度に由来するため区別する。
+
+        * ``nurse_as_qualified_cap`` が 1 以上（企業主導型保育事業）:
+          実施要綱 第3の2(4)② の「みなし保育士」。**1人に限り**数えられる。
+          上限の人数は :func:`qualified_count` で数える。
+        * ``qualified_extra_roles`` に看護師を含む（認可外保育施設指導監督基準）:
+          第1(2) の「3分の1以上は保育士、准看護師又は看護師」で、
+          人数の上限なく比率の分子に入る。
+        """
+        if self.has_role(Role.HOIKUSHI):
+            return True
+        if standard is None:
+            return False
+        if set(self.roles) & standard.qualified_extra_roles:
+            return True
+        return standard.nurse_as_qualified_cap > 0 and self.is_nurse
+
+    def counts_toward_headcount(self) -> bool:
+        """保育基準の配置人数に数えてよい職種か（``is_placeable`` と同じ判定）。"""
+        return self.is_placeable
+
+    @property
     def is_placeable(self) -> bool:
         """保育室への配置対象か。
 
-        園長・主任（``Role.ENJOGAKUIN``）は保育基準の人数に計上しない。
-        副資格に保育士がある場合は配置**可能**とみなす（保育室の補助ができるため）。
+        次の職種は**保育基準の配置人数に計上しない**。
+
+        * 調理員・栄養教諭・薬剤師: 保育に従事しないため。
+          「企業主導型保育事業費補助金実施要綱」第3の2(4)① は
+          「保育従事者**、**嘱託医**及び**調理員を置かなければならない」と定め、
+          調理員は保育従事者と**別枠**の必置職員である
+          （調理業務の全部委託、または他施設から食事の搬入をする場合は置かなくてよい）。
+          認可保育所でも調理員は「保育を担任する職員」には数えない。
+        * 園長・主任（``Role.ENJOGAKUIN``）: 副資格に保育士がある場合は
+          配置**可能**とみなす（保育室の補助ができるため）。
+
+        副資格に保育士を持てば、調理員・園長・主任であっても配置対象とする
+        （保育室で補助ができるため）。
         """
-        if not self.has_role(Role.ENJOGAKUIN):
+        if self.has_role(Role.HOIKUSHI):
             return True
-        return self.has_role(Role.HOIKUSHI)
+        if set(self.roles) & NON_PLACING_ROLES:
+            return False
+        return not self.has_role(Role.ENJOGAKUIN)
+
+
+def qualified_count(members: Sequence[StaffMember], standard: StaffingStandard | None) -> int:
+    """「必要保育士数」を満たす人数を数える。
+
+    * ``nurse_as_qualified_cap`` が 0 かつ ``qualified_extra_roles`` が空
+      （認可保育所）: 保育士だけ数える。
+    * ``nurse_as_qualified_cap`` が 1 以上（企業主導型保育事業）:
+      看護師・准看護師を**上限まで**保育士とみなす（みなし保育士）。
+    * ``qualified_extra_roles`` に看護師を含む（認可外保育施設指導監督基準）:
+      看護師・准看護師を人数の上限なく数える（第1(2) の3分の1以上）。
+    """
+    hoikushi = sum(1 for m in members if m.has_role(Role.HOIKUSHI))
+    if standard is None:
+        return hoikushi
+    extra = sum(1 for m in members if set(m.roles) & standard.qualified_extra_roles)
+    if extra:
+        return hoikushi + extra
+    if standard.nurse_as_qualified_cap <= 0:
+        return hoikushi
+    nurses = sum(1 for m in members if m.is_nurse)
+    return hoikushi + min(nurses, standard.nurse_as_qualified_cap)
+
+
+def qualified_ids(members: Sequence[StaffMember], standard: StaffingStandard | None) -> set[str]:
+    """:func:`qualified_count` に数えられる職員の ID 集合を返す。
+
+    看護師が上限を超える場合は職員IDの昇順で上限まで採用する
+    （どの職員を数えるかが一意に決まるようにするため）。
+    """
+    if standard is None or (
+        standard.nurse_as_qualified_cap <= 0 and not standard.qualified_extra_roles
+    ):
+        return {m.staff_id for m in members if m.has_role(Role.HOIKUSHI)}
+    ids = {m.staff_id for m in members if m.has_role(Role.HOIKUSHI)}
+    nurses = sorted(m.staff_id for m in members if m.is_nurse)
+    if standard.qualified_extra_roles:
+        ids.update(nurses)
+    else:
+        ids.update(nurses[: standard.nurse_as_qualified_cap])
+    return ids
 
 
 @dataclass(frozen=True)
@@ -400,9 +484,7 @@ class StaffPreferences:
     notes: str = ""
 
     def is_unavailable(self, day: date, slot: Slot) -> bool:
-        return any(
-            u.day == day and slot.overlaps(u.start, u.end) for u in self.unavailable
-        )
+        return any(u.day == day and slot.overlaps(u.start, u.end) for u in self.unavailable)
 
     def unavailable_days(self) -> set[date]:
         return {u.day for u in self.unavailable}
@@ -424,7 +506,79 @@ class AgeRatio:
     children_per_staff: float
     """例: 0歳児=3.0, 1・2歳児=6.0, 3歳児=8.0, 4・5歳児=20.0"""
     rounding: str = "ceil"
-    """'ceil' | 'floor' | 'round'。未満にならないよう原則 'ceil'。"""
+    """'ceil' | 'floor' | 'round' | 'trunc1'。未満にならないよう原則 'ceil'。
+
+    ``'trunc1'`` は小数第2位以下を切り捨てる（認可外保育施設の算出手法）。
+    認可外では年齢区分ごとに切り捨てて**合算してから**丸めるため、
+    単一年齢クラスに適用する意味はない。``StaffingStandard`` 側の
+    ``headcount_mode`` が用它をまとめる。
+    """
+
+
+# ---------------------------------------------------------------------------
+# 配置基準の算出手法・資格判定モード
+# ---------------------------------------------------------------------------
+
+HEADCOUNT_PER_CLASS = "per_class"
+"""認可保育所（既定）。年齢クラスごとに定員比で割り上げる。"""
+
+HEADCOUNT_FACILITY_FORMULA = "facility_formula"
+"""認可外保育施設。年齢区分ごとに小数第2位以下を切り捨て→合算→+1→小数第1位で四捨五入。"""
+
+HEADCOUNT_MODES: tuple[str, ...] = (HEADCOUNT_PER_CLASS, HEADCOUNT_FACILITY_FORMULA)
+
+QUALIFIED_PER_CLASS = "per_class"
+"""認可保育所（既定）。必要保育士数＝必要人員数（延長緩和以外）。"""
+
+QUALIFIED_RATIO = "ratio"
+"""認可外保育施設。必要人員に対する保育士比率で決める。"""
+
+QUALIFIED_MODES: tuple[str, ...] = (QUALIFIED_PER_CLASS, QUALIFIED_RATIO)
+
+
+def trunc1(value: float) -> float:
+    """小数第2位以下を切り捨てる（認可外保育施設の算出手法で使う）。"""
+    return math.floor(value * 10) / 10
+
+
+def largest_remainder(total: int, weights: Sequence[float]) -> list[int]:
+    """整数 ``total`` を ``weights`` に比例配分する（最大剰余法）。
+
+    戻り値の合計は常に ``total`` になる。在園児がいる年齢クラスに 0 名しか
+    配らないのは表示と実感がズレるため、重みの大きい順に 1 名ずつ先に配る。
+    """
+    count = len(weights)
+    if count == 0 or total <= 0:
+        return [0] * count
+    order = sorted(range(count), key=lambda i: (-weights[i], i))
+    out = [0] * count
+    take = min(total, count)
+    for i in order[:take]:
+        out[i] = 1
+    rest = total - take
+    if rest <= 0:
+        return out
+    weight_sum = sum(weights)
+    if weight_sum <= 0:
+        for i in order[take:]:
+            if rest <= 0:
+                break
+            out[i] += 1
+            rest -= 1
+        return out
+    exact = [rest * w / weight_sum for w in weights]
+    floors = [int(math.floor(e)) for e in exact]
+    leftover = rest - sum(floors)
+    ranked = sorted(range(count), key=lambda i: (-(exact[i] - floors[i]), i))
+    for i in ranked[:leftover]:
+        floors[i] += 1
+    return [out[i] + floors[i] for i in range(count)]
+
+
+#: 保育室への配置対象から外す職種（保育基準の配置人数に計上しない）。
+#: 調理員は保育従事者と**別枠**の必置職員で、保健師・看護師・准看護師は
+#: 保育従事者だが、基準によっては保育士とみなせる（みなし保育士）。
+NON_PLACING_ROLES: frozenset[Role] = frozenset({Role.CHUUBOU, Role.EIYOU, Role.YAKUARIN})
 
 
 @dataclass(frozen=True)
@@ -457,6 +611,60 @@ class StaffingStandard:
     is_short_time_only: bool = False
     """短時間保育（保育時間11時間）園のみ。"""
     remarks: str = ""
+    headcount_mode: str = HEADCOUNT_PER_CLASS
+    """必要人員の算出手法。``per_class`` / ``facility_formula``。"""
+    headcount_extra: int = 0
+    """合計に加える定数。認可外保育施設は +1（実施要綱 第3の2(4)②）。"""
+    age_groups: tuple[tuple[AgeClass, ...], ...] | None = None
+    """定員比をまとめる年齢グループ。``None`` は年齢クラス毎に単独。
+
+    認可外保育施設は 1・2歳児を合算、4歳以上児を合算する。
+    例: ``((INFANT,), (AGE_1, AGE_2), (AGE_3,), (AGE_4, AGE_5))``
+    """
+    qualified_mode: str = QUALIFIED_PER_CLASS
+    """必要保育士数の決め方。``per_class`` / ``ratio``。"""
+    min_qualified_floor: int = 0
+    """必要保育士数の下限。認可外保育施設は「最低2名のうち1名以上保育士」で 1。"""
+    nurse_as_qualified_cap: int = 0
+    """看護師・准看護師を保育士として数えられる上限（人/時間帯）。
+
+    0 は数えられない。企業主導型保育事業（実施要綱 第3の2(4)②）は 1 人に限り
+    保育士とみなすことができる（みなし保育士）。
+    """
+    qualified_extra_roles: frozenset[Role] = frozenset()
+    """保育士に加えて「必要保育士数」を満たすとみなす職種（人数の上限なし）。
+
+    認可外保育施設指導監督基準 第1(2) は
+    「保育に従事する者の**おおむね3分の1以上**が保育士、准看護師又は
+    看護師である」ことを求めるため、**看護師は比率の分子にそのまま入る**。
+    企業主導型保育事業（実施要綱）の「みなし保育士（1人に限り）」とは別物なので、
+    両方を同時に設定することはできない。
+    """
+    non_qualifying_roles: frozenset[Role] = frozenset()
+    """この基準で「必要保育士数」を満たさないとみなす職種（認定外の範囲外）。"""
+
+    def __post_init__(self) -> None:
+        if self.headcount_mode not in HEADCOUNT_MODES:
+            raise ValueError(
+                f"headcount_mode が不正です: {self.headcount_mode!r}"
+                f"（選択肢: {', '.join(HEADCOUNT_MODES)}）"
+            )
+        if self.qualified_mode not in QUALIFIED_MODES:
+            raise ValueError(
+                f"qualified_mode が不正です: {self.qualified_mode!r}"
+                f"（選択肢: {', '.join(QUALIFIED_MODES)}）"
+            )
+        if self.headcount_extra < 0:
+            raise ValueError("headcount_extra は 0 以上にしてください")
+        if not 0.0 <= self.min_qualified_ratio <= 1.0:
+            raise ValueError("min_qualified_ratio は 0.0〜1.0 の範囲で指定してください")
+        if self.nurse_as_qualified_cap < 0:
+            raise ValueError("nurse_as_qualified_cap は 0 以上にしてください")
+        if self.nurse_as_qualified_cap > 0 and self.qualified_extra_roles:
+            raise ValueError(
+                "nurse_as_qualified_cap（みなし保育士の上限）と "
+                "qualified_extra_roles（比率の分子に含める職種）は同時に指定できません"
+            )
 
     def ratio_for(self, age_class: AgeClass) -> AgeRatio:
         ratio = self.ratios.get(age_class)
@@ -474,7 +682,131 @@ class StaffingStandard:
             return int(math.floor(q))
         if ratio.rounding == "round":
             return max(1, int(math.floor(q + 0.5)))
+        if ratio.rounding == "trunc1":
+            return int(trunc1(q))
         return int(math.ceil(q))
+
+    # -- 認可外保育施設（施設単位の算出手法） -------------------------------
+
+    def effective_age_groups(self) -> tuple[tuple[AgeClass, ...], ...]:
+        """定員比をまとめる年齢グループを返す（未指定なら年齢クラス毎に単独）。"""
+        if self.age_groups is not None:
+            return tuple(tuple(group) for group in self.age_groups)
+        return tuple((age_class,) for age_class in sorted(self.ratios, key=lambda a: a.sort_key))
+
+    def headcount_breakdown(
+        self, counts: Mapping[AgeClass, int]
+    ) -> list[tuple[tuple[AgeClass, ...], int, float, float]]:
+        """施設単位算出手法の内訳を返す。
+
+        各要素は ``(年齢グループ, 園児数, 切り捨て後の配分, 定員比)``。
+        園児が 0 人のグループは含めない。
+        """
+        out: list[tuple[tuple[AgeClass, ...], int, float, float]] = []
+        for group in self.effective_age_groups():
+            present = [ac for ac in group if counts.get(ac, 0) > 0]
+            if not present:
+                continue
+            total = sum(counts[ac] for ac in present)
+            ratio = self.ratio_for(min(present, key=lambda a: a.sort_key)).children_per_staff
+            out.append(
+                (
+                    tuple(sorted(present, key=lambda a: a.sort_key)),
+                    total,
+                    trunc1(total / ratio),
+                    ratio,
+                )
+            )
+        return out
+
+    def headcount_for_slot(self, counts: Mapping[AgeClass, int]) -> int:
+        """1 時間帯の合計必要人員を返す。
+
+        ``per_class`` は年齢クラス毎の ``headcount_for`` を合計する（従来どおり）。
+        ``facility_formula`` は「区分ごとに小数第2位以下切捨 → 合算 → +headcount_extra
+        → 小数第1位で四捨五入」で1つの整数にする。
+        """
+        if self.headcount_mode == HEADCOUNT_PER_CLASS:
+            return sum(self.headcount_for(age_class, n) for age_class, n in counts.items() if n > 0)
+        if sum(n for n in counts.values() if n > 0) <= 0:
+            return 0
+        raw = float(self.headcount_extra)
+        for _group, _n, part, _ratio in self.headcount_breakdown(counts):
+            raw += part
+        return int(math.floor(raw + 0.5))
+
+    def allocate_staff(self, counts: Mapping[AgeClass, int]) -> dict[AgeClass, int]:
+        """合計必要人員を年齢クラスへ割り当てる（合計は ``headcount_for_slot`` と一致）。
+
+        施設単位の算出手法では1つの整数が基準の答えだが、本ツールの
+        :class:`Requirement` は年齢クラス毎の行なので表示用に分配する。
+        まずグループ間 sufrir最大剰余法（在園児がいる区分に 1 名ずつ優先）で配り、
+        次にグループ内の年齢クラスへ園児数に比例して切り分ける。
+        合計は厳密に一致する。
+        """
+        if self.headcount_mode == HEADCOUNT_PER_CLASS:
+            return {ac: self.headcount_for(ac, n) for ac, n in counts.items() if n > 0}
+        breakdown = self.headcount_breakdown(counts)
+        total = self.headcount_for_slot(counts)
+        shares = largest_remainder(total, [part for _g, _n, part, _r in breakdown])
+        out: dict[AgeClass, int] = {}
+        for (group, _n, _part, _ratio), share in zip(breakdown, shares, strict=True):
+            members = [ac for ac in group if counts.get(ac, 0) > 0]
+            pieces = largest_remainder(share, [float(counts[ac]) for ac in members])
+            for age_class, value in zip(members, pieces, strict=True):
+                out[age_class] = value
+        return out
+
+    def slot_qualified_for(self, needed_total: int) -> int:
+        """合計必要人員から 1 時間帯の必要保育士数を決める。
+
+        ``per_class`` は「必要人員＝必要保育士数」（従来どおり）。
+        ``ratio`` は ``min_qualified_ratio`` で割り上げ、``min_qualified_floor``
+        を下限にする。どちらも ``needed_total`` を超えない。
+        """
+        if needed_total <= 0:
+            return 0
+        if self.qualified_mode == QUALIFIED_PER_CLASS:
+            return needed_total
+        floor_q = max(0, min(self.min_qualified_floor, needed_total))
+        ratio_q = int(math.ceil(needed_total * self.min_qualified_ratio))
+        return min(needed_total, max(floor_q, ratio_q))
+
+    def allocate_qualified(
+        self, staff_alloc: Mapping[AgeClass, int], qualified_total: int
+    ) -> dict[AgeClass, int]:
+        """必要保育士数を年齢クラスへ割り当てる（合計は ``qualified_total`` と一致）。
+
+        ``staff_alloc`` のすべての年齢クラスをキーとして返す（0 名のものも含む）。
+        """
+        if self.qualified_mode == QUALIFIED_PER_CLASS:
+            return {ac: n for ac, n in staff_alloc.items() if n > 0}
+        keys = list(staff_alloc)
+        positive = [ac for ac in keys if staff_alloc[ac] > 0]
+        shares = dict(
+            zip(
+                positive,
+                largest_remainder(qualified_total, [float(staff_alloc[ac]) for ac in positive]),
+                strict=True,
+            )
+        )
+        return {ac: shares.get(ac, 0) for ac in keys}
+
+    def counts_qualify(self, member: StaffMember, slot: Slot) -> bool:  # noqa: F821
+        """この基準で職員が「必要保育士数」を満たす資格を持つか。
+
+        ``per_class`` では保育士のみ。``nurse_as_qualified_cap`` が 1 以上のときは
+        看護師・准看護師も資格者とする（上限の判定は呼び出し側で行う）。
+        ``qualified_extra_roles`` に看護師を入れていれば、それも資格者になる
+        （認可外保育施設指導監督基準 第1(2) の「3分の1以上」）。
+        """
+        if member.has_role(Role.HOIKUSHI):
+            return True
+        if set(member.roles) & self.qualified_extra_roles:
+            return True
+        if self.nurse_as_qualified_cap > 0 and member.is_nurse:
+            return True
+        return False
 
     def is_standard_time(self, slot: Slot) -> bool:
         return self.standard_time[0] <= slot.start and slot.end <= self.standard_time[1]
@@ -521,6 +853,16 @@ class StaffingStandard:
             "late_care_relaxed": self.late_care_relaxed,
             "late_care_min_qualified": self.late_care_min_qualified,
             "is_short_time_only": self.is_short_time_only,
+            "headcount_mode": self.headcount_mode,
+            "headcount_extra": self.headcount_extra,
+            "age_groups": (
+                [[ac.value for ac in group] for group in self.age_groups]
+                if self.age_groups is not None
+                else None
+            ),
+            "qualified_mode": self.qualified_mode,
+            "min_qualified_floor": self.min_qualified_floor,
+            "nurse_as_qualified_cap": self.nurse_as_qualified_cap,
             "remarks": self.remarks,
         }
 
@@ -796,9 +1138,7 @@ WEEKLY_WINDOW_DAYS = 7
 """週の判定に使う窓の日数。"""
 
 
-def weekly_windows(
-    days: Sequence[date], size: int = WEEKLY_WINDOW_DAYS
-) -> list[list[date]]:
+def weekly_windows(days: Sequence[date], size: int = WEEKLY_WINDOW_DAYS) -> list[list[date]]:
     """連続する size 日ごとの窓を返す。末尾も重複する窓で覆う。
 
     週の上限は「任意の連続した 1 週間の勤務量」で判定するため、
@@ -813,9 +1153,7 @@ def weekly_windows(
     return [ordered[i : i + size] for i in range(len(ordered) - size + 1)]
 
 
-def weekly_periods(
-    days: Sequence[date], size: int = WEEKLY_WINDOW_DAYS
-) -> list[list[date]]:
+def weekly_periods(days: Sequence[date], size: int = WEEKLY_WINDOW_DAYS) -> list[list[date]]:
     """``days`` を size 日ずつに区切った窓を返す（窓どうしは重複しない）。
 
     出勤可能日数のように「合計を数える」用途では、重ねた窓を足すと

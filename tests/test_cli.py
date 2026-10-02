@@ -57,7 +57,10 @@ def test_sampleはシードで決定的(tmp_path):
     """同じシードなら同じ CSV になること。"""
     first, second = tmp_path / "a", tmp_path / "b"
     for target in (first, second):
-        assert main(["sample", "--out", str(target), "--start", "2026-09-28", "--days", "1"]) == EXIT_OK
+        assert (
+            main(["sample", "--out", str(target), "--start", "2026-09-28", "--days", "1"])
+            == EXIT_OK
+        )
     assert (first / "children.csv").read_bytes() == (second / "children.csv").read_bytes()
 
 
@@ -89,10 +92,14 @@ def test_solveは不明な基準を弾く(tmp_path, capsys):
     code = main(
         [
             "solve",
-            "--children", str(tpl / "children.csv"),
-            "--staff", str(tpl / "staff.csv"),
-            "--standard", "存在しない基準",
-            "--out", str(tmp_path / "out"),
+            "--children",
+            str(tpl / "children.csv"),
+            "--staff",
+            str(tpl / "staff.csv"),
+            "--standard",
+            "存在しない基準",
+            "--out",
+            str(tmp_path / "out"),
         ]
     )
     assert code == EXIT_ERROR
@@ -107,13 +114,20 @@ def test_solve_サンプルで成果物が揃う(tmp_path, capsys):
         [
             "solve",
             "--sample",
-            "--out", str(out),
-            "--start", "2026-09-28",
-            "--end", "2026-10-02",
-            "--open", "09:00",
-            "--close", "14:00",
-            "--granularity", "60",
-            "--time-limit", "30",
+            "--out",
+            str(out),
+            "--start",
+            "2026-09-28",
+            "--end",
+            "2026-10-02",
+            "--open",
+            "09:00",
+            "--close",
+            "14:00",
+            "--granularity",
+            "60",
+            "--time-limit",
+            "30",
             "--zip",
         ]
     )
@@ -123,18 +137,57 @@ def test_solve_サンプルで成果物が揃う(tmp_path, capsys):
     assert "最適化:" in text
     assert "配置カバー率:" in text
     for name in (
-        "shift.csv", "payroll.csv", "shift_matrix.csv", "requirements.csv",
-        "gap.csv", "gap_daily.csv", "shift.ics", "summary.md", "bundle.zip",
+        "shift.csv",
+        "payroll.csv",
+        "shift_matrix.csv",
+        "requirements.csv",
+        "gap.csv",
+        "gap_daily.csv",
+        "shift.ics",
+        "summary.md",
+        "bundle.zip",
     ):
         assert (out / name).is_file(), name
     assert (out / "shift.ics").read_text(encoding="utf-8").startswith("BEGIN:VCALENDAR")
 
 
-def test_勤務パターンの定義文字列は解釈できる(capsys):
-    """``--patterns`` が不正なら終了コード 1 で弾かれること。"""
-    code = main(["solve", "--sample", "--patterns", "壊れた定義", "--out", "out"])
+def test_勤務パターンの定義文字列は解釈できる(capsys, tmp_path):
+    """``--patterns`` が不正なら終了コード 1 で弾かれること。
+
+    修正前: ``--out "out"``（相対パス）だったため、
+    ``cmd_solve`` が ``--patterns`` を検証する **前に**
+    サンプルファイルを ``./out/sample/`` に書き込んでいた。
+    テスト実行ディレクトリ（リポジトリ直下）が汚染され、
+    ``make test-parallel`` と同時実行の ``make solve`` が衝突する。
+    """
+    code = main(["solve", "--sample", "--patterns", "壊れた定義", "--out", str(tmp_path / "out")])
     assert code == EXIT_ERROR
     assert "パターン" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("flag", "value"),
+    [
+        ("--closed", "2026-13-45"),
+        ("--closed", "2026-02-30"),
+        ("--holiday", "abc"),
+        ("--holiday", "2026-99-01"),
+        ("--start", "not-a-date"),
+        ("--end", "2026-01-01"),
+    ],
+)
+def test_不正な日付はTracebackではなく終了コード1になる(flag, value, capsys, tmp_path):
+    """``--closed`` / ``--holiday`` / ``--start`` / ``--end`` の不正値は
+    traceback を出さず、終了コード 1 と日本語のエラーメッセージにすること。
+
+    修正前: ``_parse_day`` の ``ValueError`` が ``try`` の外で伝播し、
+    利用者に Python の traceback (``month must be in 1..12``) が出ていた。
+    """
+    code = main(["solve", "--sample", flag, value, "--out", str(tmp_path / "out")])
+    err = capsys.readouterr().err
+    assert code == EXIT_ERROR, f"{flag}={value} で終了コードが {code}"
+    assert "Traceback" not in err, f"traceback が出ている:\n{err}"
+    assert "エラー" in err, f"日本語のエラーメッセージが無い:\n{err}"
 
 
 @pytest.mark.parametrize(
@@ -159,14 +212,22 @@ def test_solve_勤務パターンを渡すと整列結果が出る(tmp_path, cap
         [
             "solve",
             "--sample",
-            "--out", str(out),
-            "--start", "2026-09-28",
-            "--end", "2026-09-29",
-            "--open", "09:00",
-            "--close", "14:00",
-            "--granularity", "60",
-            "--time-limit", "20",
-            "--patterns", "早番=09:00-14:00,日勤=10:00-13:00",
+            "--out",
+            str(out),
+            "--start",
+            "2026-09-28",
+            "--end",
+            "2026-09-29",
+            "--open",
+            "09:00",
+            "--close",
+            "14:00",
+            "--granularity",
+            "60",
+            "--time-limit",
+            "20",
+            "--patterns",
+            "早番=09:00-14:00,日勤=10:00-13:00",
             "--diagnose",
         ]
     )
@@ -185,14 +246,22 @@ def test_solve_緩和モードは結果を返す(tmp_path, capsys):
         [
             "solve",
             "--sample",
-            "--out", str(out),
-            "--start", "2026-09-28",
-            "--end", "2026-09-29",
-            "--open", "09:00",
-            "--close", "14:00",
-            "--granularity", "60",
-            "--time-limit", "20",
-            "--relax", "1",
+            "--out",
+            str(out),
+            "--start",
+            "2026-09-28",
+            "--end",
+            "2026-09-29",
+            "--open",
+            "09:00",
+            "--close",
+            "14:00",
+            "--granularity",
+            "60",
+            "--time-limit",
+            "20",
+            "--relax",
+            "1",
         ]
     )
     assert code in (EXIT_OK, 2, 3)

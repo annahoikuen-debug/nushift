@@ -84,7 +84,12 @@ BASE_POOL += [(f"S{i + 5:03d}", (Role.SHIENSHIIN,), part_contract()) for i in ra
 
 def _requirements(children, days=(DAY,), **kwargs):
     return build_requirements(
-        children, list(days), STANDARD, day_open=DAY_OPEN, day_close=DAY_CLOSE, granularity_min=30,
+        children,
+        list(days),
+        STANDARD,
+        day_open=DAY_OPEN,
+        day_close=DAY_CLOSE,
+        granularity_min=30,
         **kwargs,
     )
 
@@ -106,10 +111,19 @@ def test_充足可能ならOPTIMALかFEASIBLE(solved_day):
 
 
 def test_結果に統計が入っている(solved_day):
-    """``stats`` に所要時間・変数数・制約数・解题パスが入っていること。"""
+    """``stats`` に所要時間・変数数・制約数・求解パスが入っていること。"""
     stats = solved_day.stats
-    for key in ("solver", "solver_status", "elapsed_sec", "num_variables",
-                "num_constraints", "num_staff", "num_days", "num_slots", "pass"):
+    for key in (
+        "solver",
+        "solver_status",
+        "elapsed_sec",
+        "num_variables",
+        "num_constraints",
+        "num_staff",
+        "num_days",
+        "num_slots",
+        "pass",
+    ):
         assert key in stats
     assert stats["elapsed_sec"] >= 0.0
     assert stats["num_staff"] == 6
@@ -170,7 +184,9 @@ def test_休園日は全職員OFF(small_children, small_staff):
     requirements = _requirements(small_children, closed_days={DAY})
     assert requirements.rows[DAY] == []
     result = _solve(
-        small_children, small_staff, requirements,
+        small_children,
+        small_staff,
+        requirements,
         settings=FacilitySettings(closed_days=closed),
     )
     shift_day = result.day(DAY)
@@ -189,17 +205,17 @@ def test_休園日と開所日を分ける(small_children, small_staff, week_day
     ]
     requirements = _requirements(kids, days=week_days[:2], closed_days={closed_day})
     result = _solve(
-        kids, small_staff, requirements,
+        kids,
+        small_staff,
+        requirements,
         settings=FacilitySettings(closed_days=frozenset({closed_day})),
     )
     closed_states = {
-        result.day(closed_day).get(m.staff_id, s)
-        for m in small_staff for s in requirements.slots
+        result.day(closed_day).get(m.staff_id, s) for m in small_staff for s in requirements.slots
     }
     assert closed_states == {CellState.OFF}
     open_states = {
-        result.day(open_day).get(m.staff_id, s)
-        for m in small_staff for s in requirements.slots
+        result.day(open_day).get(m.staff_id, s) for m in small_staff for s in requirements.slots
     }
     assert CellState.WORK in open_states
 
@@ -269,6 +285,83 @@ def test_verify_solutionは解けた制約違反0件(small_staff, small_requirem
 
 
 # ---------------------------------------------------------------------------
+# verify_solution の責務分担（回帰防止）
+#
+# ``verify_solution`` は「数値的に確定したハード制約違反」だけを列挙し、
+# 変数値が ``None`` の制約は**違反として数えない**。
+# 「解が読み込まれたか」は ``_unassigned_variables`` が担当し、
+# ``_run_cbc`` が ``verify_solution`` を呼ぶ前に ``INFEASIBLE`` を返す。
+#
+# この 2 段構えは意図的なもの。どちらかを崩すと:
+#   * ``None`` を 0 とみなす → 配置基準 ``expr >= need`` が ``-need`` で未達となり
+#     全制約が偽陽性になる（``test_全変数が未決なら判定不能として空リストになる``
+#     が鳴る）
+#   * ``None`` を違反とみなす → 判定不能な状態から 300 件超の偽の違反が出る
+#     （``test_solver_perf.py::test_検査不能な制約だけが除外され他は検出される``
+#     と衝突する）
+#
+# 修正前: ``verify_solution`` の docstring が「『検査できない』を『違反していない』に
+# 読み替えると CBC の途中解が常に採用される」と書きながら、実際の保護は
+# ``_run_cbc`` の ``_unassigned_variables`` 側にあった。docstring が
+# 「この関数自身が守る」ように読めたので、以下で 2 段構えを固定する。
+# ---------------------------------------------------------------------------
+
+
+def test_判定不能な制約は違反に数えない() -> None:
+    """変数値が ``None`` の制約を ``verify_solution`` は違反として列挙しないこと。"""
+    import pulp
+
+    from shiftai.solver import _ConstraintSpec
+
+    unassigned = pulp.LpVariable("unassigned", 0, 1, pulp.LpBinary)
+    spec = _ConstraintSpec(
+        name="unresolvable",
+        sense=pulp.LpConstraintGE,
+        offset=0.0,
+        terms=((unassigned, 1.0),),
+    )
+    assert spec.value() is None, "未決変数の制約で value() が None を返さない"
+    assert spec.is_violated(1e-4) is False, (
+        "判定不能な制約を『違反』と判定している（判定不能な状態から偽の違反が大量に並ぶ）"
+    )
+
+
+def test_判定不能は_run_cbcが先に弾く(small_staff, small_requirements) -> None:
+    """``verify_solution`` が見逃す「解が読めていない」状態は ``_run_cbc`` が落とすこと。
+
+    ``verify_solution`` 単体は判定を保留する（返り値は空）ため、
+    守りが機能するのは ``_run_cbc`` の側。``.solu`` が読めていない状況を
+    擬似的に作り（``prob.solve`` を無効化して全変数を ``None`` にし、
+    勤務セルだけ 1.0 を入れる＝``.solu`` が途中値だけ書いた状態）、
+    ``_run_cbc`` が ``INFEASIBLE`` を返すことを確認する。
+    """
+    from shiftai.solver import _build_problem, _run_cbc, _unassigned_variables
+
+    ctx = _build_problem(
+        small_staff, small_requirements, {}, {}, FacilitySettings(), ObjectiveWeights(), STANDARD
+    )
+    # 解けていない状態で verify_solution 自体は判定を保留する
+    assert verify_solution(ctx) == [], "未解決の状態で違反を列挙している"
+    assert _unassigned_variables(ctx) > 0, "未決変数が検出されていない"
+
+    # …ただし _run_cbc はそれを捕捉して INFEASIBLE にする
+    ctx.prob.solve = lambda *args, **kwargs: None  # type: ignore[method-assign]
+    ctx.prob.status = 0
+    ctx.prob.sol_status = 2
+    for variable in ctx.prob.variables():
+        variable.varValue = None
+    for value in ctx.work.values():
+        if not isinstance(value, (int, float)):
+            value.varValue = 1.0
+
+    status, raw = _run_cbc(ctx, 1, False)
+    assert status is SolveStatus.INFEASIBLE, (
+        f"解が読めていないのに {status.value} を返した（途中解が採用される）: {raw}"
+    )
+    assert "解未読込" in raw, f"INFEASIBLE の理由が『解未読込』ではない: {raw}"
+
+
+# ---------------------------------------------------------------------------
 # fixed_assignments（UI での手動確定）
 # ---------------------------------------------------------------------------
 
@@ -277,9 +370,7 @@ def test_固定セル_offは確定される(small_children, small_staff, small_r
     """``fixed_assignments`` に ``OFF`` を入れたセルは必ず ``OFF`` で戻ること。"""
     slot = small_requirements.slots[2]
     fixed = {("S001", DAY, slot.label): CellState.OFF}
-    result = _solve(
-        small_children, small_staff, small_requirements, fixed_assignments=fixed
-    )
+    result = _solve(small_children, small_staff, small_requirements, fixed_assignments=fixed)
     assert result.day(DAY).get("S001", slot) is CellState.OFF
 
 
@@ -302,9 +393,7 @@ def test_固定セル_workはモデルでロックされる(small_children, smal
     assert ctx.brk[("S001", DAY, 2)] == 0
     variables = {v.name for v in ctx.prob.variables()}
     assert not any("w_S001_0928_2" == name for name in variables)
-    work_minutes = sum(
-        r.slot.minutes for r in small_requirements.for_day(DAY) if r.slot == slot
-    )
+    work_minutes = sum(r.slot.minutes for r in small_requirements.for_day(DAY) if r.slot == slot)
     assert work_minutes > 0
 
 
@@ -353,12 +442,12 @@ def test_貪欲法も希望休と契約を守る(small_children, small_requireme
     pool = _pool([(f"N{i + 1:03d}", (Role.HOIKUSHI,), narrow) for i in range(3)])
     prefs = {
         "N002": StaffPreferences(
-            unavailable=[Unavailability(day=DAY, start=time(0, 0), end=time(23, 59), reason="希望休")]
+            unavailable=[
+                Unavailability(day=DAY, start=time(0, 0), end=time(23, 59), reason="希望休")
+            ]
         )
     }
-    result = solve_shift_greedy(
-        small_children, pool, small_requirements, prefs, standard=STANDARD
-    )
+    result = solve_shift_greedy(small_children, pool, small_requirements, prefs, standard=STANDARD)
     shift_day = result.day(DAY)
     assert all(shift_day.get("N002", s) is CellState.OFF for s in small_requirements.slots)
     for member in pool:
@@ -470,10 +559,7 @@ def test_1週間シフトは希望休と契約を守る(solved_week, week_inputs
         off_days = entry.unavailable_days() if entry else set()
         for shift_day in solved_week.shift_days:
             if shift_day.day in off_days:
-                states = {
-                    shift_day.get(member.staff_id, slot)
-                    for slot in table.slots
-                }
+                states = {shift_day.get(member.staff_id, slot) for slot in table.slots}
                 assert states == {CellState.OFF}, (member.staff_id, shift_day.day)
             for slot in table.slots:
                 if shift_day.get(member.staff_id, slot) is not CellState.OFF:

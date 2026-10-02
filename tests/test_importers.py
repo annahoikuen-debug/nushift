@@ -194,17 +194,13 @@ def test_短時間保育は保育標準時間帯と一致するなら推定す�
             }
         ]
     )
-    result = importers.convert(
-        frame, "codemon", standard_time=(time(9, 0), time(14, 0))
-    )
+    result = importers.convert(frame, "codemon", standard_time=(time(9, 0), time(14, 0)))
     assert result.frame.iloc[0]["短時間保育"] == "true"
 
 
 def test_保育標準時間帯と違えば短時間保育にしない():
     frame = _codemon_frame()
-    result = importers.convert(
-        frame, "codemon", standard_time=(time(9, 0), time(14, 0))
-    )
+    result = importers.convert(frame, "codemon", standard_time=(time(9, 0), time(14, 0)))
     assert result.frame.iloc[0]["短時間保育"] == "false"
 
 
@@ -222,9 +218,7 @@ def test_短時間保育のフラグがあれば推定より優先する():
             }
         ]
     )
-    result = importers.convert(
-        frame, "codemon", standard_time=(time(9, 0), time(14, 0))
-    )
+    result = importers.convert(frame, "codemon", standard_time=(time(9, 0), time(14, 0)))
     assert result.frame.iloc[0]["短時間保育"] == "false"
 
 
@@ -251,9 +245,7 @@ def test_注意文がプロファイルについて来る():
 
 
 def test_欠損値があっても落ちない():
-    frame = pd.DataFrame(
-        [{"園児コード": None, "園児氏名": None, "利用日": None}]
-    )
+    frame = pd.DataFrame([{"園児コード": None, "園児氏名": None, "利用日": None}])
     result = importers.convert(frame, "codemon")
     assert len(result.frame) == 1
     assert result.frame.iloc[0]["園児ID"] == ""

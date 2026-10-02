@@ -51,16 +51,22 @@ def make_member(staff_id: str, employment=EmploymentType.SEI) -> StaffMember:
 def solved(request):
     """4 名の職員で 1 日を解いた結果と、その過不足レポート。"""
     children = [
-        ChildPlan(f"C{i:03d}", "", DAY, AgeClass.AGE_3, DAY_OPEN, DAY_CLOSE)
-        for i in range(4)
+        ChildPlan(f"C{i:03d}", "", DAY, AgeClass.AGE_3, DAY_OPEN, DAY_CLOSE) for i in range(4)
     ]
     staff = [make_member(f"S{i:03d}") for i in range(3)]
     table = build_requirements(
-        children, [DAY], local_rules.get_standard(STANDARD_KEY),
-        day_open=DAY_OPEN, day_close=DAY_CLOSE, granularity_min=30,
+        children,
+        [DAY],
+        local_rules.get_standard(STANDARD_KEY),
+        day_open=DAY_OPEN,
+        day_close=DAY_CLOSE,
+        granularity_min=30,
     )
     result = solver.solve_shift(
-        children, staff, table, time_limit_sec=20,
+        children,
+        staff,
+        table,
+        time_limit_sec=20,
         standard=local_rules.get_standard(STANDARD_KEY),
     )
     report = gap_analysis.analyze_gap(
@@ -102,9 +108,9 @@ def test_compute_costとpayrollの基準が一致する(solved) -> None:
     result, _report, staff, table = solved
     settings = FacilitySettings(labor_cost_per_hour=RATE_HIGH)
     cost = gap_analysis.compute_cost(result, staff, settings)
-    payroll_total = int(exporter.payroll_dataframe(result, table.slots, staff, settings)[
-        "推定人件費"
-    ].sum())
+    payroll_total = int(
+        exporter.payroll_dataframe(result, table.slots, staff, settings)["推定人件費"].sum()
+    )
     assert cost == pytest.approx(payroll_total, abs=1.0)
 
 
@@ -124,21 +130,44 @@ def test_payrollの実働時間は二重控除されない(solved) -> None:
 
 
 def test_compute_costは休憩を含まない(solved) -> None:
-    """休憩（``CellState.BREAK``）は人件費に算入しないこと。"""
+    """休憩（``CellState.BREAK``）は人件費に算入しないこと。
+
+    修正前: ``assert cost < worked_only * ratio or cost <= worked_only * 1.25``
+    の **第 2 項が係数込みの等号で常に成立**するため、
+    「休憩を人件費に含める」実装に変わっても通っていた。
+    係数を明示的に掛けて 1 つの等式にする。
+    """
+    from shiftai.domain import cost_coefficient
+
     result, _report, staff, _table = solved
     assert any(a.state.name == "BREAK" for a in result.assignments), "検証前提として休憩があること"
-    worked_only = sum(
-        a.slot.hours for a in result.assignments if a.state.name == "WORK"
+    worked_only = sum(a.slot.hours for a in result.assignments if a.state.name == "WORK")
+    with_break = sum(a.slot.hours for a in result.assignments if a.state.name != "OFF")
+    assert with_break > worked_only > 0.0, "検証前提: 勤務と休憩の両方があること"
+
+    cost = gap_analysis.compute_cost(result, staff, FacilitySettings(labor_cost_per_hour=1.0))
+    # 職員ごとの係数が異なるため、単純な合計では比較できない。
+    # 「休憩が含まれていない」ことは、人件費を時間帯ごとに
+    # 勤務分だけで足し直した値と一致することで主張する。
+    expected = sum(
+        a.slot.hours * cost_coefficient(s.contract.employment_type)
+        for s in staff
+        for a in result.assignments
+        if a.staff_id == s.staff_id and a.state.name == "WORK"
     )
-    with_break = sum(
-        a.slot.hours for a in result.assignments if a.state.name != "OFF"
+    assert cost == pytest.approx(expected, rel=1e-6), (
+        f"人件費が勤務のみと一致しない: cost={cost} expected={expected}"
     )
-    cost = gap_analysis.compute_cost(
-        result, staff, FacilitySettings(labor_cost_per_hour=1.0)
-    )
-    ratio = with_break / worked_only
-    # 係数が入るので絶対値では比較せず、休憩込み/実働-only の比で検証する
-    assert cost < worked_only * ratio or cost <= worked_only * 1.25
+    # 休憩を含めた場合より小さいこと
+    assert cost < (
+        sum(
+            a.slot.hours * cost_coefficient(s.contract.employment_type)
+            for s in staff
+            for a in result.assignments
+            if a.staff_id == s.staff_id and a.state.name != "OFF"
+        )
+        + 1e-6
+    ), "休憩を含めた金額になっている"
 
 
 # --- R4: 係数の一本化 ------------------------------------------------------
@@ -179,7 +208,7 @@ def test_summarizeとpayrollの人件費が一致する(solved) -> None:
     result, report, staff, table = solved
     settings = FacilitySettings(labor_cost_per_hour=RATE_HIGH)
     summary_cost = gap_analysis.summarize(result, report, staff, settings)["人件費"]
-    payroll_total = int(exporter.payroll_dataframe(result, table.slots, staff, settings)[
-        "推定人件費"
-    ].sum())
+    payroll_total = int(
+        exporter.payroll_dataframe(result, table.slots, staff, settings)["推定人件費"].sum()
+    )
     assert summary_cost == pytest.approx(payroll_total, abs=1.0)

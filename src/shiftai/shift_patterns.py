@@ -202,8 +202,10 @@ def nearest_pattern_window(
         distance = abs(pattern.start_minutes - start_minutes) + abs(
             pattern.end_minutes - end_minutes
         )
-        if best is None or distance < best[0] or (
-            distance == best[0] and pattern.start_minutes < best[1].start_minutes
+        if (
+            best is None
+            or distance < best[0]
+            or (distance == best[0] and pattern.start_minutes < best[1].start_minutes)
         ):
             best = (distance, pattern)
     return None if best is None else best[1]

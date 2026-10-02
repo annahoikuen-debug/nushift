@@ -122,9 +122,7 @@ def _render_diagnosis(table: Any, result: SolveResult | None) -> None:
     """「なぜ解けないのか」を説明し、緩和モードでの再実行を提供する。"""
     staff = state.get(state.KEY_STAFF) or []
     preferences = state.get(state.KEY_PREFERENCES) or {}
-    report = diagnostics.diagnose(
-        table, staff, preferences, state.current_settings()
-    )
+    report = diagnostics.diagnose(table, staff, preferences, state.current_settings())
     state.set(state.KEY_DIAGNOSIS, report)
     level = int(state.get(state.KEY_RELAXATION))
 
@@ -215,9 +213,7 @@ def _render_diagnosis(table: Any, result: SolveResult | None) -> None:
                 else:
                     st.error(f"矛盾の当事者は {len(core)} 件の制約グループです。")
                 st.dataframe(
-                    [
-                        {"制約": g.label, "確認のしかた": g.detail} for g in core
-                    ],
+                    [{"制約": g.label, "確認のしかた": g.detail} for g in core],
                     hide_index=True,
                     width="stretch",
                     key="iis_result",
@@ -286,7 +282,11 @@ def _render_pattern_panel(result: SolveResult | None) -> None:
             [
                 ("パターン一致", f"{aligned} 日", f"全 {total} 勤務日中"),
                 ("整列率", f"{ratio * 100:.0f}%", "早番・日勤・遅番の枠と一致した日数"),
-                ("その他", f"{counts.get('その他', 0)} 日", "契約や希望休のため枠に寄せられなかった日"),
+                (
+                    "その他",
+                    f"{counts.get('その他', 0)} 日",
+                    "契約や希望休のため枠に寄せられなかった日",
+                ),
             ]
         )
         snap = state.get(state.KEY_PATTERN_SNAP_REPORT)
@@ -463,7 +463,9 @@ def _render_gap_table() -> None:
         height=360,
         key="gap_table",
     )
-    st.caption("不足（赤）／過剰（青）を色で示しています。行数が多い場合はタブ2 の過不足ヒートマップも参照してください。")
+    st.caption(
+        "不足（赤）／過剰（青）を色で示しています。行数が多い場合はタブ2 の過不足ヒートマップも参照してください。"
+    )
     with st.expander("日別サマリー", expanded=False):
         st.dataframe(
             report.daily_dataframe(),
@@ -534,6 +536,29 @@ def _render_staffing_curve(result: SolveResult) -> None:
             )
 
 
+def _render_infeasible_hint(result: SolveResult) -> None:
+    """解なし・実行不能のとき、「どの緩和で解けるか」を調べる動線を示す。
+
+    ステータスが「解なし」の場合、放置するとユーザーは何をしたらよいか分からず
+    同じ設定で何度も押してしまう。緩和モードと原因診断はこのタブ内に
+    すでにあるため、そこへ誘導する。
+    """
+    from shiftai.domain import SolveStatus
+
+    if result.status not in (SolveStatus.INFEASIBLE, SolveStatus.ERROR):
+        return
+    with st.expander("🛠 解が見つかりません。対処方法", expanded=True):
+        st.markdown("制約が互いに矛盾しています。次の順に試してください。")
+        st.markdown(
+            "1. 下の **「緩め方（緩和モード）」** から、基準を少しずつ緩めた設定で再実行する"
+        )
+        st.markdown("2. **「どの段階で解けるかを調べる」** を押して、衝突している制約を特定する")
+        st.markdown(
+            "3. 職員数・週契約時間・園児数を調整する"
+            "（サイドバーの「詳細設定（上級者向け）」を開く）"
+        )
+
+
 def render(*, auto_requirements: bool = False) -> None:
     """タブ3 の本体。
 
@@ -571,9 +596,7 @@ def render(*, auto_requirements: bool = False) -> None:
             with st.status("最適化を実行中…", expanded=True) as status:
                 result = run_solve(force=True)
                 if result is not None:
-                    st.write(
-                        f"ステータス: **{getattr(result.status, 'value', result.status)}**"
-                    )
+                    st.write(f"ステータス: **{getattr(result.status, 'value', result.status)}**")
                 status.update(label="最適化が完了しました", state="complete")
             st.success("シフトを作成しました。")
         except Exception as exc:  # noqa: BLE001 - 最適化の失敗で画面を落とさない
@@ -586,6 +609,7 @@ def render(*, auto_requirements: bool = False) -> None:
 
     st.divider()
     components.status_banner(result)
+    _render_infeasible_hint(result)
     _render_kpis(result)
     _render_messages(result)
 
@@ -613,10 +637,12 @@ def render(*, auto_requirements: bool = False) -> None:
     _render_staffing_curve(result)
 
     with st.expander("🧾 最適化の詳細（変数・制約・目的関数）", expanded=False):
-        rows = [{"項目": k, "値": v} for k, v in sorted((result.stats or {}).items())]
-        if result.objective_value is not None:
-            rows.append({"項目": "目的関数", "値": round(float(result.objective_value), 3)})
-        st.dataframe(rows, hide_index=True, width="stretch", key="solve_stats")
+        st.dataframe(
+            components.solve_stats_frame(result),
+            hide_index=True,
+            width="stretch",
+            key="solve_stats",
+        )
         st.caption(
             f"割当セル数: {len(result.assignments):,} ／ "
             f"シフト日数: {len(result.shift_days)} ／ "

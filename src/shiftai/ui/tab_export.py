@@ -59,9 +59,7 @@ def _frames(result: SolveResult, slots: Any, staff: list[Any]) -> dict[str, Any]
     settings = state.current_settings()
     return {
         "shift": exporter.shift_to_dataframe(result, slots, staff),
-        "requirements": (
-            exporter.requirements_dataframe(table) if table is not None else None
-        ),
+        "requirements": (exporter.requirements_dataframe(table) if table is not None else None),
         "payroll": exporter.payroll_dataframe(result, slots, staff, settings),
         "matrix": exporter.shift_matrices(result, slots, staff),
     }
@@ -72,7 +70,9 @@ def _render_preview(frames: dict[str, Any]) -> None:
     st.markdown("#### 👁 出力内容のプレビュー")
     for key, label in PREVIEW_TABLES:
         frame = frames.get(key)
-        with st.expander(f"{label}（{0 if frame is None else len(frame)} 行）", expanded=key == "shift"):
+        with st.expander(
+            f"{label}（{0 if frame is None else len(frame)} 行）", expanded=key == "shift"
+        ):
             if frame is None or frame.empty:
                 st.info("この出力は生成できません。")
                 continue
@@ -182,7 +182,11 @@ def _zip_bytes() -> bytes:
     slots = state.current_slots()
     staff = state.get(state.KEY_STAFF) or []
     return exporter.export_bundle_zip(
-        result, table, slots, staff, state.current_settings(),
+        result,
+        table,
+        slots,
+        staff,
+        state.current_settings(),
         gap_report=state.get(state.KEY_GAP_REPORT),
         violations=state.get(state.KEY_VIOLATIONS) or [],
     )
@@ -260,9 +264,7 @@ def _render_checklist() -> None:
             getattr(result.status, "value", str(result.status)),
         )
     )
-    items.append(
-        ("要調整項目を確認済み", not violations, f"{len(violations)} 件")
-    )
+    items.append(("要調整項目を確認済み", not violations, f"{len(violations)} 件"))
     for label, ok, detail in items:
         st.markdown(f"- {'✅' if ok else '⚠️'} {label}（現在: {detail}）")
     st.caption(

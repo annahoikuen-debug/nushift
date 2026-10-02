@@ -62,7 +62,7 @@
 ### 3.2 集約级别
 
 等間隔に **1 週間の窓**（`domain.weekly_periods`）で区切り、**週ごとに**均等度を取る。
-全期間を一括で均すと「前半だけ偏る」隐蔽泄漏が隠れるため。
+全期間を一括で均すと「前半だけ偏る」情報が隠れるため。
 
 ### 3.3 目的関数への組み込み
 
@@ -84,13 +84,18 @@ objective += fairness_penalty_k × Σ_w (max_k^w − min_k^w)
 とする。これにより **「最大と最小の差（レンジ）」を最小化**する。
 单纯的「総和を均す」榜一ではないのは、職員数が減るとレンジが縮む性質があるため。
 
-重みは `ObjectiveWeights` に次を追加する（全て既定 0.0 = **無効**）。
+重みは `ObjectiveWeights` に次の 3 項目を追加する。
 
 ```python
-fairness_early_penalty: float = 0.0
-fairness_late_penalty: float = 0.0
-fairness_saturday_penalty: float = 0.0
+fairness_early_penalty: float = 4.0
+fairness_late_penalty: float = 4.0
+fairness_saturday_penalty: float = 4.0
 ```
+
+> **当初計画は「既定 0.0 = 無効」だったが、実装時に 4.0（有効）に変更した。**
+> 0.0 だと公平性グループが目的関数に何も寄与せず、排出が偏った解が
+> 「最適」として返っていたため。現在の既定は §8 のとおり **4.0 で有効**。
+> 無効化するには `drop_groups={"fairness"}` を使う。
 
 ### 3.4 制約選択の理由
 
@@ -112,7 +117,7 @@ fairness_saturday_penalty: float = 0.0
 * `fairness.counts(result, staff, slots, standard, patterns)` → 職員×区分の回数表。
 * `fairness.report_frame(...)` → 職員ごとの「早番/遅番/土曜」とレンジの DataFrame。
 * `fairness.spread_stats(...)` → レンジの最大値など要約。
-* `gap_analysis` に `FAIRNESS_IMBALANCE` 違反コードを追加（レンジ > 閾値のとき WARNING）。
+* 公平性の偏りは airness.spread_stats で算出・表示する（違反コードは追加していない。コード種別は労働基準・契約の検証に限定している）。
 * `ui/components.py` に `fairness_frame` / `style_fairness_table` を追加（色分け）。
 * `ui/tab_solve.py` / `ui/tab_shift.py` に表示。
 
@@ -140,11 +145,11 @@ fairness_saturday_penalty: float = 0.0
 ```python
 @dataclass(frozen=True)
 class LiveIssue:
-    level: str          # "error" | "warning"
+    level: str  # "error" | "warning"
     code: str
     message: str
-    staff_id: str       # 該当職員（時間帯全体の指摘なら ""）
-    slot_label: str     # 該当時間帯（職員全体の指摘なら ""）
+    staff_id: str  # 該当職員（時間帯全体の指摘なら ""）
+    slot_label: str  # 該当時間帯（職員全体の指摘なら ""）
 ```
 
 * `live_validation.validate_day(...) -> list[LiveIssue]`
@@ -163,8 +168,8 @@ class LiveIssue:
   * `warning` があれば黄色い `st.warning`
   * セルの警告は下の「編集中のシフト（ライブ検証）」テーブルに**色付きで**表示
 
-既存 `st.data_editor` 自体は `Styler` を渡せないため、**邻近に読み取り専用の色付きビュー**を出す
-（2026 年現在 Streamlit の制約）。編集体验は損なわない。
+既存 `st.data_editor` 自体は `Styler` を渡せないため、**隣接に読み取り専用の色付きビュー**を出す
+（2026 年現在 Streamlit の制約）。編集体験は損なわない。
 
 ### 4.4 既存 `gap_analysis` との重用
 
@@ -205,17 +210,17 @@ def convert(frame: DataFrame, profile_key: str) -> ConvertResult
 ```python
 @dataclass(frozen=True)
 class ConvertResult:
-    frame: DataFrame        # data_loader.CHILDREN_COLUMNS に揃えた DataFrame
-    mapping: dict[str, str] # 正規列名 → 実際に採用した入力列名
-    missing: tuple[str, ...]   # 入力になかった正規列（既定値で埋めた）
-    notes: tuple[str, ...]     # 運用上の注意（例: 「短時間保育の判定は保育標準時間区分のみ」）
+    frame: DataFrame  # data_loader.CHILDREN_COLUMNS に揃えた DataFrame
+    mapping: dict[str, str]  # 正規列名 → 実際に採用した入力列名
+    missing: tuple[str, ...]  # 入力になかった正規列（既定値で埋めた）
+    notes: tuple[str, ...]  # 運用上の注意（例: 「短時間保育の判定は保育標準時間区分のみ」）
 ```
 
 を含む。
 
 ### 5.3 値の正規化
 
-* 日付: `data_loader.parse_date` に委譲（`20260901` / `2026/9/1` / `R8.9.1` に対応取决于）。
+* 日付: `data_loader.parse_date` に委譲（`20260901` / `2026/9/1` / `R8.9.1` に対応）。
   - 和暦表記 `R6.9.1` は西暦変換する（2026 年固定ではなく `+2018`）。
 * 時刻: `data_loader.parse_time` に委譲。
 * 人数/年齢: `_parse_age_class` 相当。
@@ -262,8 +267,8 @@ class ConvertResult:
 
 | リスク | 緩和 |
 | --- | --- |
-| 公平性変数の追加で CBC が遅くなる | 既定重み 0.0（変数を作らない）。`drop_groups={"fairness"}` を必ず用意 |
+| 公平性変数の追加で CBC が遅くなる | 既定重み 4.0（fairness グループは既定で有効）。`drop_groups={"fairness"}` で無効化できる |
 | 均衡制約により「解なし」 | ハード制約にしない。全てソフト |
-| `st.data_editor` に Styler を渡せない | 邻近に読み取り専用の色付きビューを出す |
-| CoDMON の CSV は施設ごとの差異がある | プロファイル追加が容易な構造（`column_map` は候補リスト）にする。未対応は `generic` で.notify 回避 |
-| 既存動作の変化 | 既定値が 0.0（無効）。既存テストの期待値は変更しない |
+| `st.data_editor` に Styler を渡せない | 隣接に読み取り専用の色付きビューを出す |
+| CoDMON の CSV は施設ごとの差異がある | プロファイル追加が容易な構造（`column_map` は候補リスト）にする。未対応は `generic` で通知を回避 |
+| 既存動作の変化 | ペナルティ重みは既定で有効（4.0）。既存テストは公平性条件を満たした解を検証済み |

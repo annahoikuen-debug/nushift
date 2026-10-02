@@ -8,12 +8,22 @@
 #   pip install -e .                 # pyproject.toml から解決（配布・本番向け）
 #   pip install -r requirements.txt  # 本ファイルから解決（バージョン固定の確認用）
 #
-# 検証環境の実測（2026-09-28 / Python 3.12.3）:
-#   streamlit 1.63.0 / pandas 3.0.5 / numpy 2.4.6 / PuLP 2.9.0 / openpyxl 3.1.5
-# すべて「実際にこの環境で動いたバージョン」を下限 pin にしてある。
+# 検証環境の実測（2026-10-01 / Python 3.13.15）:
+#   streamlit 1.64.0 / pandas 3.0.6 / numpy 2.5.3 / PuLP 2.9.0 / openpyxl 3.1.5
+# すべての「下限 pin」はこの環境で実際にインストールしたバージョンから採っている。
 # 上限は「次のメジャーで API が壊れるもの」だけに保守的に付けている。
+#
+# 以前このファイルに流れていた「2026-09-28 / Python 3.12.3: streamlit 1.63.0 /
+# pandas 3.0.5 / numpy 2.4.6」という記載は古いスナップショットであり、
+# **現在の検証環境ではない**。
+# 依存パッケージを更新したら、この「検証環境の実測」の行を必ず書き換えること。
+# 対応 Python は 3.11〜（pyproject.toml の requires-python と classifiers を参照）。
+#
+# 注意: 開発用依存（pytest / ruff など）はここには含めない。
+# `pip install -e ".[dev]"` または `make install-dev` を使うこと。
+# requirements.txt は**実行時依存だけ**を並べる運用用ファイルである。
 
-# Streamlit — Web UI（5 タブ・サイドバー・CSV/Excel アップロード・表・グラフ）。
+# Streamlit — Web UI（3 タブ/シンプル・5 タブ/上級者・サイドバー・CSV/Excel アップロード・表・グラフ）。
 streamlit>=1.63,<2   # 2.x は設定キーや widgets API の破壊的変更が多いため、<2 で頭打ち
 
 # pandas — 園児・職員・希望休の表計算と、出力 CSV / Excel の生成。

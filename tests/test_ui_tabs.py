@@ -30,7 +30,7 @@ from shiftai.domain import (
     SolveStatus,
     StaffPreferences,
 )
-from shiftai.ui import state, tab_export
+from shiftai.ui import state, tab_export, wizard
 
 #: ヘッドレス実行時の「missing ScriptRunContext!」警告でテスト出力を濁さないようにする。
 logging.getLogger("streamlit").setLevel(logging.ERROR)
@@ -106,7 +106,7 @@ def _markdown_text(at: Any) -> str:
 
 
 # --------------------------------------------------------------------------
-# フィクスチャ（conftest のものを再利用し、名前领先地位合いを避ける）
+# フィクスチャ（conftest のものを再利用し、名前先頭地位合いを避ける）
 # --------------------------------------------------------------------------
 
 
@@ -402,9 +402,22 @@ def test_データ投入タブはUndo_Historyボタンを出す(input_app):
         assert f"redo_{kind}" in keys
 
 
-def test_データ投入タブは入力を検証して読み込みを止める(
-    tmp_path, plan_widgets, one_day
-):
+def test_データ投入タブは表の説明をツールチップに隠す(input_app):
+    """説明と列一覧は常時表示のキャプションではなく、開いて初めて見えるチップにすること。
+
+    初期画面の情報量を抑える要件（グレーの説明文を常時表示に出さない）の回帰防止。
+    """
+    assert not input_app.exception, [str(e.value) for e in input_app.exception]
+    tips = [m.value for m in input_app.markdown if "shiftai-tip-body" in m.value]
+    tips = [t for t in tips if "想定される列" in t]
+    assert len(tips) == 3, "3 表ぶん（園児・職員・希望休）のツールチップがあること"
+    assert any("1 プラン 1 行" in t for t in tips)
+    # 常時表示側（キャプション）には説明を残さない。
+    always_visible = [c.value for c in input_app.caption]
+    assert not any("想定される列" in c or "1 プラン 1 行" in c for c in always_visible)
+
+
+def test_データ投入タブは入力を検証して読み込みを止める(tmp_path, plan_widgets, one_day):
     """降園時刻が登園時刻より前の入力はエラーとして指摘し、読み込みボタンが無効になること。"""
     import pandas as pd
 
@@ -437,9 +450,13 @@ def test_データ投入タブは入力を検証して読み込みを止める(
     assert not at.exception, [str(e.value) for e in at.exception]
     errors = " ".join(e.value for e in at.error)
     assert "入力チェック" in errors
-    assert "降園時刻" in " ".join(
-        str(v) for df in at.dataframe for v in (df.value if hasattr(df, "value") else "")
-    ) or "降園時刻" in errors
+    assert (
+        "降園時刻"
+        in " ".join(
+            str(v) for df in at.dataframe for v in (df.value if hasattr(df, "value") else "")
+        )
+        or "降園時刻" in errors
+    )
     apply_button = next(b for b in at.button if b.key == "apply_load")
     assert apply_button.disabled is True
     report = at.session_state[state.KEY_VALIDATION]
@@ -447,8 +464,9 @@ def test_データ投入タブは入力を検証して読み込みを止める(
     assert report.has_errors is True
 
 
-def test_正常な入力なら読み込みボタンが押せる(tmp_path, plan_widgets, small_children,
-                                             small_staff, small_preferences, one_day):
+def test_正常な入力なら読み込みボタンが押せる(
+    tmp_path, plan_widgets, small_children, small_staff, small_preferences, one_day
+):
     """指摘が無ければ読み込みボタンは有効であること。"""
     from shiftai.sample_data import sample_dataframes
 
@@ -516,10 +534,7 @@ def test_必要人員タブはKPIとヒートマップを描画する(requiremen
     assert "時間帯 × 年齢クラスの必要人員" in body
     assert "必要人員の内訳" in body
     assert len(requirements_app.dataframe) >= 3
-    assert (
-        requirements_app.session_state[state.KEY_REQUIREMENTS].slots
-        == small_requirements.slots
-    )
+    assert requirements_app.session_state[state.KEY_REQUIREMENTS].slots == small_requirements.slots
 
 
 def test_必要人員タブはnotesを展開する(requirements_app, small_requirements):
@@ -542,9 +557,7 @@ def test_必要供給比が1を超えるとエラーを出す(
     thin = [dataclasses.replace(small_staff[0])]
     thin[0] = dataclasses.replace(
         thin[0],
-        contract=dataclasses.replace(
-            thin[0].contract, weekly_hours=1.0, daily_hours=0.5
-        ),
+        contract=dataclasses.replace(thin[0].contract, weekly_hours=1.0, daily_hours=0.5),
     )
     payload = {
         "widgets": plan_widgets,
@@ -683,6 +696,90 @@ def test_シフト作成タブは最適化後の状態をdomainの型で保持�
     assert all(hasattr(v, "severity") for v in violations)
 
 
+# --------------------------------------------------------------------------
+# Arrow 変換の回帰防止（描画は成功しても「表示が壊れている」ことがある）
+#
+# Streamlit の ``convert_pandas_df_to_arrow_table`` は、pyarrow が object 列を
+# 推論できないと**例外を投げずに**警告だけ出し、「automatic fixes」で列を
+# 変換して表示を続ける。テストからは「例外が出ない」ことしか確認できず、
+# テストは全緑のまま画面が壊れる。
+#
+# 実際に起きている例: ``SolveResult.stats`` は型引数なしの dict で、
+# 既定では ``relaxed_constraints`` / ``patterns`` が空リスト。
+# それを「値」列にそのまま並べていたため、毎回 ArrowInvalid になっていた。
+#
+# そこで Streamlit が呼ぶ変換関数を包むフックを置き、**1 回目の変換が落ちたら
+# 記録する**。描画自体は止めない（テストの他のアサーションが読めるように）。
+# --------------------------------------------------------------------------
+
+
+class _ArrowStrictRecorder:
+    """``st.dataframe`` / ``st.data_editor`` に渡る DataFrame の Arrow 化失敗を記録する。
+
+    Streamlit の変換関数を「素通し + 失敗記録」で差し替える。
+    記録は :attr:`failures` に溜まる。
+    """
+
+    #: 記録の保持数（巨大な表を全部保持しない）。
+    LIMIT = 10
+
+    def __init__(self) -> None:
+        self.failures: list[str] = []
+        self.checked = 0
+
+    def __enter__(self) -> _ArrowStrictRecorder:
+        import pyarrow as pa
+        from streamlit import dataframe_util
+
+        self._pa = pa
+        self._original = dataframe_util.convert_pandas_df_to_arrow_bytes
+
+        def wrapper(df, **kwargs):  # noqa: ANN001, ANN202
+            self.checked += 1
+            try:
+                self._pa.Table.from_pandas(df)
+            except Exception as exc:
+                if len(self.failures) < self.LIMIT:
+                    cols = ", ".join(f"{c}:{df[c].dtype}" for c in list(df.columns))
+                    self.failures.append(f"{type(exc).__name__}: {exc} | columns=[{cols}]")
+            return self._original(df, **kwargs)
+
+        dataframe_util.convert_pandas_df_to_arrow_bytes = wrapper
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        from streamlit import dataframe_util
+
+        dataframe_util.convert_pandas_df_to_arrow_bytes = self._original
+
+
+def test_シフト作成タブは表示する表をすべてArrow化できる(tmp_path, solved_payload):
+    """タブ3 が描画する表は、そのまま Streamlit へ渡せること。
+
+    「描画で例外が出ない」だけでは不十分（Streamlit は変換失敗を握り潰す）。
+    """
+    with _ArrowStrictRecorder() as recorder:
+        at = _run_tabs(tmp_path, ("tab_solve",), payload=solved_payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert recorder.checked, "表が1件も描画されていない（検証できていない）"
+    assert not recorder.failures, (
+        "Streamlit が黙って表示を直した（automatic fixes）表がある:\n  "
+        + "\n  ".join(recorder.failures)
+    )
+
+
+def test_シフト表タブは表示する表をすべてArrow化できる(tmp_path, solved_payload):
+    """タブ4（シフト表・微調整）も同様。"""
+    with _ArrowStrictRecorder() as recorder:
+        at = _run_tabs(tmp_path, ("tab_shift",), payload=solved_payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert recorder.checked, "表が1件も描画されていない（検証できていない）"
+    assert not recorder.failures, (
+        "Streamlit が黙って表示を直した（automatic fixes）表がある:\n  "
+        + "\n  ".join(recorder.failures)
+    )
+
+
 def test_確定済みセルがあると_tab3で通知する(tmp_path, solved_payload, small_staff, one_day):
     """手動確定したセルは再最適化でも動かない旨をタブ3 が伝えること。"""
     payload = {key: dict(value) for key, value in solved_payload.items()}
@@ -803,7 +900,7 @@ def test_safe_nameは日本語の園名を残す():
 
 def test_safe_nameはパス区切りと制御文字を落とす():
     """パス区切り・引用符・制御文字はファイル名に残さないこと。"""
-    assert tab_export._safe_name("a\\b:c*d?e\"f<g>h|i") == "a_b_c_d_e_f_g_h_i"
+    assert tab_export._safe_name('a\\b:c*d?e"f<g>h|i') == "a_b_c_d_e_f_g_h_i"
     assert tab_export._safe_name("a\x00b\x1fc") == "a_b_c"
 
 
@@ -872,9 +969,9 @@ def test_最適化後にタブ2を開いてもクラッシュしない(tmp_path,
     at = _run_tabs(tmp_path, ("tab_requirements",), payload=solved_payload)
     errors = [str(e.value) for e in at.exception]
     assert not errors, errors
-    assert "Unknown format code" not in "".join(
+    assert "Unknown format code" not in "".join(e.value for e in at.error), [
         e.value for e in at.error
-    ), [e.value for e in at.error]
+    ]
 
 
 # --------------------------------------------------------------------------
@@ -887,6 +984,8 @@ def test_サンプル投入からシフト作成まで一連が通る():
     """タブ1 のサンプル読込 → 読み込み → タブ2 再計算 → タブ3 最適化を実際にクリックして通すこと。
 
     UI 内で MILP が 1 回走るため ``slow`` 扱い（``-m "not slow"`` では除外される）。
+    初期画面の「入力方法」を「まとめて入力」（従来の 3 表画面）に選んでから通す。
+    ウィザード側の読み込みは ``test_ui_wizard`` が（高速に）検証する。
     """
     at = app_test.AppTest.from_file(str(APP_FILE), default_timeout=180)
     at.run()
@@ -894,6 +993,10 @@ def test_サンプル投入からシフト作成まで一連が通る():
 
     # 1 日分に絞って計算量を抑える（プランの連続性は ``range_days`` ウィジェットが保証している）
     at.number_input(key="range_days").set_value(1).run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+
+    at.radio(key=wizard.KEY_MODE).set_value(wizard.MODE_BULK).run()
+    at.button(key="wizard_start").click().run()
     assert not at.exception, [str(e.value) for e in at.exception]
 
     for key in ("sample_children", "sample_staff", "sample_preferences"):

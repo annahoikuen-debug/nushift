@@ -35,24 +35,106 @@ from shiftai.domain import (
 )
 
 SURNAMES: tuple[str, ...] = (
-    "佐藤", "鈴木", "高橋", "田中", "伊藤", "渡辺", "山本", "中村", "小林", "加藤",
-    "吉田", "山田", "松本", "井上", "木村", "林", "斎藤", "清水", "山崎", "森",
+    "佐藤",
+    "鈴木",
+    "高橋",
+    "田中",
+    "伊藤",
+    "渡辺",
+    "山本",
+    "中村",
+    "小林",
+    "加藤",
+    "吉田",
+    "山田",
+    "松本",
+    "井上",
+    "木村",
+    "林",
+    "斎藤",
+    "清水",
+    "山崎",
+    "森",
 )
 
 GIVEN_NAMES: tuple[str, ...] = (
-    "さくら", "あおい", "ひなた", "そら", "ゆず", "れん", "みなと", "あかね", "すず", "めい",
-    "はな", "のあ", "いつき", "しょう", "りお", "ゆう", "あい", "はるか", "ゆい", "きお",
-    "まこ", "りか", "しお", "あき", "なな", "はなこ", "ゆな", "いずき", "りゅう", "そう",
-    "まひろ", "かける", "とあ", "はると", "みお", "しおり", "たまき", "ゆうき", "のり", "のあな",
+    "さくら",
+    "あおい",
+    "ひなた",
+    "そら",
+    "ゆず",
+    "れん",
+    "みなと",
+    "あかね",
+    "すず",
+    "めい",
+    "はな",
+    "のあ",
+    "いつき",
+    "しょう",
+    "りお",
+    "ゆう",
+    "あい",
+    "はるか",
+    "ゆい",
+    "きお",
+    "まこ",
+    "りか",
+    "しお",
+    "あき",
+    "なな",
+    "はなこ",
+    "ゆな",
+    "いずき",
+    "りゅう",
+    "そう",
+    "まひろ",
+    "かける",
+    "とあ",
+    "はると",
+    "みお",
+    "しおり",
+    "たまき",
+    "ゆうき",
+    "のり",
+    "のあな",
 )
 
 STAFF_NAMES: tuple[str, ...] = (
-    "山田花子", "佐藤健太郎", "鈴木由美", "高橋美咲", "伊藤大輔", "渡辺直子",
-    "山本雅子", "中村拓也", "小林麻衣", "加藤裕太", "吉田千尋", "山田涼太",
-    "松本陽菜", "井上智也", "木村明日香", "林大樹",
-    "藤田美月", "岡田翔太", "三浦七海", "浜田大輝", "西村あかり", "河野健太",
-    "清水颯太", "斎藤結衣", "森本大輝", "池田彩乃", "橋本拓真", "石川陽菜",
-    "山下美咲", "中村健太", "小林結衣", "加藤優子", "吉田蓮", "山本颯",
+    "山田花子",
+    "佐藤健太郎",
+    "鈴木由美",
+    "高橋美咲",
+    "伊藤大輔",
+    "渡辺直子",
+    "山本雅子",
+    "中村拓也",
+    "小林麻衣",
+    "加藤裕太",
+    "吉田千尋",
+    "山田涼太",
+    "松本陽菜",
+    "井上智也",
+    "木村明日香",
+    "林大樹",
+    "藤田美月",
+    "岡田翔太",
+    "三浦七海",
+    "浜田大輝",
+    "西村あかり",
+    "河野健太",
+    "清水颯太",
+    "斎藤結衣",
+    "森本大輝",
+    "池田彩乃",
+    "橋本拓真",
+    "石川陽菜",
+    "山下美咲",
+    "中村健太",
+    "小林結衣",
+    "加藤優子",
+    "吉田蓮",
+    "山本颯",
 )
 
 AGE_PLAN: tuple[tuple[AgeClass, int], ...] = (
@@ -180,8 +262,12 @@ def make_children(
     assert len(roster) == TOTAL_CHILDREN, len(roster)
 
     short_ids = {r["child_id"] for r in rng.sample(roster, 5)}
-    late_ids = {r["child_id"] for r in rng.sample([r for r in roster if r["child_id"] not in short_ids], 8)}
-    early_ids = {r["child_id"] for r in rng.sample([r for r in roster if r["child_id"] not in late_ids], 5)}
+    late_ids = {
+        r["child_id"] for r in rng.sample([r for r in roster if r["child_id"] not in short_ids], 8)
+    }
+    early_ids = {
+        r["child_id"] for r in rng.sample([r for r in roster if r["child_id"] not in late_ids], 5)
+    }
     for row in roster:
         row["short"] = row["child_id"] in short_ids
         row["late"] = row["child_id"] in late_ids
@@ -192,15 +278,13 @@ def make_children(
         weekday = day.weekday()
         if weekday == 6:
             continue
-        attending = [
-            row
-            for row in roster
-            if weekday < 5 or row["short"] or row["late"]
-        ]
+        attending = [row for row in roster if weekday < 5 or row["short"] or row["late"]]
         if weekday == 5:
             attending = [row for row in attending if row["short"] or row["late"]]
         absent_count = 0 if weekday == 5 else rng.randint(1, 2)
-        absent_ids = {r["child_id"] for r in rng.sample(attending, absent_count)} if attending else set()
+        absent_ids = (
+            {r["child_id"] for r in rng.sample(attending, absent_count)} if attending else set()
+        )
 
         for row in attending:
             child_id = row["child_id"]
@@ -352,7 +436,9 @@ def make_staff(*, seed: int = 42) -> list[StaffMember]:
         return frozenset(dict.fromkeys(chosen))
 
     fixed_skills: dict[str, frozenset[str]] = {
-        "正職員 幼稚園教諭": frozenset({"幼児2歳児クラスの保育経験あり", "ピアノ指導可", "食育指導可"}),
+        "正職員 幼稚園教諭": frozenset(
+            {"幼児2歳児クラスの保育経験あり", "ピアノ指導可", "食育指導可"}
+        ),
         "正職員 看護師": frozenset({"看護師免許", "応急処置資格", "アレルギー対応可"}),
         "パート 調理員": frozenset({"食育指導可", "アレルギー対応可"}),
         "正職員 園長": frozenset({"管理職", "幼児教育学修士"}),
@@ -448,7 +534,9 @@ def make_preferences(
         entry = StaffPreferences(notes=member.memo)
         for day in off_days.get(member.staff_id, []):
             entry.unavailable.append(
-                Unavailability(day=day, start=time(0, 0), end=time(23, 59), reason=rng.choice(reasons))
+                Unavailability(
+                    day=day, start=time(0, 0), end=time(23, 59), reason=rng.choice(reasons)
+                )
             )
         workdays = [d for d in day_list if d.weekday() < 5]
         if workdays:
@@ -465,15 +553,22 @@ def make_preferences(
     return prefs
 
 
-def _default_days() -> list[date]:
-    return list(daterange(DEFAULT_RANGE_START, DEFAULT_RANGE_START + timedelta(days=DEFAULT_RANGE_DAYS - 1)))
+def default_days() -> list[date]:
+    """サンプルの既定の対象期間（:data:`DEFAULT_RANGE_DAYS` 日）を返す。"""
+    return list(
+        daterange(DEFAULT_RANGE_START, DEFAULT_RANGE_START + timedelta(days=DEFAULT_RANGE_DAYS - 1))
+    )
+
+
+#: 旧 private 名の別名（内部実装との互換）。
+_default_days = default_days
 
 
 def make_dataset(
     days: Sequence[date] | None = None, *, seed: int = 42
 ) -> tuple[list[ChildPlan], list[StaffMember], dict[str, StaffPreferences]]:
     """園児 / 職員 / 希望休の 3 つセットを返す。"""
-    day_list = list(days) if days is not None else _default_days()
+    day_list = list(days) if days is not None else default_days()
     children = make_children(day_list, seed=seed)
     staff = make_staff(seed=seed)
     prefs = make_preferences(staff, day_list, seed=seed)
@@ -541,7 +636,9 @@ def sample_dataframes(
             pref_records.append(
                 {
                     "職員ID": staff_id,
-                    "種別": "出勤不可" if item.start == time(0, 0) and item.end == time(23, 59) else "希望休",
+                    "種別": "出勤不可"
+                    if item.start == time(0, 0) and item.end == time(23, 59)
+                    else "希望休",
                     "日付": item.day.isoformat(),
                     "開始": "" if item.start == time(0, 0) else item.start.strftime("%H:%M"),
                     "終了": "" if item.end == time(23, 59) else item.end.strftime("%H:%M"),
@@ -550,11 +647,25 @@ def sample_dataframes(
             )
         for day in sorted(entry.preferred_off_days):
             pref_records.append(
-                {"職員ID": staff_id, "種別": "休み希望", "日付": day.isoformat(), "開始": "", "終了": "", "理由": ""}
+                {
+                    "職員ID": staff_id,
+                    "種別": "休み希望",
+                    "日付": day.isoformat(),
+                    "開始": "",
+                    "終了": "",
+                    "理由": "",
+                }
             )
         for day in sorted(entry.preferred_days):
             pref_records.append(
-                {"職員ID": staff_id, "種別": "出勤希望", "日付": day.isoformat(), "開始": "", "終了": "", "理由": ""}
+                {
+                    "職員ID": staff_id,
+                    "種別": "出勤希望",
+                    "日付": day.isoformat(),
+                    "開始": "",
+                    "終了": "",
+                    "理由": "",
+                }
             )
 
     frames = {

@@ -114,9 +114,7 @@ def test_UIに内部目安である旨が表示される() -> None:
     import pathlib
 
     src = pathlib.Path(__file__).resolve().parents[1] / "src" / "shiftai" / "ui"
-    body = "\n".join(
-        path.read_text(encoding="utf-8") for path in sorted(src.rglob("*.py"))
-    )
+    body = "\n".join(path.read_text(encoding="utf-8") for path in sorted(src.rglob("*.py")))
     assert "内部目安" in body or "内部の目安" in body, (
         "「内部の目安」であることが UI に示されていること"
     )
