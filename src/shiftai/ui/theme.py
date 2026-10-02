@@ -146,6 +146,112 @@ html, body, [class*="css"] {{
   font-size: 0.8rem;
   padding: 0.22rem 0.4rem;
 }}
+/* --- 日別ガントチャート --- */
+.shiftai-gantt {{
+  --gantt-name-col: 9.5rem;
+  --gantt-hours-col: 3.4rem;
+  --gantt-min-track: 26rem;
+  border: 1px solid rgba(49, 51, 63, 0.12);
+  border-radius: 0.5rem;
+  background: #ffffff;
+  padding: 0.5rem 0.7rem 0.55rem 0.7rem;
+}}
+.shiftai-gantt-scroll {{
+  max-height: 32rem;
+  overflow: auto;
+}}
+.shiftai-gantt-head, .shiftai-gantt-row {{
+  display: grid;
+  grid-template-columns: var(--gantt-name-col)
+                        minmax(var(--gantt-min-track), 1fr)
+                        var(--gantt-hours-col);
+  align-items: center;
+  column-gap: 0.45rem;
+}}
+.shiftai-gantt-head {{
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #ffffff;
+  padding-bottom: 0.22rem;
+  border-bottom: 1px solid rgba(49, 51, 63, 0.14);
+  font-size: 0.7rem;
+  color: rgba(49, 51, 63, 0.6);
+}}
+.shiftai-gantt-row {{ padding: 0.16rem 0; }}
+.shiftai-gantt-row + .shiftai-gantt-row {{
+  border-top: 1px dashed rgba(49, 51, 63, 0.08);
+}}
+.shiftai-gantt-name {{
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}}
+.shiftai-gantt-id {{
+  font-size: 0.7rem;
+  color: rgba(49, 51, 63, 0.5);
+  margin-right: 0.3rem;
+}}
+.shiftai-gantt-axis {{ position: relative; height: 0.95rem; }}
+.shiftai-gantt-tick {{
+  position: absolute;
+  top: 0;
+  font-size: 0.66rem;
+  color: rgba(49, 51, 63, 0.6);
+  white-space: nowrap;
+}}
+.shiftai-gantt-track {{
+  position: relative;
+  height: 1.1rem;
+  border-radius: 0.25rem;
+  background-color: rgba(49, 51, 63, 0.04);
+}}
+.shiftai-gantt-bar {{
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 0.9rem;
+  padding: 0 0.15rem;
+  border-radius: 0.2rem;
+  font-size: 0.65rem;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+}}
+.shiftai-gantt-bar--work {{
+  background-color: var(--shiftai-work);
+  color: #ffffff;
+}}
+.shiftai-gantt-bar--break {{
+  background-color: #ffffff;
+  background-image: repeating-linear-gradient(
+    45deg, var(--shiftai-break) 0 3px, #ffffff 3px 6px
+  );
+  border: 1px solid var(--shiftai-break);
+  color: #7a5200;
+}}
+.shiftai-gantt-bar--locked {{
+  box-shadow: inset 0 0 0 2px #6a1b9a;
+}}
+.shiftai-gantt-empty {{
+  position: absolute;
+  left: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.68rem;
+  color: rgba(49, 51, 63, 0.35);
+}}
+.shiftai-gantt-hours {{
+  text-align: right;
+  font-size: 0.74rem;
+  color: rgba(49, 51, 63, 0.72);
+  font-variant-numeric: tabular-nums;
+}}
 .shiftai-kbd {{
   border: 1px solid rgba(49, 51, 63, 0.2);
   border-radius: 0.25rem;

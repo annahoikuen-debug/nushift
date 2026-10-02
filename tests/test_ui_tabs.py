@@ -808,6 +808,17 @@ def test_シフト表タブはグリッドと微調整を描く(shift_app):
     assert {e.label for e in shift_app.expander} >= {"🔒 手動で確定したセル（0 件）"}
 
 
+def test_シフト表タブはガント表示に切り替えられる(tmp_path, solved_payload):
+    """表示形式を「ガントチャート」にすると横棒の HTML が出ること。"""
+    at = _run_tabs(tmp_path, ("tab_shift",), payload=solved_payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    at = at.radio(key="shift_grid_view").set_value("ガントチャート").run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    html = "".join(m.value for m in at.markdown)
+    assert "shiftai-gantt-track" in html
+    assert "shiftai-gantt-bar" in html
+
+
 def test_シフト表タブは固定セル一覧を出す(tmp_path, solved_payload, small_staff, one_day):
     """確定セルがあると一覧が出て「すべて解除」ボタンが出ること。"""
     payload = {key: dict(value) for key, value in solved_payload.items()}

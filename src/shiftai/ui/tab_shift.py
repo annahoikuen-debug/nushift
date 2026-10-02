@@ -10,7 +10,7 @@ import streamlit as st
 
 from shiftai import gap_analysis, live_validation
 from shiftai.domain import CellState, SolveResult
-from shiftai.ui import components, state, theme
+from shiftai.ui import components, gantt, state, theme
 
 LOCK = components.LOCK
 
@@ -35,18 +35,29 @@ def _render_grid(result: SolveResult, day: date, slots: Any, staff: list[Any]) -
     shift_day = result.day(day)
     st.markdown(f"#### 🗓 {theme.format_day(day)} のシフト")
     components.cell_legend()
+    view = st.radio(
+        "表示形式",
+        options=["マトリクス", "ガントチャート"],
+        horizontal=True,
+        key="shift_grid_view",
+        help="「ガントチャート」は職員ごとに勤務・休憩の横棒を時間軸上に並べます。"
+        "時間帯ごとの有無を1セルずつ追うときは「マトリクス」が向いています。",
+    )
     left, right = st.columns([3, 1])
     with left:
-        frame = components.shift_grid_frame(shift_day, slots, staff, day=day, fixed=fixed)
-        if frame.empty:
-            st.info("この日のシフトがありません。")
+        if view == "ガントチャート":
+            gantt.render(shift_day, slots, staff, day=day, fixed=fixed)
         else:
-            st.dataframe(
-                components.style_shift_grid(frame),
-                width="stretch",
-                height=520,
-                key=f"shift_grid_{day.isoformat()}",
-            )
+            frame = components.shift_grid_frame(shift_day, slots, staff, day=day, fixed=fixed)
+            if frame.empty:
+                st.info("この日のシフトがありません。")
+            else:
+                st.dataframe(
+                    components.style_shift_grid(frame),
+                    width="stretch",
+                    height=520,
+                    key=f"shift_grid_{day.isoformat()}",
+                )
     with right:
         summary = components.staff_day_summary_frame(shift_day, slots, staff)
         st.markdown("##### 職員別サマリ")
