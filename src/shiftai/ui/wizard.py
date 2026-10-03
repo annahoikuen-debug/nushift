@@ -26,7 +26,11 @@ import pandas as pd
 import streamlit as st
 
 from shiftai import sample_data
-from shiftai.config import DEFAULT_RANGE_DAYS, DEFAULT_RANGE_START
+from shiftai.config import (
+    APP_TIME_INPUT_STEP_SECONDS,
+    DEFAULT_RANGE_DAYS,
+    DEFAULT_RANGE_START,
+)
 from shiftai.domain import FacilitySettings
 from shiftai.ui import state, tab_data, theme
 
@@ -175,10 +179,18 @@ def render_conditions(*, expanded: bool = False) -> None:
         )
         left, right = st.columns(2)
         with left:
-            day_open = st.time_input("開所時刻", value=settings.day_open, step=900, key="day_open")
+            day_open = st.time_input(
+                "開所時刻",
+                value=settings.day_open,
+                step=APP_TIME_INPUT_STEP_SECONDS,
+                key="day_open",
+            )
         with right:
             day_close = st.time_input(
-                "閉所時刻", value=settings.day_close, step=900, key="day_close"
+                "閉所時刻",
+                value=settings.day_close,
+                step=APP_TIME_INPUT_STEP_SECONDS,
+                key="day_close",
             )
         third, fourth = st.columns(2)
         with third:
@@ -391,7 +403,7 @@ def _render_nav() -> None:
 def render(seed: int = 42) -> None:
     """ウィザード画面（タブ1 の本体）。"""
     theme.step_indicator(0)
-    st.markdown("### 1. データ投入")
+    theme.heading(0)
     step = current_step()
     render_conditions(expanded=step == 0)
     st.divider()

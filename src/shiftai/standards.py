@@ -40,6 +40,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import replace
 from datetime import date, time
 
+from shiftai import config
 from shiftai.domain import (
     HEADCOUNT_FACILITY_FORMULA,
     QUALIFIED_RATIO,
@@ -301,7 +302,7 @@ def build_requirements(
     *,
     day_open: time,
     day_close: time,
-    granularity_min: int = 30,
+    granularity_min: int = config.DEFAULT_GRANULARITY_MIN,
     closed_days: Iterable[date] = (),
     holiday_dates: Iterable[date] = (),
     enforce_min_two: bool = True,

@@ -218,6 +218,28 @@ def test_保育事業者型は四分の三が基準になる() -> None:
     assert result.required == "4分の3以上"
 
 
+def test_保育事業者型でも定員20人未満は半数() -> None:
+    """4分の3以上は「利用定員20名以上」の保育事業者型事業に限られる。
+
+    定員20人未満の施設に 3/4 を課すと、法令上は適合している園を
+    「不適合」と判定してしまう。共同利用枠（is_shared_operator）を
+    立てたうえで定員だけを 20 人未満にして、定員ゲートが機能する
+    ことを固定する。
+    """
+    small_shared = spec(
+        capacity=10,
+        is_shared_operator=True,
+        standard=local_rules.get_standard(SHARED_KEY),
+    )
+    assert small_shared.qualified_ratio_required() == 0.5
+    assert check(audit_facility(small_shared), "qualified_ratio").required == "2分の1以上"
+
+
+def test_定員20人以上の単独認可外は半数のまま() -> None:
+    """定員が 20 人でも、共同利用枠でなければ 3/4 にはならないこと。"""
+    assert spec(capacity=25).qualified_ratio_required() == 0.5
+
+
 def test_看護師は1人にしか数えない() -> None:
     """看護師2名でも保育士換算は1名。"""
     two_nurses = spec(

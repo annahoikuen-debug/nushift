@@ -21,6 +21,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from shiftai import config
 from shiftai.domain import (
     AgeClass,
     ChildPlan,
@@ -915,7 +916,7 @@ def load_staff(df: pd.DataFrame) -> tuple[list[StaffMember], list[LoadIssue]]:
                     "warning", row, "最遅終業", "最遅終業が最早始業以前のため 24:00 扱いにします"
                 )
             )
-            latest = time(23, 59)
+            latest = config.DAY_END
 
         skills = frozenset(
             s.strip() for s in re.split(r"[|、,，/／\n\r]+", view.text("能力タグ")) if s.strip()
@@ -985,9 +986,9 @@ def load_preferences(df: pd.DataFrame) -> tuple[dict[str, StaffPreferences], lis
         reason = view.text("理由")
         if kind in hard_kinds:
             start = parse_time(view.get("開始")) or time(0, 0)
-            end = parse_time(view.get("終了")) or time(23, 59)
+            end = parse_time(view.get("終了")) or config.DAY_END
             if end <= start:
-                end = time(23, 59)
+                end = config.DAY_END
             entry.unavailable.append(
                 Unavailability(day=day, start=start, end=end, reason=reason or kind)
             )

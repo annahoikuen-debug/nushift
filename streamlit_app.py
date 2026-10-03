@@ -117,7 +117,7 @@ def render_tabs() -> None:
         with tabs[0]:
             render_data_tab()
         with tabs[1]:
-            tab_solve.render(auto_requirements=True)
+            tab_solve.render(auto_requirements=True, embed_shift=True)
         with tabs[2]:
             tab_export.render()
         return
@@ -149,6 +149,10 @@ def main() -> None:
         period=not wizard_owns_conditions,
         times=not wizard_owns_conditions,
     )
+    # 状態バーは**サイドバーのあと**に描く。サイドバーが入力変更を
+    # 検知して「再計算が必要」を記録するのはこの時点なので、先に描くと
+    # 1 フレーム遅れて古い状態を表示する。
+    theme.render_status_bar()
     render_tabs()
     theme.render_footer()
 

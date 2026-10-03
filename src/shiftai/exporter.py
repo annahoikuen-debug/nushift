@@ -16,6 +16,7 @@ from typing import Any
 import pandas as pd
 from openpyxl import load_workbook
 
+from shiftai import config
 from shiftai.domain import (
     CellState,
     FacilitySettings,
@@ -62,8 +63,8 @@ PAYROLL_DF_COLUMNS: list[str] = [
 
 EARLY_BOUNDARY = time(7, 30)
 LATE_BOUNDARY = time(18, 0)
-EARLY_WINDOW = (time(7, 15), time(8, 30))
-LATE_WINDOW = (time(17, 15), time(19, 30))
+EARLY_WINDOW = (config.DEFAULT_EARLY_CARE_START, config.DEFAULT_EARLY_CARE_END)
+LATE_WINDOW = (config.DEFAULT_LATE_CARE_START, config.DEFAULT_LATE_CARE_END)
 
 
 BOM = "﻿"
@@ -228,7 +229,9 @@ def payroll_dataframe(
     settings: FacilitySettings | None = None,
 ) -> pd.DataFrame:
     """職員ごとの勤務時間・休憩・早朝 / 延長回数・推定人件費。"""
-    base_rate = settings.labor_cost_per_hour if settings is not None else 1500.0
+    base_rate = (
+        settings.labor_cost_per_hour if settings is not None else config.DEFAULT_LABOR_COST_PER_HOUR
+    )
     records: list[dict[str, Any]] = []
     for member in staff:
         worked_min = 0

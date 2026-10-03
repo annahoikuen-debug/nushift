@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from shiftai import gap_analysis, live_validation
+from shiftai.config import COLOR_SHORTFALL, COLOR_SHORTFALL_INK, COLOR_WORK, COLOR_WORK_INK
 from shiftai.domain import CellState, SolveResult
 from shiftai.ui import components, gantt, state, theme
 
@@ -108,6 +109,9 @@ def _render_editor(result: SolveResult, day: date, slots: Any, staff: list[Any])
     if baseline.empty:
         return
     st.markdown("##### ✏️ 微調整（セルの状態を変更できます）")
+    slot_label = st.session_state.get("_fix_slot_label")
+    if slot_label:
+        st.markdown(f"修正セル: **{slot_label}**")
     st.caption(
         "「勤務」「休憩」「オフ」のいずれかを選びます。"
         "変更はすぐには確定されません。下部の「変更を確定して再最適化する」を押すと "
@@ -150,7 +154,15 @@ def _render_editor(result: SolveResult, day: date, slots: Any, staff: list[Any])
     )
 
     left, right = st.columns(2)
-    has_errors = bool(live_report is not None and live_report.has_errors)
+    # fail-closed: 検証できない（live_report が None）ときも確定させない。
+    # 以前は None を「問題なし」扱いにしていたため、必要人員未計算の状態で
+    # 無検証の確定が通っていた。
+    has_errors = live_report is None or live_report.has_errors
+    if live_report is None:
+        st.warning(
+            "🔎 基準の即時チェックを実行できないため確定できません。"
+            "必要人員を計算してから編集してください。"
+        )
     with left:
         if st.button(
             f"✅ 変更を確定して再最適化する（{len(changes)} セル）",
@@ -187,15 +199,27 @@ def _render_live_check(
     staff: list[Any],
     *,
     key: str,
-) -> None:
+) -> Any:
     """編集途中のグリッドを即時に検証して、セル色の付いた表と指摘一覧を出す。
 
     ``st.data_editor`` は ``Styler`` を渡せないため、ここでは読み取り専用の
     色付きビューを隣に出し、「確定前」に問題が見えるようにする。
+
+    検証できなかったときは ``None`` を返す。``None`` は
+    「問題なし」ではなく「判定できない」なので、呼び出し側は
+    安全側で停止させること。
     """
     table = state.get(state.KEY_REQUIREMENTS)
     if table is None:
-        return
+        # 検証できない.None は「検証の結果が問題なし」と区別して扱う。
+        # 呼び出し側の fail-closed 判定で「検証不能」を検出できるよう、
+        # 理由を返す。
+        st.markdown("##### 🔎 検証つきのビュー（確定前）")
+        st.warning(
+            "基準の即時チェックを実行できないため、確定できません。"
+            "必要人員を計算してから編集してください。"
+        )
+        return None
     grid = components.editable_indexed_frame(frame, slots, staff)
     report = live_validation.validate_day(
         day,
@@ -308,9 +332,9 @@ def _render_coverage_matrix(result: SolveResult) -> None:
                 ""
                 if "/" not in str(v)
                 else (
-                    "background-color: #E5393533; color: #8e0000; font-weight:600;"
+                    f"background-color: {COLOR_SHORTFALL}33; color: {COLOR_SHORTFALL_INK}; font-weight:600;"
                     if int(str(v).split("/")[0]) < int(str(v).split("/")[1])
-                    else "background-color: #2E7D321a; color: #1b5e20;"
+                    else f"background-color: {COLOR_WORK}1a; color: {COLOR_WORK_INK};"
                 )
             )
         )
@@ -318,26 +342,68 @@ def _render_coverage_matrix(result: SolveResult) -> None:
         st.caption("赤＝配置数が必要数に届いていない時間帯（法令・基準の未達）。")
 
 
-def render() -> None:
-    """タブ4 の本体。"""
-    theme.step_indicator(3)
-    st.markdown("### 4. シフト表・微調整")
+def _apply_fix_target() -> None:
+    """違反一覧の「修正」ボタンで指定された対象を反映する。
+
+    違反一覧は読み取り専用なので、どこを直せばよいかは分かるが、
+    実際の編集画面へ誘導する手段がなかった。ここでは日付を切り替え、
+    時間帯ラベルを session に残して案内を出す。
+    """
+    target = state.take_fix_target()
+    if target is None:
+        return
+    iso_day, staff_id, slot_label = target
+    wanted = date.fromisoformat(iso_day)
+    options = components.day_options(state.get(state.KEY_SOLVE_RESULT))
+    if wanted in options:
+        st.session_state["active_day"] = wanted
+        st.session_state["_fix_slot_label"] = slot_label
+        st.info(
+            f"修正対象: {theme.format_day(wanted)} ／ {staff_id} ／ {slot_label}"
+            " のセル。下の「✏️ 微調整」で変更できます。"
+        )
+    else:
+        st.session_state.pop("_fix_slot_label", None)
+        st.warning(
+            "修正対象の日付が現在のシフトに存在しません。期間を確認してください。"
+        )
+    st.session_state[state.KEY_FIX_REQUESTED] = False
+
+
+def render_section(*, in_simple: bool = False) -> None:
+    """シフト表の本体。
+
+    ``in_simple=True`` はシンプルモードの「② シフト作成」の中に
+    埋め込む場合の描画。ステップ表示と大きな見出しは出さず、
+    区切りと小見出しだけを出す。タブ4 の本体と同じ内容を
+    1 か所しか持たせないための入口。
+    """
+    st.divider()
+    if in_simple:
+        st.subheader("🚻 シフト表・微調整")
+    _apply_fix_target()
     result = state.get(state.KEY_SOLVE_RESULT)
     if result is None or not result.shift_days:
-        theme.empty_state("まずタブ3「シフト作成」でシフトを作成してください。")
+        theme.empty_state(
+            f"まず{theme.tab_ref(2)}（シフト作成）でシフトを作成してください。"
+        )
+        theme.stuck_hint(3, "シフトがまだ作成されていません。")
         return
     staff = state.get(state.KEY_STAFF) or []
     if not staff:
         st.warning("職員データが未投入です。")
+        theme.stuck_hint(3, "職員データが 0 名です。")
         return
     slots = state.current_slots()
     if not slots:
         st.error("時間帯を生成できません。サイドバーの開所・閉所時刻を確認してください。")
+        theme.stuck_hint(3, "開所・閉所時刻を確認してください。")
         return
 
     day = _current_day()
     if day is None:
         st.warning("表示できる日がありません。")
+        theme.stuck_hint(3, "表示できる日がありません。")
         return
 
     _render_grid(result, day, slots, staff)
@@ -358,4 +424,18 @@ def render() -> None:
         patterns=state.current_patterns(),
     )
     theme.caveat_box()
-    theme.next_step_hint(3)
+    if in_simple:
+        theme.next_step_hint(2)
+    else:
+        theme.next_step_hint(3)
+
+
+def render() -> None:
+    """タブ4（上級者モード）の本体。
+
+    描画の中身は :func:`render_section` に集約する。ここでは
+    ステップ表示と大きな見出しだけを出す。
+    """
+    theme.step_indicator(3)
+    theme.heading(3)
+    render_section(in_simple=False)

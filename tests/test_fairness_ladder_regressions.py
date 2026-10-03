@@ -46,6 +46,25 @@ def test_確定ボタンは検証エラーがあるとき無効になる() -> No
     assert "live_report.has_errors" in source, "disabled が検証結果に結び付いていない"
 
 
+def test_検証できない場合は確定を止められる() -> None:
+    """``live_report`` が ``None`` のとき ``has_errors`` が偽にならないこと。
+
+    以前は ``live_report is not None and live_report.has_errors`` で
+    短絡評価していたため、検証そのものが skipped された状態（必要人員が
+    未計算）で **無検証のまま確定できる** 状態になっていた。
+    fail-closed へ倒す。
+    """
+    from shiftai.ui import tab_shift
+
+    source = inspect.getsource(tab_shift._render_editor)
+    assert "live_report is None or live_report.has_errors" in source, (
+        "検証不能時に確定を止められない（fail-open になっている）"
+    )
+    assert "live_report is not None" not in source, (
+        "旧式の短絡評価が残っている（検証不能時に確定が通ってしまう）"
+    )
+
+
 def test_生きた検証はレポートを返す() -> None:
     """``_render_live_check`` が ``LiveReport`` を返すこと。"""
     from shiftai.ui import tab_shift

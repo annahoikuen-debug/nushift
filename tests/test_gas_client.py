@@ -89,6 +89,95 @@ def test_from_env_シート既定値(monkeypatch):
     assert cfg.secret == ""
 
 
+def test_from_env_secrets_tomlからも読む(monkeypatch):
+    """``.streamlit/secrets.toml`` の指定に読めること。
+
+    README.md / gas/README.md / docs/05・06 は GAS 連携を
+    ``.streamlit/secrets.toml`` で設定するよう案内しているが、
+    実装が環境変数しか読んでいなかったため、案内どおりに設定しても
+    連携が何も起こらなかった。
+    """
+    values = {
+        ENV_URL: DEAD_URL,
+        ENV_SHEET: "staff",
+        ENV_SECRET: "from-secrets",
+        ENV_TIMEOUT: "25",
+    }
+    monkeypatch.setattr(gas_client, "_streamlit_secret", values.get)
+
+    cfg = GasConfig.from_env()
+    assert cfg is not None
+    assert cfg.base_url == DEAD_URL
+    assert cfg.sheet == "staff"
+    assert cfg.secret == "from-secrets"
+    assert cfg.timeout_sec == 25
+
+
+def test_from_env_環境変数がsecrets_tomlに優先される(monkeypatch):
+    """環境変数が設定されていれば secrets.toml より優先すること。"""
+    monkeypatch.setenv(ENV_URL, DEAD_URL)
+    monkeypatch.setenv(ENV_SHEET, "from-env")
+    monkeypatch.setattr(
+        gas_client,
+        "_streamlit_secret",
+        lambda key: {ENV_SHEET: "from-secrets"}.get(key),
+    )
+    cfg = GasConfig.from_env()
+    assert cfg is not None
+    assert cfg.sheet == "from-env"
+
+
+def test_streamlit_secretは例外を漏らさない():
+    """Streamlit 実行中でなくても ``None`` を返すこと。
+
+    CLI（``shiftai``）やユニットテストからこのモジュールを import する
+    ため、``st.secrets`` に触れても例外が外へ出してはいけない。
+    """
+    assert gas_client._streamlit_secret(ENV_URL) is None
+
+
+def test_secrets_tomlはgasセクション形式を読む(monkeypatch):
+    """gas/README.md 記載の ``[gas]`` セクション形式をそのまま読むこと。
+
+    ドキュメントは ``base_url`` / ``sheet`` / ``secret`` / ``timeout_sec``
+    という名前を挙げているが、環境変数の名前（``SHIFTAI_GAS_URL`` …）とは
+    異なる。どちらを前提にしても片方しか動かない。
+    """
+    import streamlit as st
+
+    section = {
+        "base_url": DEAD_URL,
+        "sheet": "staff",
+        "secret": "s3cret",
+        "timeout_sec": 25,  # TOML では int になる
+    }
+    monkeypatch.setattr(st, "secrets", {"gas": section})
+
+    cfg = GasConfig.from_env()
+    assert cfg is not None
+    assert cfg.base_url == DEAD_URL
+    assert cfg.sheet == "staff"
+    assert cfg.secret == "s3cret"
+    # 数値の timeout_sec を文字列化し、既定値 10 に落ちていないこと。
+    assert cfg.timeout_sec == 25
+
+
+def test_secrets_tomlはトップレベル形式も読む(monkeypatch):
+    """``[gas]`` セクションの無い flats な形式も読むこと。"""
+    import streamlit as st
+
+    monkeypatch.setattr(
+        st,
+        "secrets",
+        {ENV_URL: DEAD_URL, ENV_SHEET: "staff", ENV_SECRET: "s3cret"},
+    )
+    cfg = GasConfig.from_env()
+    assert cfg is not None
+    assert cfg.base_url == DEAD_URL
+    assert cfg.sheet == "staff"
+    assert cfg.secret == "s3cret"
+
+
 def test_from_env_タイムアウト不正は既定値(monkeypatch):
     """``SHIFTAI_GAS_TIMEOUT`` が壊れていても既定値へフォールバックすること。"""
     monkeypatch.setenv(ENV_URL, DEAD_URL)

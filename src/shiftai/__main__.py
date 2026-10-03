@@ -35,7 +35,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from shiftai import diagnostics, local_rules, sample_data
+from shiftai import config, diagnostics, local_rules, sample_data
 from shiftai.compliance import (
     FacilitySpec,
     Regulation,
@@ -53,6 +53,7 @@ from shiftai.config import (
     DEFAULT_DAY_CLOSE,
     DEFAULT_DAY_OPEN,
     DEFAULT_GRANULARITY_MIN,
+    DEFAULT_RANGE_DAYS,
 )
 from shiftai.data_loader import parse_time, read_bundle, write_template_csvs
 from shiftai.domain import (
@@ -765,8 +766,13 @@ def build_parser() -> argparse.ArgumentParser:
     sample = sub.add_parser("sample", help="サンプル CSV を出力する")
     sample.add_argument("--out", default="sample", help="出力先ディレクトリ（既定: sample）")
     sample.add_argument("--start", default=None, help="開始日 (YYYY-MM-DD)")
-    sample.add_argument("--days", type=int, default=7, help="日数（既定: 7）")
-    sample.add_argument("--seed", type=int, default=42, help="乱数シード（既定: 42）")
+    sample.add_argument("--days", type=int, default=DEFAULT_RANGE_DAYS, help="日数（既定: 7）")
+    sample.add_argument(
+        "--seed",
+        type=int,
+        default=config.DEFAULT_SAMPLE_SEED,
+        help="乱数シード（既定: 42）",
+    )
     sample.set_defaults(func=cmd_sample)
 
     template = sub.add_parser("template", help="空テンプレート CSV を出力する")
@@ -794,7 +800,12 @@ def build_parser() -> argparse.ArgumentParser:
     solve.add_argument("--closed", action="append", default=[], help="休園日 (YYYY-MM-DD)")
     solve.add_argument("--holiday", action="append", default=[], help="祝日・行事日 (YYYY-MM-DD)")
     solve.add_argument("--no-min-two", action="store_true", help="2名ルールを適用しない")
-    solve.add_argument("--time-limit", type=int, default=60, help="ソルバの上限秒数（既定: 60）")
+    solve.add_argument(
+        "--time-limit",
+        type=int,
+        default=config.DEFAULT_TIME_LIMIT_SEC,
+        help="ソルバの上限秒数（既定: 60）",
+    )
     solve.add_argument("--zip", action="store_true", help="成果物 ZIP も出力する")
     solve.add_argument("--strict", action="store_true", help="要調整があれば終了コード 3")
     solve.add_argument(
@@ -836,7 +847,9 @@ def build_parser() -> argparse.ArgumentParser:
     solve.add_argument(
         "--sample", action="store_true", help="入力の代わりにサンプルデータを使う（動作確認用）"
     )
-    solve.add_argument("--seed", type=int, default=42, help="サンプル生成の乱数シード")
+    solve.add_argument(
+        "--seed", type=int, default=config.DEFAULT_SAMPLE_SEED, help="サンプル生成の乱数シード"
+    )
     solve.set_defaults(func=cmd_solve)
 
     return parser

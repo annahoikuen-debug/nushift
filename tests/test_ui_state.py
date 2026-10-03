@@ -106,7 +106,7 @@ def test_standardの初期値はデフォルトプリセットと一致する():
 
 
 def test_presetsとsolver_namesが実際の定義と一致する():
-    """プリセット一覧・ソルバ名は実体とOffsets ない状態で取得できていること。"""
+    """プリセット一覧・ソルバ名は実体と一致している状態で取得できていること。"""
     assert st.session_state[state.KEY_PRESETS] == local_rules.list_presets()
     assert st.session_state[state.KEY_SOLVER_NAMES] == solver.available_solvers()
 
@@ -611,5 +611,113 @@ def test_current_slotsは正常時に理由が空():
     try:
         assert state.current_slots()
         assert state.current_slots_error() == ""
+    finally:
+        st.session_state.clear()
+
+
+# --------------------------------------------------------------------------
+# 入力指紋（UI/UX 改善 案3）
+# --------------------------------------------------------------------------
+
+
+def _with_settings(**changes: Any) -> None:
+    """既定の園設定から一部だけ差し替えた settings を session に入れる。"""
+    base = FacilitySettings()
+    st.session_state[state.KEY_SETTINGS] = FacilitySettings(
+        facility_name=changes.get("facility_name", base.facility_name),
+        day_open=changes.get("day_open", base.day_open),
+        day_close=changes.get("day_close", base.day_close),
+        granularity_min=changes.get("granularity_min", base.granularity_min),
+        closed_days=changes.get("closed_days", base.closed_days),
+        holiday_dates=changes.get("holiday_dates", base.holiday_dates),
+        labor_cost_per_hour=changes.get("labor_cost_per_hour", base.labor_cost_per_hour),
+    )
+
+
+def test_同じ設定なら同じ指紋になる():
+    """同じ入力からは必ず同じ指紋が返ること。"""
+    st.session_state.clear()
+    state.init_state()
+    try:
+        assert state.compute_fingerprint() == state.compute_fingerprint()
+    finally:
+        st.session_state.clear()
+
+
+def test_計画期間が変わると指紋が変わる():
+    """計画期間を増やすと指紋が変わること。"""
+    st.session_state.clear()
+    state.init_state()
+    try:
+        before = state.compute_fingerprint()
+        st.session_state[state.KEY_DAYS] = [date(2026, 10, 1), date(2026, 10, 2)]
+        after = state.compute_fingerprint()
+        assert before != after
+    finally:
+        st.session_state.clear()
+
+
+def test_計画期間を元に戻すと指紋に戻る():
+    """変更を戻したら指紋も元に戻ること（並びが安定していることの確認）。"""
+    st.session_state.clear()
+    state.init_state()
+    try:
+        before = state.compute_fingerprint()
+        st.session_state[state.KEY_DAYS] = [date(2026, 10, 1)]
+        st.session_state[state.KEY_DAYS] = []
+        assert state.compute_fingerprint() == before
+    finally:
+        st.session_state.clear()
+
+
+def test_開所時刻が変わると指紋が変わる():
+    """開所時刻は時間帯全体をずらすので指紋が変わること。"""
+    st.session_state.clear()
+    state.init_state()
+    try:
+        before = state.compute_fingerprint()
+        _with_settings(day_open=time(8, 15))
+        assert state.compute_fingerprint() != before
+    finally:
+        st.session_state.clear()
+
+
+def test_年間休業日が変わると指紋が変わる():
+    """休業日は必要人員を消すので指紋が変わること。"""
+    st.session_state.clear()
+    state.init_state()
+    try:
+        before = state.compute_fingerprint()
+        _with_settings(closed_days=frozenset({date(2026, 10, 1)}))
+        assert state.compute_fingerprint() != before
+    finally:
+        st.session_state.clear()
+
+
+def test_変更理由と現在指紋が記録される():
+    """``mark_inputs_changed`` が理由を記録し、計算結果を破棄すること。"""
+    st.session_state.clear()
+    state.init_state()
+    try:
+        st.session_state[state.KEY_SOLVE_RESULT] = object()
+        st.session_state[state.KEY_REQUIREMENTS] = object()
+        state.mark_inputs_changed("計画期間を変更しました")
+        assert state.get(state.KEY_STALE_REASON) == "計画期間を変更しました"
+        assert state.get(state.KEY_SOLVE_RESULT) is None
+        assert state.get(state.KEY_REQUIREMENTS) is None
+        assert state.get(state.KEY_INPUT_FINGERPRINT) == state.compute_fingerprint()
+    finally:
+        st.session_state.clear()
+
+
+def test_指紋は画面に出しても邪魔にならない長さで返る():
+    """指紋は画面やログに出しても邪魔にならない長さであること。"""
+    st.session_state.clear()
+    state.init_state()
+    try:
+        value = state.compute_fingerprint()
+        assert isinstance(value, str)
+        assert value
+        assert len(value) == 16
     finally:
         st.session_state.clear()

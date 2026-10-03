@@ -7,6 +7,7 @@ from typing import Any
 import streamlit as st
 
 from shiftai import diagnostics, gap_analysis, solver, standards
+from shiftai.config import COLOR_SHORTFALL, COLOR_SHORTFALL_INK
 from shiftai.domain import SolveResult
 from shiftai.relaxation import (
     RELAX_LEVELS,
@@ -106,8 +107,12 @@ def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveRes
     state.set(state.KEY_VIOLATIONS, violations)
     state.set(state.KEY_PATTERN_SNAP_REPORT, snap_changes or None)
     state.set(state.KEY_RELAXATION, level)
+    state.clear_stale()
+    # いまの入力と結果が揃ったので、次の変更を検知できる基準を記録する。
+    state.mark_inputs_baseline()
     st.session_state.pop("shift_editor", None)
     st.session_state.pop("gap_editor", None)
+    st.session_state.pop("_fix_slot_label", None)
     return result
 
 
@@ -245,7 +250,7 @@ def _render_pattern_panel(result: SolveResult | None) -> None:
     with st.expander("⏰ 勤務パターンへの整列（早番・日勤・遅番）", expanded=False):
         if not patterns:
             st.info(
-                "勤務パターンは無効です。サイドバー「勤務パターン（早番・中班・遅番）」で"
+                "勤務パターンは無効です。サイドバー「勤務パターン（早番・日勤・遅番）」で"
                 "有効にすると、勤務ブロックの開始・終了をその境界へ引き寄せます。"
             )
             return
@@ -463,9 +468,12 @@ def _render_gap_table() -> None:
         height=360,
         key="gap_table",
     )
-    st.caption(
-        "不足（赤）／過剰（青）を色で示しています。行数が多い場合はタブ2 の過不足ヒートマップも参照してください。"
-    )
+    heatmap_hint = ""
+    if not theme.simple_mode():
+        heatmap_hint = (
+            f" 行数が多い場合は{theme.tab_ref(1)}の過不足ヒートマップも参照してください。"
+        )
+    st.caption(f"不足（赤）／過剰（青）を色で示しています。{heatmap_hint}")
     with st.expander("日別サマリー", expanded=False):
         st.dataframe(
             report.daily_dataframe(),
@@ -500,7 +508,7 @@ def _render_staffing_curve(result: SolveResult) -> None:
     with st.expander("数値表（背景色で過不足を表示）", expanded=False):
         styled = frame.set_index("時間帯").style.map(
             lambda v: (
-                "background-color: #E5393533; color: #8e0000; font-weight:600;"
+                f"background-color: {COLOR_SHORTFALL}33; color: {COLOR_SHORTFALL_INK}; font-weight:600;"
                 if str(v) and float(v) < 0
                 else ""
             ),
@@ -555,20 +563,28 @@ def _render_infeasible_hint(result: SolveResult) -> None:
         st.markdown("2. **「どの段階で解けるかを調べる」** を押して、衝突している制約を特定する")
         st.markdown(
             "3. 職員数・週契約時間・園児数を調整する"
-            "（サイドバーの「詳細設定（上級者向け）」を開く）"
+            "（サイドバーの「⚙️ 詳細設定（上級者向け）」を開く）"
         )
 
 
-def render(*, auto_requirements: bool = False) -> None:
+def render(*, auto_requirements: bool = False, embed_shift: bool = False) -> None:
     """タブ3 の本体。
 
     ``auto_requirements=True``（シンプルモード）は、タブ2「必要人員」が
     画面上に無い代わりに、必要人員を自動的に計算してから実行ボタンを出す。
+
+    ``embed_shift=True``（シンプルモード）は、結果表示の末尾に
+    シフト表セクションを続けて描画する。3 タブ構成の「② シフト作成」の中に
+    日別のシフト表と微調整を置き、タブを離れずに確認できるようにする。
     """
     theme.step_indicator(2)
-    st.markdown("### 3. シフト自動作成")
+    theme.heading(2)
     if not state.data_ready():
         theme.empty_state()
+        if state.staff_missing():
+            theme.stuck_hint(2, "職員データが 0 名です。")
+        else:
+            theme.stuck_hint(2, "園児データが 0 名です。")
         return
     table = state.get(state.KEY_REQUIREMENTS)
     if table is None and auto_requirements:
@@ -580,7 +596,19 @@ def render(*, auto_requirements: bool = False) -> None:
             st.error(f"必要人員の計算に失敗しました: {exc}")
             return
     if table is None:
-        st.warning("先にタブ2「必要人員」で「必要人員を再計算」を押してください。")
+        if theme.simple_mode():
+            # シンプルモードには「必要人員」タブが無い。自動計算が
+            # 失敗している場合なので、データ側を見るよう案内する。
+            st.warning(
+                "必要人員がまだ計算されていません。"
+                f"{theme.tab_ref(0)}（データ）を確認してから、もう一度シフトを作成してください。"
+            )
+        else:
+            st.warning(
+                f"先に{theme.tab_ref(1)}（必要人員）で"
+                "「必要人員を再計算」を押してください。"
+            )
+        theme.stuck_hint(2, "必要人員がまだ計算されていません。")
         return
 
     _render_precheck(table)
@@ -602,9 +630,25 @@ def render(*, auto_requirements: bool = False) -> None:
         except Exception as exc:  # noqa: BLE001 - 最適化の失敗で画面を落とさない
             st.error(f"シフトの作成に失敗しました: {exc}")
 
+    render_result_section(embed_shift=embed_shift)
+
+
+def render_result_section(*, embed_shift: bool = False) -> None:
+    """最適化結果の表示（バナー・KPI・過不足・違反・公平性・配置曲線）。
+
+    ``embed_shift=True`` のとき、末尾にシフト表セクション
+    （``tab_shift.render_section``）を続けて描画する。シンプルモードでは
+    「② シフト作成」の中にシフト表が見える。
+
+    ``tab_shift`` はモジュールレベルで import しない。``tab_shift`` 側が
+    このモジュールを関数内ローカル import しているので、逆方向も
+    関数内ローカルにしないと循環する。
+    """
+
     result = state.get(state.KEY_SOLVE_RESULT)
     if result is None:
         st.info("「シフトを自動作成する」を押すと、ここに結果が表示されます。")
+        theme.stuck_hint(2, "シフトがまだ作成されていません。")
         return
 
     st.divider()
@@ -625,6 +669,7 @@ def render(*, auto_requirements: bool = False) -> None:
     st.markdown("#### ⚠️ 違反一覧")
     violations = state.get(state.KEY_VIOLATIONS) or result.violations
     components.render_violations(violations)
+    components.render_violation_actions(violations, key_prefix="solve")
     st.divider()
     components.render_fairness_panel(
         result,
@@ -650,3 +695,7 @@ def render(*, auto_requirements: bool = False) -> None:
         )
     theme.caveat_box()
     theme.next_step_hint(2)
+    if embed_shift:
+        from shiftai.ui import tab_shift
+
+        tab_shift.render_section(in_simple=True)

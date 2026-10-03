@@ -15,6 +15,7 @@ from typing import Any
 
 import pandas as pd
 
+from shiftai import config
 from shiftai.config import DEFAULT_RANGE_DAYS, DEFAULT_RANGE_START
 from shiftai.data_loader import (
     CHILDREN_COLUMNS,
@@ -231,7 +232,7 @@ def _arrive_window(day: date) -> tuple[int, int]:
 def make_children(
     days: Sequence[date],
     *,
-    seed: int = 42,
+    seed: int = config.DEFAULT_SAMPLE_SEED,
     facility: FacilitySettings | None = None,
 ) -> list[ChildPlan]:
     """園児 34 名 × ``days`` の登降園予定を生成する。"""
@@ -406,7 +407,7 @@ def _contract_for(label: str, rng: random.Random) -> Contract:
     raise ValueError(f"未登録の職員区分です: {label!r}")
 
 
-def make_staff(*, seed: int = 42) -> list[StaffMember]:
+def make_staff(*, seed: int = config.DEFAULT_SAMPLE_SEED) -> list[StaffMember]:
     """職員 24 名を ``STAFF_BLUEPRINT`` の内訳どおりに生成する。
 
     園児 34 名・7:15〜19:30 開所 の 1 週間（2026-09-28〜2026-10-04）を
@@ -486,7 +487,7 @@ def _assign_off_days(
     rng.shuffle(order)
     for member in order:
         free = [d for d in day_list if per_day[d] < cap]
-        free.sort(key=lambda d: d.weekday() >= 5)
+        free.sort(key=lambda d: d.weekday() >= config.WEEKEND_START_WEEKDAY)
         want = min(rng.randint(1, 3), len(free), len(day_list))
         for day in free[:want]:
             taken[member.staff_id].append(day)
@@ -511,7 +512,7 @@ def _assign_off_days(
 
 
 def make_preferences(
-    staff: Sequence[StaffMember], days: Sequence[date], *, seed: int = 42
+    staff: Sequence[StaffMember], days: Sequence[date], *, seed: int = config.DEFAULT_SAMPLE_SEED
 ) -> dict[str, StaffPreferences]:
     """職員ごとの希望休（1〜3 日 / 1 日 ≤ 職員数の 25%）と早朝・延長の回避希望を作る。
 
@@ -535,7 +536,7 @@ def make_preferences(
         for day in off_days.get(member.staff_id, []):
             entry.unavailable.append(
                 Unavailability(
-                    day=day, start=time(0, 0), end=time(23, 59), reason=rng.choice(reasons)
+                    day=day, start=time(0, 0), end=config.DAY_END, reason=rng.choice(reasons)
                 )
             )
         workdays = [d for d in day_list if d.weekday() < 5]
@@ -565,7 +566,7 @@ _default_days = default_days
 
 
 def make_dataset(
-    days: Sequence[date] | None = None, *, seed: int = 42
+    days: Sequence[date] | None = None, *, seed: int = config.DEFAULT_SAMPLE_SEED
 ) -> tuple[list[ChildPlan], list[StaffMember], dict[str, StaffPreferences]]:
     """園児 / 職員 / 希望休の 3 つセットを返す。"""
     day_list = list(days) if days is not None else default_days()
@@ -578,7 +579,7 @@ def make_dataset(
 def sample_dataframes(
     days: Sequence[date] | None = None,
     *,
-    seed: int = 42,
+    seed: int = config.DEFAULT_SAMPLE_SEED,
     children: Sequence[ChildPlan] | None = None,
     staff: Sequence[StaffMember] | None = None,
     preferences: dict[str, StaffPreferences] | None = None,
@@ -637,11 +638,11 @@ def sample_dataframes(
                 {
                     "職員ID": staff_id,
                     "種別": "出勤不可"
-                    if item.start == time(0, 0) and item.end == time(23, 59)
+                    if item.start == time(0, 0) and item.end == config.DAY_END
                     else "希望休",
                     "日付": item.day.isoformat(),
                     "開始": "" if item.start == time(0, 0) else item.start.strftime("%H:%M"),
-                    "終了": "" if item.end == time(23, 59) else item.end.strftime("%H:%M"),
+                    "終了": "" if item.end == config.DAY_END else item.end.strftime("%H:%M"),
                     "理由": item.reason,
                 }
             )
@@ -684,7 +685,9 @@ def _num(value: float) -> str:
 
 
 def write_sample_files(
-    target_dir: Path | str, days: Sequence[date] | None = None, seed: int = 42
+    target_dir: Path | str,
+    days: Sequence[date] | None = None,
+    seed: int = config.DEFAULT_SAMPLE_SEED,
 ) -> dict[str, Path]:
     """サンプル 3 枚を CSV として書き出す。"""
     base = Path(target_dir)

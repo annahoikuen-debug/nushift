@@ -25,6 +25,61 @@ ENV_TIMEOUT = "SHIFTAI_GAS_TIMEOUT"
 
 DEFAULT_TIMEOUT = 10
 
+#: ``.streamlit/secrets.toml`` の ``[gas]`` セクションで使うキー名。
+#: gas/README.md が案内している形式（``base_url`` / ``secret`` …）。
+SECRET_ALIASES: dict[str, str] = {
+    ENV_URL: "base_url",
+    ENV_SHEET: "sheet",
+    ENV_SECRET: "secret",
+    ENV_TIMEOUT: "timeout_sec",
+}
+
+
+def _streamlit_secrets() -> dict[str, str]:
+    """``.streamlit/secrets.toml`` の値を平坦な dict にして返す。
+
+    ``[gas]`` セクション形式（gas/README.md の案内）を優先し、
+    無い場合はトップレベルのキーを拾う。Streamlit 実行中でない場合と
+    ``secrets.toml`` が無い場合は空 dict を返す（例外は外へ出さない）。
+    """
+    try:
+        import streamlit as st
+    except ImportError:  # pragma: no cover - streamlit は必須依存
+        return {}
+
+    out: dict[str, str] = {}
+    sources: list[object] = []
+    try:
+        if "gas" in st.secrets:
+            sources.append(st.secrets["gas"])
+    except Exception:
+        # Streamlit 未実行（bare mode）や TOML が壊れている場合。
+        pass
+    sources.append(st.secrets)
+
+    for source in sources:
+        try:
+            items = list(source.items())  # type: ignore[attr-defined]
+        except Exception:
+            continue
+        for key, value in items:
+            if key in out or value is None:
+                continue
+            if isinstance(value, (dict, list, tuple, bool)):
+                # ネストしたセクションは設定値ではないので拾わない。
+                continue
+            # TOML では timeout_sec = 25 は int になる。数値も文字列化して読む。
+            text = str(value).strip()
+            if text:
+                out[key] = text
+    return out
+
+
+def _streamlit_secret(key: str) -> str | None:
+    """``secrets.toml`` から対応する設定値を読む。読めなければ ``None``。"""
+    values = _streamlit_secrets()
+    return values.get(SECRET_ALIASES.get(key, key)) or values.get(key)
+
 SHEET_ALIASES: dict[str, str] = {
     "children": "attendance",
     "attendance": "attendance",
@@ -54,11 +109,17 @@ class GasConfig:
 
     @classmethod
     def from_env(cls) -> GasConfig | None:
-        """環境変数から設定を読む。``SHIFTAI_GAS_URL`` が無ければ ``None``。"""
-        base_url = (os.environ.get(ENV_URL) or "").strip()
+        """接続設定を読む。``SHIFTAI_GAS_URL`` が無ければ ``None``。
+
+        参照順は **環境変数 → ``.streamlit/secrets.toml``**。
+        後者は README.md / gas/README.md が案内している置き場所だが、
+        Streamlit 実行中（``streamlit run``）でしか読めないので、
+        CLI やユニットテストから読むために無条件に触ると例外になる。
+        """
+        base_url = (os.environ.get(ENV_URL) or _streamlit_secret(ENV_URL) or "").strip()
         if not base_url:
             return None
-        raw_timeout = (os.environ.get(ENV_TIMEOUT) or "").strip()
+        raw_timeout = (os.environ.get(ENV_TIMEOUT) or _streamlit_secret(ENV_TIMEOUT) or "").strip()
         timeout = DEFAULT_TIMEOUT
         if raw_timeout:
             try:
@@ -67,9 +128,12 @@ class GasConfig:
                 timeout = DEFAULT_TIMEOUT
         return cls(
             base_url=base_url,
-            sheet=(os.environ.get(ENV_SHEET) or "attendance").strip() or "attendance",
+            sheet=(
+                os.environ.get(ENV_SHEET) or _streamlit_secret(ENV_SHEET) or "attendance"
+            ).strip()
+            or "attendance",
             timeout_sec=timeout,
-            secret=(os.environ.get(ENV_SECRET) or "").strip(),
+            secret=(os.environ.get(ENV_SECRET) or _streamlit_secret(ENV_SECRET) or "").strip(),
         )
 
     def endpoint(self, action: str, *, with_secret: bool = False, **params: str) -> str:

@@ -15,10 +15,10 @@ from statistics import fmean, pvariance
 
 import pandas as pd
 
+from shiftai import config
 from shiftai.config import (
     STATUTORY_BREAK_MINUTES,
     STATUTORY_BREAK_THRESHOLDS,
-    STATUTORY_DAILY_WORK_HOURS,
     STATUTORY_MIN_REST_HOURS,
     STATUTORY_WEEKLY_WORK_HOURS,
 )
@@ -42,7 +42,7 @@ from shiftai.domain import (
 )
 from shiftai.solver import staff_work_hours
 
-_BREAK_CONCURRENT_SHARE = 0.25
+_BREAK_CONCURRENT_SHARE = config.BREAK_CONCURRENT_SHARE
 _STATUS_CODE: dict[SolveStatus, float] = {
     SolveStatus.OPTIMAL: 1.0,
     SolveStatus.FEASIBLE: 0.75,
@@ -361,7 +361,9 @@ def _required_break_minutes(work_minutes: int) -> int:
     required = 0
     for threshold, minutes in STATUTORY_BREAK_THRESHOLDS:
         if work_minutes > threshold:
-            required = minutes
+            # STATUTORY_BREAK_THRESHOLDS は閾値の降順で並ぶため、上書きすると
+            # 常に下限側の 45 分が勝つ。厳格な方（60 分）を採る。
+            required = max(required, minutes)
     return required
 
 
@@ -479,9 +481,11 @@ def check_violations(
             cap = (
                 c.daily_hours
                 if not c.overtime_allowed
-                else min(c.daily_hours * 1.25, _DAILY_LEGAL_CAP_HOURS)
+                else min(
+                    c.daily_hours * config.STATUTORY_OVERTIME_MULTIPLIER, _DAILY_LEGAL_CAP_HOURS
+                )
             )
-            if work_minutes / 60.0 > cap + 1e-6:
+            if work_minutes / 60.0 > cap + config.FLOAT_TOLERANCE:
                 out.append(
                     Violation(
                         severity=ViolationSeverity.WARNING,
@@ -495,7 +499,7 @@ def check_violations(
                         detail={"hours": round(work_minutes / 60.0, 2), "cap": round(cap, 2)},
                     )
                 )
-            if work_minutes / 60.0 > _STATUTORY_DAILY_LIMIT_HOURS + 1e-6:
+            if work_minutes / 60.0 > _STATUTORY_DAILY_LIMIT_HOURS + config.FLOAT_TOLERANCE:
                 out.append(
                     Violation(
                         severity=ViolationSeverity.WARNING,
@@ -562,7 +566,7 @@ def check_violations(
                     )
             break_minutes = sum(slots[i].minutes for i in brk_idx)
             required = _required_break_minutes(work_minutes)
-            if standard is not None and work_minutes > 6 * 60:
+            if standard is not None and work_minutes > config.STATUTORY_LONG_SHIFT_MINUTES:
                 required = max(required, int(standard.break_minutes))
             if required and break_minutes < required:
                 out.append(
@@ -615,7 +619,7 @@ def check_violations(
             if band["days"] >= _MONTHLY_WARNING_MIN_DAYS
             else ViolationSeverity.INFO
         )
-        if band["max"] is not None and total_hours > band["max"] + 1e-6:
+        if band["max"] is not None and total_hours > band["max"] + config.FLOAT_TOLERANCE:
             out.append(
                 Violation(
                     severity=severity,
@@ -635,7 +639,7 @@ def check_violations(
                     },
                 )
             )
-        if band["min"] is not None and total_hours < band["min"] - 1e-6:
+        if band["min"] is not None and total_hours < band["min"] - config.FLOAT_TOLERANCE:
             out.append(
                 Violation(
                     severity=severity,
@@ -658,7 +662,7 @@ def check_violations(
         sid_worked = worked_days.get(sid, set())
         for window in weekly_periods(days):
             window_hours = sum(daily_hours.get(d, 0.0) for d in window)
-            if window_hours > STATUTORY_WEEKLY_WORK_HOURS + 1e-6:
+            if window_hours > STATUTORY_WEEKLY_WORK_HOURS + config.FLOAT_TOLERANCE:
                 out.append(
                     Violation(
                         severity=ViolationSeverity.WARNING,
@@ -744,7 +748,7 @@ def check_violations(
             rest = (
                 (b - a).days * 24 * 60 - slots[prev[-1]].end_minutes + slots[cur[0]].start_minutes
             )
-            if rest < c.min_rest_hours * 60 - 1e-6:
+            if rest < c.min_rest_hours * 60 - config.FLOAT_TOLERANCE:
                 out.append(
                     Violation(
                         severity=ViolationSeverity.WARNING,
@@ -876,8 +880,8 @@ def check_violations(
     return out
 
 
-_DAILY_LEGAL_CAP_HOURS = 10.0
-_STATUTORY_DAILY_LIMIT_HOURS = STATUTORY_DAILY_WORK_HOURS + 0.75
+_DAILY_LEGAL_CAP_HOURS = config.STATUTORY_MAX_DAILY_WORK_HOURS
+_STATUTORY_DAILY_LIMIT_HOURS = config.STATUTORY_DAILY_LIMIT_HOURS
 _MONTHLY_WARNING_MIN_DAYS = 5
 """契約勤務時間の警告を WARNING として出すのに必要な最小日数。"""
 

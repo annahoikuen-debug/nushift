@@ -8,14 +8,15 @@ from typing import Any
 import streamlit as st
 
 from shiftai import gap_analysis, local_rules, standards
-from shiftai.domain import AgeClass, Role
+from shiftai.config import APP_TIME_INPUT_STEP_SECONDS
+from shiftai.domain import HEADCOUNT_FACILITY_FORMULA, AgeClass, Role
 from shiftai.ui import components, state, theme
 
 LONG_COLUMN_CONFIG: dict[str, Any] = {
     "日付": st.column_config.DateColumn("日付", format="YYYY/MM/DD"),
     "時間帯": st.column_config.TextColumn("時間帯", width="small"),
-    "開始": st.column_config.TimeColumn("開始", format="HH:MM", step=900),
-    "終了": st.column_config.TimeColumn("終了", format="HH:MM", step=900),
+    "開始": st.column_config.TimeColumn("開始", format="HH:MM", step=APP_TIME_INPUT_STEP_SECONDS),
+    "終了": st.column_config.TimeColumn("終了", format="HH:MM", step=APP_TIME_INPUT_STEP_SECONDS),
     "年齢クラス": st.column_config.TextColumn("年齢クラス", width="small"),
     "在園児数": st.column_config.NumberColumn("在園児数", format="%d"),
     "必要人員": st.column_config.NumberColumn("必要人員", format="%d"),
@@ -215,8 +216,13 @@ def _render_gap_preview(table: Any) -> None:
     """タブ3 の実行結果があれば過不足ヒートマップも表示する。"""
     result = state.get(state.KEY_SOLVE_RESULT)
     if result is None or not result.shift_days:
-        with st.expander("⚖️ 過不足ヒートマップ（タブ3 の実行後に表示）", expanded=False):
-            st.info("まだシフトを作成していません。タブ3「シフト作成」で最適化を実行してください。")
+        with st.expander(
+            f"⚖️ 過不足ヒートマップ（{theme.tab_ref(2)} の実行後に表示）", expanded=False
+        ):
+            st.info(
+                f"まだシフトを作成していません。{theme.tab_ref(2)}（シフト作成）で"
+                "最適化を実行してください。"
+            )
         return
     st.markdown("#### ⚖️ 過不足（必要人員 − 配置人員）")
     frame = gap_analysis.gap_matrix(table, result)
@@ -227,7 +233,10 @@ def _render_gap_preview(table: Any) -> None:
         frame, scale="shortfall", vmin=-3.0, vmax=3.0, subset=list(frame.columns[1:])
     )
     st.dataframe(styled, width="stretch", key="gap_matrix")
-    st.caption("赤＝不足（負）、緑＝充足（正）。この行列はタブ3 の最適化結果から計算しています。")
+    st.caption(
+        f"赤＝不足（負）、緑＝充足（正）。"
+        f"この行列は{theme.tab_ref(2)}の最適化結果から計算しています。"
+    )
 
 
 def _ratio_text(ratio: float) -> str:
@@ -339,7 +348,9 @@ def _render_compliance(standard: Any) -> None:
             "制度",
             options=regulation_keys,
             index=regulation_keys.index(
-                "認可外保育施設" if standard.headcount_mode == "facility_formula" else "認可保育所"
+                "認可外保育施設"
+                if standard.headcount_mode == HEADCOUNT_FACILITY_FORMULA
+                else "認可保育所"
             ),
             key="compliance_regulation",
             help="届出・報告に使う制度。算手法の整合もここで確認します。",
@@ -436,13 +447,18 @@ def _render_compliance(standard: Any) -> None:
 def render() -> None:
     """タブ2 の本体。"""
     theme.step_indicator(1)
-    st.markdown("### 2. 必要人員")
+    theme.heading(1)
     if not state.data_ready():
         theme.empty_state()
+        if state.staff_missing():
+            theme.stuck_hint(1, "職員データが 0 名です。")
+        else:
+            theme.stuck_hint(1, "園児データが 0 名です。")
         return
     days = state.current_days()
     if not days:
-        st.warning("サイドバーで計画期間を設定してください。")
+        st.warning(theme.where_is_period())
+        theme.stuck_hint(1, "計画期間が設定されていません。")
         return
 
     left, right = st.columns([1, 2])
@@ -468,6 +484,7 @@ def render() -> None:
     table = state.get(state.KEY_REQUIREMENTS)
     if table is None:
         st.info("「必要人員を再計算」を押してください。")
+        theme.stuck_hint(1, "必要人員がまだ計算されていません。")
         return
     if not table.notes:
         pass

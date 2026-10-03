@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from datetime import date, time, timedelta
 from enum import Enum
 
+from shiftai import config
+
 # ---------------------------------------------------------------------------
 # 列挙型
 # ---------------------------------------------------------------------------
@@ -207,7 +209,7 @@ class Slot:
 def build_slots(
     day_open: time,
     day_close: time,
-    granularity_min: int = 30,
+    granularity_min: int = config.DEFAULT_GRANULARITY_MIN,
     *,
     strict: bool = False,
 ) -> tuple[Slot, ...]:
@@ -314,9 +316,9 @@ class Contract:
     """週あたりの最大出勤日数。``0`` は「週あたりの上限なし」を意味する。"""
     max_consecutive_days: int = 5
     """最大連続勤務日数。``0`` は「上限なし」を意味する。"""
-    min_rest_hours: float = 11.0
+    min_rest_hours: float = float(config.STATUTORY_MIN_REST_HOURS)
     """勤務間の最低休息時間（労働基準法第9条に対応）。"""
-    granularity_min: int = 30
+    granularity_min: int = config.DEFAULT_GRANULARITY_MIN
     earliest_start: time = time(6, 0)
     latest_end: time = time(22, 0)
     can_work_holiday: bool = True
@@ -465,7 +467,7 @@ class Unavailability:
 
     day: date
     start: time = time(0, 0)
-    end: time = time(23, 59)
+    end: time = config.DAY_END
     reason: str = ""
 
 
@@ -591,16 +593,22 @@ class StaffingStandard:
     """在園児がいる保育室の最低配置人数（2名ルール）。"""
     min_qualified_ratio: float = 0.5
     """配置人員に占める保育士の最低割合。"""
-    break_minutes: int = 60
+    break_minutes: int = config.DEFAULT_BREAK_MINUTES
     """職員1人あたりの休憩時間（労働基準法第9条）。"""
-    break_stagger_minutes: int = 30
+    break_stagger_minutes: int = config.DEFAULT_BREAK_STAGGER_MINUTES
     """休憩者の重複を避けるための時間ずれ。"""
-    work_start_base: time = time(8, 30)
-    standard_time: tuple[time, time] = (time(8, 30), time(17, 15))
+    work_start_base: time = config.STANDARD_TIME_START
+    standard_time: tuple[time, time] = (config.STANDARD_TIME_START, config.STANDARD_TIME_END)
     """保育標準時間。"""
-    early_care_window: tuple[time, time] = (time(7, 15), time(8, 30))
+    early_care_window: tuple[time, time] = (
+        config.DEFAULT_EARLY_CARE_START,
+        config.DEFAULT_EARLY_CARE_END,
+    )
     """早朝保育の時間帯。"""
-    late_care_window: tuple[time, time] = (time(17, 15), time(19, 30))
+    late_care_window: tuple[time, time] = (
+        config.DEFAULT_LATE_CARE_START,
+        config.DEFAULT_LATE_CARE_END,
+    )
     """延長保育の時間帯。"""
     late_care_relaxed: bool = True
     """延長時に「保育士1名＋他資格者」で代替できるとする（Fukuoka型）。"""
@@ -1110,14 +1118,16 @@ class ObjectiveWeights:
 class FacilitySettings:
     """園の開設条件。UI の初期値とプリセットに使う。"""
 
-    facility_name: str = "あさひ保育園"
-    day_open: time = time(7, 15)
-    day_close: time = time(19, 30)
-    granularity_min: int = 30
+    facility_name: str = config.DEFAULT_FACILITY_NAME
+    day_open: time = config.DEFAULT_DAY_OPEN
+    day_close: time = config.DEFAULT_DAY_CLOSE
+    granularity_min: int = config.DEFAULT_GRANULARITY_MIN
+    capacity: int = 60
+    """利用定員。園ごとに変わるため UI から渡す。"""
     closed_days: frozenset[date] = frozenset()
     holiday_dates: frozenset[date] = frozenset()
     rooms: tuple[str, ...] = ("0・1歳児室", "2・3歳児室", "4・5歳児室")
-    labor_cost_per_hour: float = 1500.0
+    labor_cost_per_hour: float = config.DEFAULT_LABOR_COST_PER_HOUR
     """人件費目安（1時間・パート係数）。"""
 
 
@@ -1134,8 +1144,8 @@ def daterange(start: date, end: date):
         cur += timedelta(days=1)
 
 
-WEEKLY_WINDOW_DAYS = 7
-"""週の判定に使う窓の日数。"""
+WEEKLY_WINDOW_DAYS = config.WEEKLY_WINDOW_DAYS
+"""週の判定に使う窓の日数。``config.WEEKLY_WINDOW_DAYS`` の再輸出。"""
 
 
 def weekly_windows(days: Sequence[date], size: int = WEEKLY_WINDOW_DAYS) -> list[list[date]]:

@@ -14,8 +14,14 @@ import streamlit as st
 from shiftai import fairness, gap_analysis, live_validation, solver, standards
 from shiftai.config import (
     COLOR_BREAK,
+    COLOR_BREAK_INK,
+    COLOR_FIXED,
+    COLOR_INK,
     COLOR_OFF,
+    COLOR_OVER,
+    COLOR_OVER_INK,
     COLOR_SHORTFALL,
+    COLOR_SHORTFALL_INK,
     COLOR_WORK,
 )
 from shiftai.domain import (
@@ -158,7 +164,7 @@ def cell_legend() -> None:
         f"<b>{CellState.BREAK.value}</b>（労働基準法第9条の休憩）</span>"
         f'<span class="shiftai-chip" style="background:{COLOR_OFF};color:#424242">'
         f"<b>{CellState.OFF.value}</b>（非勤務）</span>"
-        f'<span class="shiftai-chip" style="background:#ffffff;color:#6a1b9a">'
+        f'<span class="shiftai-chip" style="background:#ffffff;color:{COLOR_FIXED}">'
         f"{LOCK} 手動で確定したセル（再最適化しても動きません）</span>"
         "</div>",
         unsafe_allow_html=True,
@@ -256,7 +262,7 @@ def heat_styler(
             return ""
         ratio = (number - low) / span
         red, green, blue = _lerp(stops, ratio)
-        ink = "#ffffff" if ratio > 0.62 else "#1f2430"
+        ink = "#ffffff" if ratio > 0.62 else COLOR_INK
         return f"background-color: rgb({red},{green},{blue}); color: {ink};"
 
     columns = list(subset) if subset else None
@@ -277,9 +283,9 @@ def _cell_style(value: Any) -> str:
     if text == CellState.WORK.value:
         return f"background-color: {COLOR_WORK}33; color: {COLOR_WORK};"
     if text == CellState.BREAK.value:
-        return f"background-color: {COLOR_BREAK}55; color: #7a5200;"
+        return f"background-color: {COLOR_BREAK}55; color: {COLOR_BREAK_INK};"
     if locked:
-        return f"background-color: {COLOR_OFF}; box-shadow: inset 0 0 0 2px #6a1b9a;"
+        return f"background-color: {COLOR_OFF}; box-shadow: inset 0 0 0 2px {COLOR_FIXED};"
     return f"background-color: {COLOR_OFF}88; color: #616161;"
 
 
@@ -328,24 +334,29 @@ def style_live_grid(
     error_cols = report.error_columns()
     warning_cols = report.warning_columns()
 
-    def paint(key: tuple[str, str], value: Any) -> str:
-        text = str(value)
-        base = _cell_style(value)
-        if error_cols or warning_cols:
-            column = key[1]
+    def paint(row: pd.Series) -> list[str]:
+        # 行ごとにapplicable な CSS を列の順に並べる（pandas 3.x の ``map`` は
+        # ``axis`` を受け取らないため、行単位の ``apply(axis=1)`` を使う）
+        sid = labels.get(str(row.name), "")
+        out: list[str] = []
+        for column, value in row.items():
+            base = _cell_style(value)
             if column in error_cols:
-                return base + "; border-bottom: 3px solid #C62828;"
+                out.append(base + "; border-bottom: 3px solid #C62828;")
+                continue
             if column in warning_cols:
-                return base + "; border-bottom: 3px solid #EF6C00;"
-        sid = labels.get(str(key[0]), "")
-        if (sid, str(key[1])) in error_cells:
-            return base + "; box-shadow: inset 0 0 0 2px #C62828;"
-        if (sid, str(key[1])) in warning_cells:
-            return base + "; box-shadow: inset 0 0 0 2px #EF6C00;"
-        _ = text
-        return base
+                out.append(base + "; border-bottom: 3px solid #EF6C00;")
+                continue
+            key = (sid, str(column))
+            if key in error_cells:
+                out.append(base + "; box-shadow: inset 0 0 0 2px #C62828;")
+            elif key in warning_cells:
+                out.append(base + "; box-shadow: inset 0 0 0 2px #EF6C00;")
+            else:
+                out.append(base)
+        return out
 
-    return frame.style.map(paint, axis=None).set_table_styles(
+    return frame.style.apply(paint, axis=1).set_table_styles(
         [
             {
                 "selector": "th",
@@ -475,7 +486,7 @@ def style_fairness_table(frame: pd.DataFrame, threshold: int = 2) -> Any:
         if number <= threshold:
             return ""
         if number >= threshold * 2:
-            return "background-color: #E5393533; color: #8e0000; font-weight:600;"
+            return f"background-color: {COLOR_SHORTFALL}33; color: {COLOR_SHORTFALL_INK}; font-weight:600;"
         return "background-color: #FB8C0040; color: #8a4b00; font-weight:600;"
 
     if not cols:
@@ -761,15 +772,19 @@ def style_gap_table(frame: pd.DataFrame) -> Any:
         except (TypeError, ValueError):
             return ""
         if number > 0:
-            return f"background-color: {COLOR_SHORTFALL}30; color: #8e0000; font-weight:600;"
+            return f"background-color: {COLOR_SHORTFALL}30; color: {COLOR_SHORTFALL_INK}; font-weight:600;"
         if number < 0:
-            return "background-color: #1E88E51a; color: #0d47a1;"
+            return f"background-color: {COLOR_OVER}1a; color: {COLOR_OVER_INK};"
         return ""
 
     style = frame.style.map(_paint, subset=["不足"])
     if "過剰" in frame.columns:
         style = style.map(
-            lambda v: "background-color: #1E88E530; color: #0d47a1;" if float(v or 0) > 0 else "",
+            lambda v: (
+                f"background-color: {COLOR_OVER}30; color: {COLOR_OVER_INK};"
+                if float(v or 0) > 0
+                else ""
+            ),
             subset=["過剰"],
         )
     return style.set_table_styles(
@@ -800,6 +815,63 @@ def violation_dataframe(violations: Sequence[Violation]) -> pd.DataFrame:
             for v in violations
         ]
     )
+
+
+def violation_targets(
+    violations: Sequence[Violation], *, limit: int = 20
+) -> list[tuple[str, tuple[str, str, str]]]:
+    """修正できる違反を ``(説明文, 修正対象)`` の並びにする。
+
+    修正対象は ``(日付の ISO 文字列, 職員ID, 時間帯ラベル)``。
+    日付・職員ID・時間帯のどれかが欠けるものは除く（どこを直せばよいか
+    特定できないため）。上位 ``limit`` 件だけ返す。
+    """
+    targets: list[tuple[str, tuple[str, str, str]]] = []
+    for v in violations:
+        if v.day is None or v.slot is None or not v.staff_id:
+            continue
+        target = (v.day.isoformat(), v.staff_id, v.slot.label)
+        label = f"{v.day.isoformat()} {v.staff_id} {v.slot.label}"
+        targets.append((label, target))
+        if len(targets) >= limit:
+            break
+    return targets
+
+
+def render_violation_actions(
+    violations: Sequence[Violation], *, key_prefix: str
+) -> None:
+    """違反一覧の下に修正ボタンを並べる。
+
+    押されたボタンに対応する ``state.set_fix_target()`` を呼ぶ。
+    対象が 1 つもなければ何も描かない。
+    """
+    targets = violation_targets(violations)
+    if not targets:
+        return
+    from shiftai.ui import state
+
+    st.markdown("#### 🛠 この違反を修正する")
+    st.caption(
+        "押すと、シフト表の該当セルの日付と職員が選択された状態になります。"
+    )
+    shown = targets[:8]
+    for start in range(0, len(shown), 2):
+        pair = shown[start : start + 2]
+        columns = st.columns(len(pair))
+        for offset, (label, target) in enumerate(pair):
+            index = start + offset
+            with columns[offset]:
+                if st.button(
+                    f"修正 {label}",
+                    key=f"{key_prefix}_fix_{index}",
+                    width="stretch",
+                ):
+                    state.set_fix_target(target)
+                    st.session_state[state.KEY_FIX_REQUESTED] = True
+                    st.rerun()
+    if len(targets) > len(shown):
+        st.caption(f"ほか {len(targets) - len(shown)} 件は深刻度の一覧から選んでください。")
 
 
 def render_violations(violations: Sequence[Violation]) -> None:

@@ -11,6 +11,7 @@ from shiftai import gas_client as gas
 from shiftai import local_rules
 from shiftai.config import (
     APP_ICON,
+    APP_TIME_INPUT_STEP_SECONDS,
     COLOR_BREAK,
     COLOR_OFF,
     COLOR_WORK,
@@ -21,7 +22,14 @@ from shiftai.config import (
     DEFAULT_RANGE_START,
     STATUTORY_WEEKLY_WORK_HOURS,
 )
-from shiftai.domain import AgeClass, FacilitySettings, daterange, to_minutes, to_time
+from shiftai.domain import (
+    HEADCOUNT_FACILITY_FORMULA,
+    AgeClass,
+    FacilitySettings,
+    daterange,
+    to_minutes,
+    to_time,
+)
 from shiftai.shift_patterns import (
     DEFAULT_PATTERNS,
     ShiftPattern,
@@ -50,6 +58,22 @@ def _reset_ratio_widgets() -> None:
         st.session_state.pop(f"ratio_{age_class.value}", None)
 
 
+def _invalidate_if_changed(previous: Any, current: Any, reason: str) -> None:
+    """入力が実際に変わっていないなら何もしない。変わっていれば無効化する。
+
+    Streamlit は毎フレームサイドバーを描き直すため、値が変わっていないのに
+    毎回最適化結果を破棄すると結果が消えてしまう。だから実際の差分を見る。
+
+    **初回描画（指紋が空）は無効化しない。** それなら読み込み直後の
+    計算結果まで消えてしまう。
+    """
+    if not state.get(state.KEY_INPUT_FINGERPRINT):
+        return
+    if previous == current:
+        return
+    state.mark_inputs_changed(reason)
+
+
 def _render_facility(*, times: bool = True) -> None:
     """園設定（園名・開所・閉所・粒度・休業日）。
 
@@ -71,14 +95,14 @@ def _render_facility(*, times: bool = True) -> None:
             day_open = st.time_input(
                 "開所時刻",
                 value=DEFAULT_SETTINGS.day_open,
-                step=900,
+                step=APP_TIME_INPUT_STEP_SECONDS,
                 key="day_open",
             )
         with right:
             day_close = st.time_input(
                 "閉所時刻",
                 value=DEFAULT_SETTINGS.day_close,
-                step=900,
+                step=APP_TIME_INPUT_STEP_SECONDS,
                 key="day_close",
             )
     else:
@@ -123,6 +147,7 @@ def _render_facility(*, times: bool = True) -> None:
         step=100.0,
         key="labor_cost_per_hour",
     )
+    previous = state.get(state.KEY_SETTINGS)
     state.set(
         state.KEY_SETTINGS,
         FacilitySettings(
@@ -137,6 +162,7 @@ def _render_facility(*, times: bool = True) -> None:
     )
     state.reset(state.KEY_SLOTS)
     state.current_slots()
+    _invalidate_if_changed(previous, state.get(state.KEY_SETTINGS), "園設定を変更しました")
     # 以前は current_slots() が ValueError を握り潰していたため、
     # この except 節は到達不能で「開所・閉所時刻の設定が不正です」が
     # 結局一周もしていなかった。current_slots_error() で理由を読む。
@@ -170,7 +196,7 @@ def _render_standard() -> None:
         _reset_ratio_widgets()
         state.set(state.KEY_STANDARD_KEY, new_key)
         state.set(state.KEY_STANDARD, local_rules.get_standard(new_key))
-        state.invalidate_pipeline()
+        state.mark_inputs_changed("自治体プリセットを変更しました")
     st.caption(f"出典: {record.get('source', '—')}")
     _render_overrides(local_rules.get_standard(state.get(state.KEY_STANDARD_KEY)))
     effective = state.current_standard()
@@ -234,15 +260,21 @@ def _render_overrides(preset: Any) -> None:
             "ratios": ratios,
         }
         effective = local_rules.build_standard(state.get(state.KEY_STANDARD_KEY), overrides)
+        previous_effective = state.get(state.KEY_STANDARD)
         state.set(state.KEY_STANDARD_OVERRIDES, overrides)
         state.set(state.KEY_STANDARD, effective)
         state.set(state.KEY_ENFORCE_MIN_TWO, bool(enforce))
+        _invalidate_if_changed(
+            previous_effective,
+            effective,
+            "配置基準の上乗せを変更しました",
+        )
         st.caption(
             f"適用中: {effective.name} ／ 休憩 {effective.break_minutes}分 ／ "
             f"保育標準時間 {effective.standard_time[0].strftime('%H:%M')}-"
             f"{effective.standard_time[1].strftime('%H:%M')}"
         )
-        if effective.headcount_mode == "facility_formula":
+        if effective.headcount_mode == HEADCOUNT_FACILITY_FORMULA:
             st.caption(
                 f"⚠️ 認可外保育施設の算手法: {local_rules.headcount_mode_label(effective)}"
                 f"（合計＋{effective.headcount_extra} 名）。"
@@ -273,6 +305,7 @@ def _render_period() -> None:
                 key="range_days",
             )
         )
+    previous_days = list(state.get(state.KEY_DAYS) or [])
     days = state.refresh_days(start, count)
     closed = state.get(state.KEY_SETTINGS).closed_days
     open_days = [d for d in days if d not in closed]
@@ -280,6 +313,8 @@ def _render_period() -> None:
         f"{len(days)} 日（{theme.format_day(days[0])} 〜 {theme.format_day(days[-1])}）"
         f"／ 開園 {len(open_days)} 日"
     )
+    if days != previous_days and state.get(state.KEY_INPUT_FINGERPRINT):
+        state.mark_inputs_changed("計画期間を変更しました")
 
 
 def _render_weights() -> None:
@@ -439,11 +474,17 @@ def _render_patterns() -> None:
         cols = st.columns(2)
         with cols[0]:
             start = st.time_input(
-                f"枠{i + 1} の開始", value=base.start, step=900, key=f"pattern_start_{i}"
+                f"枠{i + 1} の開始",
+                value=base.start,
+                step=APP_TIME_INPUT_STEP_SECONDS,
+                key=f"pattern_start_{i}",
             )
         with cols[1]:
             end = st.time_input(
-                f"枠{i + 1} の終了", value=base.end, step=900, key=f"pattern_end_{i}"
+                f"枠{i + 1} の終了",
+                value=base.end,
+                step=APP_TIME_INPUT_STEP_SECONDS,
+                key=f"pattern_end_{i}",
             )
         if end > start:
             rows.append(

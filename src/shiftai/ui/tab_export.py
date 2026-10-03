@@ -81,8 +81,12 @@ def _render_preview(frames: dict[str, Any]) -> None:
                 st.caption(f"先頭 200 行を表示しています（全 {len(frame)} 行）。")
 
 
-def _render_downloads(frames: dict[str, Any]) -> None:
-    """各種ダウンロードボタン。"""
+def _render_downloads(frames: dict[str, Any], *, enabled: bool = True) -> None:
+    """各種ダウンロードボタン。
+
+    ``enabled=False`` のとき実体（``data=``）は生成したままボタンを無効化する。
+    既存の試験が実体の存在を検査しているため、短絡評価してはいけない。
+    """
     st.markdown("#### ⬇️ ダウンロード")
     st.caption(
         "CSV は Excel 互換のため UTF-8 BOM 付きで出力します。"
@@ -103,6 +107,7 @@ def _render_downloads(frames: dict[str, Any]) -> None:
             mime="text/csv",
             width="stretch",
             key="dl_shift_csv",
+            disabled=not enabled,
         )
         st.download_button(
             "💴 給与計算 CSV",
@@ -111,6 +116,7 @@ def _render_downloads(frames: dict[str, Any]) -> None:
             mime="text/csv",
             width="stretch",
             key="dl_payroll_csv",
+            disabled=not enabled,
         )
         st.download_button(
             "📅 ICAL（カレンダー）",
@@ -119,6 +125,7 @@ def _render_downloads(frames: dict[str, Any]) -> None:
             mime="text/calendar",
             width="stretch",
             key="dl_ics",
+            disabled=not enabled,
         )
     with second:
         st.download_button(
@@ -128,6 +135,7 @@ def _render_downloads(frames: dict[str, Any]) -> None:
             mime="text/csv",
             width="stretch",
             key="dl_requirements_csv",
+            disabled=not enabled,
         )
         st.download_button(
             "📗 Excel ブック（全シート）",
@@ -136,6 +144,7 @@ def _render_downloads(frames: dict[str, Any]) -> None:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             width="stretch",
             key="dl_excel",
+            disabled=not enabled,
         )
         st.download_button(
             "🗜 全文 ZIP",
@@ -144,6 +153,7 @@ def _render_downloads(frames: dict[str, Any]) -> None:
             mime="application/zip",
             width="stretch",
             key="dl_zip",
+            disabled=not enabled,
         )
 
     with st.expander("📄 サマリ（Markdown）", expanded=False):
@@ -155,6 +165,7 @@ def _render_downloads(frames: dict[str, Any]) -> None:
             file_name=f"{_file_stem('summary')}.md",
             mime="text/markdown",
             key="dl_summary",
+            disabled=not enabled,
         )
 
 
@@ -240,8 +251,11 @@ def _render_gas_push(result: SolveResult) -> None:
         st.error(f"送信に予期しないエラーが発生しました: {exc}")
 
 
-def _render_checklist() -> None:
-    """出力前の最終確認リスト。"""
+def _render_checklist() -> bool:
+    """出力前の最終確認リスト。すべて満たしていれば真を返す。
+
+    1 つでも満たしていなければダウンロードボタンを無効化する。
+    """
     result = state.get(state.KEY_SOLVE_RESULT)
     report = state.get(state.KEY_GAP_REPORT)
     violations = state.get(state.KEY_VIOLATIONS) or []
@@ -268,31 +282,44 @@ def _render_checklist() -> None:
     for label, ok, detail in items:
         st.markdown(f"- {'✅' if ok else '⚠️'} {label}（現在: {detail}）")
     st.caption(
-        "※ チェックは表示のみです。実際の運用では園長・設置責任者が必ず内容を確認してください。"
+        "※ チェックを満たしていない場合はダウンロードできません。"
+        "実際の運用では園長・設置責任者が必ず内容を確認してください。"
     )
+    return all(ok for _label, ok, _detail in items)
 
 
 def render() -> None:
     """タブ5 の本体。"""
     theme.step_indicator(4)
-    st.markdown("### 5. 出力")
+    theme.heading(4)
     result = state.get(state.KEY_SOLVE_RESULT)
     if result is None or not result.shift_days:
-        theme.empty_state("まずタブ3「シフト作成」でシフトを作成してください。")
+        theme.empty_state(
+            f"まず{theme.tab_ref(2)}（シフト作成）でシフトを作成してください。"
+        )
         return
     staff = state.get(state.KEY_STAFF) or []
     slots = state.current_slots()
     if not staff or not slots:
         st.error("職員データまたは時間帯が未設定です。")
+        theme.stuck_hint(4, "職員データまたは時間帯が未設定です。")
         return
 
-    _render_checklist()
+    checklist_ok = _render_checklist()
+    components.render_violation_actions(
+        state.get(state.KEY_VIOLATIONS) or [], key_prefix="export"
+    )
     st.divider()
     try:
         frames = _frames(result, slots, staff)
         _render_preview(frames)
         st.divider()
-        _render_downloads(frames)
+        _render_downloads(frames, enabled=checklist_ok)
+        if not checklist_ok:
+            st.error(
+                "出力前の確認に未達があります。ダウンロードできません。"
+                "上の「この違反を修正する」から該当箇所を直してください。"
+            )
     except Exception as exc:  # noqa: BLE001 - 出力失敗で画面を落とさない
         st.error(f"出力データの生成に失敗しました: {exc}")
         return

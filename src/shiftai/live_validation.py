@@ -34,6 +34,7 @@ from typing import Any
 
 import pandas as pd
 
+from shiftai import config
 from shiftai.domain import (
     CellState,
     FacilitySettings,
@@ -249,7 +250,7 @@ def validate_day(
                     "",
                 )
             )
-        if not contract.can_work_holiday and day.weekday() >= 5:
+        if not contract.can_work_holiday and day.weekday() >= config.WEEKEND_START_WEEKDAY:
             worked = [slots[i].label for i, s in enumerate(row) if s is CellState.WORK]
             if worked:
                 out.append(
@@ -427,10 +428,11 @@ def validate_day(
 
 def _daily_cap_minutes(contract: Any) -> int:
     """その職員が1日に置ける勤務分の上限（法定10時間を超えない）。"""
+    legal_cap = int(config.STATUTORY_MAX_DAILY_WORK_HOURS * 60)
     base = int(round(contract.daily_hours * 60))
     if not contract.overtime_allowed:
-        return min(base, 600)
-    return min(int(base * 1.25), 600)
+        return min(base, legal_cap)
+    return min(int(base * config.STATUTORY_OVERTIME_MULTIPLIER), legal_cap)
 
 
 def _early_indices(slots: Sequence[Slot], standard: StaffingStandard | None) -> set[int]:

@@ -25,12 +25,16 @@ import streamlit as st
 from shiftai import gap_analysis
 from shiftai.domain import (
     ChildPlan,
+    FacilitySettings,
     RequirementTable,
     SolveResult,
     SolveStatus,
     StaffPreferences,
+    Violation,
+    ViolationSeverity,
 )
-from shiftai.ui import state, tab_export, wizard
+from shiftai.ui import state, tab_data, tab_export, wizard
+from tests.conftest import DAY_CLOSE, DAY_OPEN, STANDARD_KEY  # noqa: E402  (計画値との整合)
 
 #: ヘッドレス実行時の「missing ScriptRunContext!」警告でテスト出力を濁さないようにする。
 logging.getLogger("streamlit").setLevel(logging.ERROR)
@@ -80,6 +84,7 @@ def _run_tabs(
 ) -> Any:
     """指定タブを描画するスクリプトを tmp に作り、1 フレーム流して ``AppTest`` を返す。"""
     assert all(name in TAB_MODULES for name in tabs)
+    tmp_path.mkdir(parents=True, exist_ok=True)
     blob = tmp_path / "tab_payload.pkl"
     blob.write_bytes(pickle.dumps(payload or {}))
     body = DRIVER_HEAD.format(
@@ -103,6 +108,20 @@ def _run_tabs(
 def _markdown_text(at: Any) -> str:
     """描画された markdown を 1 つの文字列にまとめる。"""
     return "\n".join(m.value for m in at.markdown)
+
+
+def _all_text(at: Any) -> str:
+    """描画されたテキストをすべて 1 つの文字列にまとめる。
+
+    ``st.subheader`` は ``AppTest.subheader``、``st.expander`` のラベルは
+    ``AppTest.expander`` に入るので、``_markdown_text`` だけでは
+    埋め込み時の小見出しや基準充足マトリクスを見られない。
+    """
+    parts = [m.value for m in at.markdown]
+    parts += [s.value for s in getattr(at, "subheader", [])]
+    parts += [e.label for e in getattr(at, "expander", [])]
+    parts += [t.value for t in getattr(at, "title", [])]
+    return "\n".join(parts)
 
 
 # --------------------------------------------------------------------------
@@ -282,10 +301,41 @@ def test_データ未投入でシフト作成タブは空状態案内を出す(e
     assert "シフトを自動作成する" in body
 
 
-def test_データ未投入でシフト表と出力タブはタブ3への誘導を出す(empty_all_tabs):
-    """タブ4 / タブ5 は「まずタブ3でシフト作成」と案内すること。"""
+def test_未投入でシフト表と出力タブは作成ステップへの指示を出す(empty_all_tabs):
+    """タブ4 とタブ5 が「先にシフトを作る」ことを案内すること。
+
+    **契約 C1 の差し替え。** 以前は ``body.count("タブ3") >= 2`` を検査して
+    いたが、シンプルモード（既定）にはタブが 3 本しかなく「タブ3」は出力タブの
+    番号のことである。件数が合わ Forecasting 偶然通っていた。タブ番号そのもの
+    を固定する代わりに、どちらのモードでも意味が通る文言を検査する。
+    """
+    assert not empty_all_tabs.exception, [str(e.value) for e in empty_all_tabs.exception]
     body = "".join(i.value for i in empty_all_tabs.info)
-    assert body.count("タブ3") >= 2, "タブ4 とタブ5 の両方から誘導すること"
+    assert body.count("まず") >= 2, "タブ4 とタブ5 の両方から誘導すること"
+    assert body.count("シフト作成") >= 2, "シフト作成ステップへの指示が足りない"
+
+
+def test_指示文は現在のモードのタブ番号を使う(tmp_path, input_payload):
+    """シフト作成ステップを指すタブ番号が、モードに一致すること。
+
+    **3 タブ構成にも「タブ3」は存在する（出力タブ）。** 従来の
+    ``body.count("タブ3") >= 2`` が固定していたバグは、
+    *シフト作成*をタブ3 と呼んでいたことだった。
+    上級者モードではシフト作成がタブ3、シンプルモードではタブ2。
+    """
+    expert_payload = dict(input_payload)
+    expert_payload["widgets"] = {**input_payload["widgets"], "ui_simple_mode": False}
+    simple_dir = tmp_path / "simple"
+    simple_dir.mkdir(parents=True, exist_ok=True)
+    expert = _run_tabs(tmp_path, ("tab_shift",), payload=expert_payload)
+    simple = _run_tabs(simple_dir, ("tab_shift",), payload=input_payload)
+    assert not expert.exception, [str(e.value) for e in expert.exception]
+    assert not simple.exception, [str(e.value) for e in simple.exception]
+    expert_body = "".join(i.value for i in expert.info)
+    simple_body = "".join(i.value for i in simple.info)
+    assert "まずタブ3（シフト作成）" in expert_body
+    assert "まずタブ2（シフト作成）" in simple_body
+    assert "まずタブ3（シフト作成）" not in simple_body
 
 
 def test_計画期間が空ならデータ投入タブが警告を出す(tmp_path):
@@ -664,12 +714,31 @@ def test_シフト作成タブは勤務パターンの報告を出す(tmp_path, 
 # --------------------------------------------------------------------------
 
 
-def test_シフト作成タブは未計算なら先にタブ2と案内する(tmp_path, input_payload):
-    """必要人員未計算なら最適化ボタンを出さずにタブ2への誘導を出すこと。"""
+def test_シフト作成タブは未計算なら必要人員ステップへの指示を出す(tmp_path, input_payload):
+    """必要人員未計算なら最適化ボタンを出さず、必要人員のステップへ誘導すること。
+
+    **契約 C2 の差し替え。** 以前は「警告文に ``タブ2`` が含まれる」ことを
+    検査していたが、シンプルモード（既定）には「タブ2 必要人員」が存在しない。
+    固定文言がバグを固定していたので、モードごとに正しい指示を出すことを
+    検査する。
+    """
     at = _run_tabs(tmp_path, ("tab_solve",), payload=input_payload)
     assert not at.exception, [str(e.value) for e in at.exception]
-    assert any("タブ2" in w.value for w in at.warning)
+    warnings = " ".join(w.value for w in at.warning)
     assert "run_solve" not in {b.key for b in at.button}
+    assert "必要人員" in warnings, "必要人員ステップへの指示がない"
+    # シンプルモードには「タブ2 必要人員」が無いので出してはいけない。
+    assert "タブ2" not in warnings, "3 タブ構成に無いタブ番号を案内している"
+
+
+def test_上級者モードではタブ2への指示を出す(tmp_path, input_payload):
+    """上級者モードでは「タブ2 必要人員」が実在するのでその番号で案内する。"""
+    payload = dict(input_payload)
+    payload["widgets"] = {**input_payload["widgets"], "ui_simple_mode": False}
+    at = _run_tabs(tmp_path, ("tab_solve",), payload=payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert "run_solve" not in {b.key for b in at.button}
+    assert "タブ2" in " ".join(w.value for w in at.warning)
 
 
 def test_シフト作成タブは解があれば結果を一通り描画する(solve_app):
@@ -851,6 +920,221 @@ def test_シフト表タブは時間帯を生成できないとエラーにす�
 
 
 # --------------------------------------------------------------------------
+# 5-b. シンプルモードでのシフト表到達性（UI/UX 改善 案2）
+# --------------------------------------------------------------------------
+
+
+def test_シンプルモードでもシフト表セクションが描画される(
+    tmp_path_factory, solved_payload
+) -> None:
+    """3 タブ構成の「② シフト作成」の中にシフト表が出ること。
+
+    以前は ``tab_shift.render`` の呼び出しが ``else`` 枝の中だけにあり、
+    既定のシンプルモードでは **シフト表が一度も描画されなかった**。
+    タブ数 3 を保ったままセクションとして埋め込んだことを固定する。
+    """
+    path = tmp_path_factory.mktemp("simple_shift")
+    blob = path / "solved_payload.pkl"
+    blob.write_bytes(pickle.dumps(solved_payload))
+    script = path / "simple_app.py"
+    script.write_text(
+        DRIVER_HEAD.format(
+            src=str(SRC),
+            root=str(ROOT),
+            tab_imports="tab_solve",
+            blob=str(blob),
+        )
+        + "tab_solve.render(auto_requirements=True, embed_shift=True)\n"
+        + "theme.render_footer()\n",
+        encoding="utf-8",
+    )
+    at = app_test.AppTest.from_file(str(script), default_timeout=180)
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    body = _all_text(at)
+    assert "シフト表・微調整" in body
+    assert "曜日別サマリー" in body
+    assert "微調整" in body
+
+
+def test_3表だけのクリアは園設定を保つ(tmp_path, input_payload):
+    """``reset_tables`` は 3 表だけ消し、園設定は残すこと。
+
+    以前は「すべてクリア」が 1 つしかなく、
+    ``state.reset_all()`` によって園名・開所閉所・基準・重みまで消えていた。
+    """
+    at = _run_tabs(tmp_path / "reset_tables", ("tab_data",), payload=input_payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    facility = at.session_state[state.KEY_SETTINGS].facility_name
+    assert facility
+
+    st.session_state.clear()
+    state.init_state()
+    try:
+        settings = FacilitySettings(facility_name="消してはいけない園")
+        st.session_state[state.KEY_SETTINGS] = settings
+        st.session_state[state.KEY_STAFF] = ["dummy"]
+        tab_data.reset_tables()
+        assert st.session_state[state.KEY_SETTINGS].facility_name == "消してはいけない園"
+    finally:
+        st.session_state.clear()
+
+
+def test_すべて初期化は園設定も消す(tmp_path):
+    """``reset_everything`` はセッション全体を戻すこと（元の destructive な挙動）。"""
+    st.session_state.clear()
+    state.init_state()
+    try:
+        st.session_state[state.KEY_SETTINGS] = FacilitySettings(facility_name="消える園")
+        tab_data.reset_everything()
+        assert st.session_state[state.KEY_SETTINGS].facility_name != "消える園"
+    finally:
+        st.session_state.clear()
+
+
+def test_実アプリのシンプルモードでシフト表が出る(
+    solved_payload, one_day, small_children, small_staff, small_preferences,
+    small_requirements, solved_day, standard,
+) -> None:
+    """``streamlit_app.py`` を 1 フレーム流して、シフト表がタブ②に出ること。
+
+    ``_run_tabs`` はタブを直接呼ぶので、配線漏れを検出できない。
+    既定（シンプルモード）で **アプリ全体** を通してもシフト表が
+    出ることを確認する。UI/UX 改善 案2 の核心保証。
+    """
+    at = app_test.AppTest.from_file(str(APP_FILE), default_timeout=240)
+    for key, value in {
+        "facility_name": "テスト園",
+        "day_open": DAY_OPEN,
+        "day_close": DAY_CLOSE,
+        "granularity_min": 30,
+        "closed_days": [],
+        "range_start": one_day[0],
+        "range_days": 1,
+        "labor_cost_per_hour": 1500.0,
+        "standard_key": STANDARD_KEY,
+    }.items():
+        at.session_state[key] = value
+    at.session_state[state.KEY_LOAD_RESULT] = solved_payload["state"][
+        state.KEY_LOAD_RESULT
+    ]
+    at.session_state[state.KEY_CHILDREN] = list(small_children)
+    at.session_state[state.KEY_STAFF] = list(small_staff)
+    at.session_state[state.KEY_PREFERENCES] = dict(small_preferences)
+    at.session_state[state.KEY_DAYS] = list(one_day)
+    at.session_state[state.KEY_REQUIREMENTS] = small_requirements
+    at.session_state[state.KEY_SOLVE_RESULT] = solved_day
+    at.run()
+
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert len(at.tabs) == 3, "シンプルモードは 3 タブのまま"
+    body = _all_text(at)
+    for needle in ("シフト表・微調整", "微調整", "曜日別サマリー", "基準充足"):
+        assert needle in body, f"タブ② に {needle} が無い"
+
+
+def test_計画期間を変えると再計算を訴える(
+    solved_payload, one_day, small_children, small_staff, small_preferences,
+    small_requirements, solved_day,
+) -> None:
+    """日数を変えると上部の状態が「再計算が必要」に変わり、計算結果も消えること。
+
+    以前はサイドバーの期間・時刻・定員比などを変えても
+    ``invalidate_pipeline()`` が呼ばれず、古い必要人員表のまま
+    最適化していた。UI/UX 改善 案3 の核心保証。
+    """
+    at = app_test.AppTest.from_file(str(APP_FILE), default_timeout=240)
+    for key, value in {
+        "facility_name": "テスト園",
+        "day_open": DAY_OPEN,
+        "day_close": DAY_CLOSE,
+        "granularity_min": 30,
+        "closed_days": [],
+        "range_start": one_day[0],
+        "range_days": 1,
+        "labor_cost_per_hour": 1500.0,
+        "standard_key": STANDARD_KEY,
+    }.items():
+        at.session_state[key] = value
+    at.session_state[state.KEY_LOAD_RESULT] = solved_payload["state"][
+        state.KEY_LOAD_RESULT
+    ]
+    at.session_state[state.KEY_CHILDREN] = list(small_children)
+    at.session_state[state.KEY_STAFF] = list(small_staff)
+    at.session_state[state.KEY_PREFERENCES] = dict(small_preferences)
+    at.session_state[state.KEY_DAYS] = list(one_day)
+    at.session_state[state.KEY_REQUIREMENTS] = small_requirements
+    at.session_state[state.KEY_SOLVE_RESULT] = solved_day
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+
+    # 実際に最適化を 1 回走らせる。基準の指紋は求解完了のタイミングで
+    # 記録されるので，这条パスを通さないと初回の変更を検知できない。
+    at.button(key="run_solve").click().run(timeout=600)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert at.session_state[state.KEY_SOLVE_RESULT] is not None
+    assert at.session_state[state.KEY_INPUT_FINGERPRINT], "基準の指紋が記録されていない"
+
+    # 日数を 1 -> 3 にする
+    at.number_input(key="range_days").set_value(3).run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    captions = [c.value for c in at.caption]
+    assert any("再計算が必要です" in c for c in captions), (
+        f"状態が更新されていない: {captions}"
+    )
+    assert at.session_state[state.KEY_STALE_REASON] == "計画期間を変更しました"
+    assert at.session_state[state.KEY_SOLVE_RESULT] is None, "古い解が残っている"
+    # シンプルモードの「② シフト作成」は ``auto_requirements=True`` なので、
+    # 無効化された直後の同じフレームで新しい期間の必要人員表を作り直す。
+    # したがって「None であること」ではなく「古い（1 日分の）表が残っていないこと」
+    # を確認する。
+    table = at.session_state[state.KEY_REQUIREMENTS]
+    if table is not None:
+        assert len(table.all_days()) == 3, (
+            f"古い必要人員が残っている: {table.all_days()}"
+        )
+
+
+def test_シフト表セクションは例外なく描画される(tmp_path, solved_payload):
+    """``render()`` 経由でもシフト表が従来どおり描画されること。"""
+    at = _run_tabs(tmp_path / "in_simple", ("tab_shift",), payload=solved_payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    body = _markdown_text(at)
+    assert "曜日別サマリー" in body
+    assert len(at.dataframe) >= 4
+
+
+def test_シフト表セクションは埋め込み時は小見出しだけを出す(
+    tmp_path, solved_payload
+) -> None:
+    """``in_simple=True`` のときは番号つき大見出しを出さず、小見出しだけを出す。
+
+    シンプルモードに「4」は存在しないため。``render()`` は上級者モード用の
+    タブなので大見出しを出すが、``SIMPLE_INDEX`` によりシンプルモードでは
+    「③ シフト作成」に解決される（HDL と 構成上一致する）。
+    """
+    path = tmp_path / "embedded"
+    path.mkdir(parents=True, exist_ok=True)
+    blob = path / "p.pkl"
+    blob.write_bytes(pickle.dumps(solved_payload))
+    script = path / "embedded_app.py"
+    script.write_text(
+        DRIVER_HEAD.format(
+            src=str(SRC), root=str(ROOT), tab_imports="tab_shift", blob=str(blob)
+        )
+        + "tab_shift.render_section(in_simple=True)\n",
+        encoding="utf-8",
+    )
+    at = app_test.AppTest.from_file(str(script), default_timeout=180)
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    body = _all_text(at)
+    assert "シフト表・微調整" in body
+    assert "曜日別サマリー" in body
+    assert "4. シフト表・微調整" not in body, "3 タブ構成に出ない番号を出している"
+
+
+# --------------------------------------------------------------------------
 # 6. 出力タブ
 # --------------------------------------------------------------------------
 
@@ -871,6 +1155,88 @@ def test_出力タブは各種ダウンロードを用意する(export_app):
         assert expected in buttons, f"{expected} が無い"
         assert buttons[expected].proto.url, f"{expected} のファイルが生成されていない"
     assert "出力前の確認" in _markdown_text(export_app)
+
+
+def _blocker_violation(day, slot) -> Violation:
+    """出力前の確認を「未達」にする BLOCKER 違反を 1 件作る。"""
+    return Violation(
+        severity=ViolationSeverity.BLOCKER,
+        code="SHORTFALL",
+        message="配置基準を満たしていません",
+        day=day,
+        slot=slot,
+        staff_id="S01",
+    )
+
+
+def test_確認未達ならダウンロードを無効にする(tmp_path, solved_payload, one_day, slots):
+    """法令違反が残っているときはダウンロードを押せないようにすること。
+
+    以前は「チェックは表示のみ」で、違反のあるシフトがそのまま
+    ダウンロード・GAS 送信できていた。実体（``proto.url``）は
+    **生成したまま** 無効化するので、既存の存在検査は壊れない。
+    """
+    payload = {key: dict(value) for key, value in solved_payload.items()}
+    payload["state"][state.KEY_VIOLATIONS] = [_blocker_violation(one_day[0], slots[0])]
+    at = _run_tabs(tmp_path / "gated", ("tab_export",), payload=payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    buttons = {b.key: b for b in at.get("download_button")}
+    assert buttons, "ダウンロードボタンが無い"
+    for key, button in buttons.items():
+        assert button.proto.disabled, f"{key} が無効化されていない"
+        assert button.proto.url, f"{key} のファイルが生成されていない"
+    assert any("出力前の確認に未達" in e.value for e in at.error)
+
+
+def test_ダウンロードの無効化は確認リストに一致する(export_app):
+    """ボタンの無効状態が「出力前の確認」の判定と一致すること。"""
+    body = _markdown_text(export_app)
+    unmet = "⚠️" in body
+    assert "出力前の確認" in body
+    for key, button in {b.key: b for b in export_app.get("download_button")}.items():
+        assert button.proto.disabled is unmet, (
+            f"{key} の無効状態が確認リストと一致しない（未達={unmet}）"
+        )
+
+
+def test_確認未達でも修正ボタンを出す(tmp_path, solved_payload, one_day, slots):
+    """出力タブからも違反の修正対象にできるようにすること。"""
+    payload = {key: dict(value) for key, value in solved_payload.items()}
+    payload["state"][state.KEY_VIOLATIONS] = [_blocker_violation(one_day[0], slots[0])]
+    at = _run_tabs(tmp_path / "fix_actions", ("tab_export",), payload=payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    fix_buttons = [b for b in at.button if b.key.startswith("export_fix_")]
+    assert fix_buttons, "出力タブに修正ボタンが無い"
+
+
+def test_修正ボタンで対象を指定できる(tmp_path, solved_payload, one_day, slots):
+    """修正ボタンを押すとシフト表側が受け取れる対象が入ること。"""
+    payload = {key: dict(value) for key, value in solved_payload.items()}
+    payload["state"][state.KEY_VIOLATIONS] = [_blocker_violation(one_day[0], slots[0])]
+    at = _run_tabs(tmp_path / "fix_click", ("tab_export",), payload=payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    target = at.button(key="export_fix_0")
+    assert not target.proto.disabled
+    target.click().run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    fixed = at.session_state[state.KEY_FIX_TARGET]
+    assert fixed is not None, "修正対象が session に入っていない"
+    iso_day, staff_id, slot_label = fixed
+    assert iso_day == one_day[0].isoformat()
+    assert staff_id == "S01"
+    assert slot_label
+
+
+def test_修正対象は1回だけ消費される(tmp_path, solved_payload, one_day, slots):
+    """同じ修正が毎回繰り返されないこと（``take_fix_target`` の役割）。"""
+    st.session_state.clear()
+    state.init_state()
+    try:
+        state.set_fix_target(("2026-09-28", "S01", "09:00-09:30"))
+        assert state.take_fix_target() == ("2026-09-28", "S01", "09:00-09:30")
+        assert state.take_fix_target() is None
+    finally:
+        st.session_state.clear()
 
 
 def test_出力タブのプレビュー表が出揃う(export_app):

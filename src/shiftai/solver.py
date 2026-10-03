@@ -38,6 +38,7 @@ from time import perf_counter
 
 import pulp
 
+from shiftai import config
 from shiftai.config import STATUTORY_DAILY_WORK_HOURS, STATUTORY_WEEKLY_WORK_HOURS
 from shiftai.domain import (
     CellState,
@@ -78,14 +79,14 @@ from shiftai.shift_patterns import (
     normalize_patterns,
 )
 
-_DAILY_LEGAL_CAP_MIN = 600
-_OVERTIME_FACTOR = 1.25
-_LONG_DAILY_HOURS = STATUTORY_DAILY_WORK_HOURS + 1.0
-_BREAK_CONCURRENT_SHARE = 0.25
+_DAILY_LEGAL_CAP_MIN = int(config.STATUTORY_MAX_DAILY_WORK_HOURS * 60)
+_OVERTIME_FACTOR = config.STATUTORY_OVERTIME_MULTIPLIER
+_LONG_DAILY_HOURS = config.INTERNAL_DAILY_LONG_HOURS
+_BREAK_CONCURRENT_SHARE = config.BREAK_CONCURRENT_SHARE
 _UNUSED_HOURS_EPS = 0.25
-_DEFAULT_BREAK_MINUTES = 60
+_DEFAULT_BREAK_MINUTES = config.DEFAULT_BREAK_MINUTES
 _DEFAULT_STAGGER_SLOTS = 1
-_EPS = 1e-6
+_EPS = config.FLOAT_TOLERANCE
 _INFEASIBLE_FALLBACK_MESSAGE = "PuLP では解なし。貪欲法による暫定シフトを生成しました"
 _SOFT_COVERAGE_MESSAGE = (
     "配置基準を罰変数に置き換えた 2 パス目（ベストエフォート）で最適化しました。"
@@ -110,7 +111,7 @@ def _daily_cap_minutes(contract: Contract) -> int:
 
 def _week_fraction(n_days: int) -> float:
     """日数を週単位に換算する係数（後方互換のため残す）。"""
-    return max(n_days, 1) / 7.0
+    return max(n_days, 1) / float(config.WEEKLY_WINDOW_DAYS)
 
 
 def month_fraction(days: Sequence[date]) -> float:
@@ -179,7 +180,7 @@ def _day_is_workable(st: StaffMember, day: date, settings: FacilitySettings) -> 
     if day in settings.closed_days:
         return False
     if not st.contract.can_work_holiday:
-        if day.weekday() >= 5:
+        if day.weekday() >= config.WEEKEND_START_WEEKDAY:
             return False
         if day in settings.holiday_dates:
             return False
@@ -1186,7 +1187,7 @@ def _add_fairness(
             continue
         _fairness_spread(ctx, staff, periods, obj, weight, key, indices, None)
     if saturday_weight > 0:
-        saturday_days = {day for day in days if day.weekday() == 5}
+        saturday_days = {day for day in days if day.weekday() == config.WEEKEND_START_WEEKDAY}
         if saturday_days:
             _fairness_spread(
                 ctx,
@@ -1376,7 +1377,7 @@ def solve_shift(
     *,
     fixed_assignments: Mapping[tuple[str, date, str], CellState] | None = None,
     settings: FacilitySettings | None = None,
-    time_limit_sec: int = 60,
+    time_limit_sec: int = config.DEFAULT_TIME_LIMIT_SEC,
     msg: bool = False,
     standard: StaffingStandard | None = None,
     patterns: Sequence[ShiftPattern] | None = None,
@@ -2413,7 +2414,10 @@ def solve_shift_greedy(
         span = len(duty) - break_slots
         pos = 1 + (len(order) + order.index(sid) * stagger) % max(1, span)
         pos = min(max(0, pos), max(0, len(duty) - break_slots))
-        for k in range(pos, min(pos + break_slots, n)):
+        # pos は duty 内の相対位置。row は時間帯全体のグリッドなので、
+        # そのまま添字にすると勤務ブロック前の OFF に当たって休憩が入らない。
+        for j in range(break_slots):
+            k = duty[pos + j]
             if row[k] is CellState.WORK:
                 row[k] = CellState.BREAK
 
@@ -2673,7 +2677,7 @@ def snap_to_patterns(
     staff_index = {m.staff_id: m for m in (staff or ())}
     prefs = dict(preferences or {})
     fac = settings or FacilitySettings()
-    gran = 30
+    gran = config.DEFAULT_GRANULARITY_MIN
     if requirements is not None and requirements.granularity_min:
         gran = max(1, int(requirements.granularity_min))
     elif slots[0].minutes:

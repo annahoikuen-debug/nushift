@@ -33,6 +33,7 @@ from typing import Any
 
 import pandas as pd
 
+from shiftai import config
 from shiftai.domain import (
     CellState,
     Slot,
@@ -232,7 +233,7 @@ def counts(
                     totals["late"] += 1
                     if index is not None:
                         weekly["late"][index] += 1
-            if day.weekday() == 5:
+            if day.weekday() == config.WEEKEND_START_WEEKDAY:
                 totals["saturday"] += 1
                 if index is not None:
                     weekly["saturday"][index] += 1

@@ -17,6 +17,7 @@ import logging
 from pathlib import Path
 
 import pytest
+import streamlit as st
 
 from shiftai.ui import state, wizard
 
@@ -30,6 +31,48 @@ pytestmark = pytest.mark.timeout(600)
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 APP_FILE = ROOT / "streamlit_app.py"
+
+
+# --------------------------------------------------------------------------
+# キー文字列の固定（UI/UX 改善 案3・ステップ12）
+# --------------------------------------------------------------------------
+
+
+def test_キー文字列はtab_data側と一致する() -> None:
+    """``tab_data.reset_everything`` は ``"wizard_step"`` をリテラルで pop する。
+
+    ``wizard`` が ``tab_data`` を import しているので ``tab_data`` 側から
+    ``wizard`` を import すると循環する。そのためリテラルで書いており、
+    ここがずれるとウィザードのステップだけ初期化されなくなる。
+    """
+    assert wizard.KEY_STEP == "wizard_step"
+
+
+def test_すべて初期化でウィザードのステップが0に戻る() -> None:
+    """``tab_data.reset_everything()`` で ``KEY_STEP`` が 0 へ戻ること。"""
+    from shiftai.ui import tab_data
+
+    st.session_state.clear()
+    try:
+        wizard.set_step(4)
+        assert wizard.current_step() == 4
+        tab_data.reset_everything()
+        assert wizard.current_step() == 0
+    finally:
+        st.session_state.clear()
+
+
+def test_3表だけのクリアはウィザードのステップを保つ(tmp_path) -> None:
+    """``reset_tables`` はウィザードのステップを消さないこと。"""
+    from shiftai.ui import tab_data
+
+    st.session_state.clear()
+    try:
+        wizard.set_step(3)
+        tab_data.reset_tables()
+        assert wizard.current_step() == 3
+    finally:
+        st.session_state.clear()
 
 WIZARD_DRIVER = """import sys
 sys.path.insert(0, {src!r})

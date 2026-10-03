@@ -205,3 +205,138 @@ def test_次ステップ案内がモードに追従する(tmp_path) -> None:
     for name in theme.STEP_NAMES_SIMPLE:
         assert name in html, f"{name} が描画されていない"
     assert "必要人員" not in html, "3 タブに無いステップを案内している"
+
+
+# --- T-10-R8: 導線が入力状態に従う（UI/UX 改善 案4） ------------------------
+
+
+def _hint_app(tmp_path, filename: str, body: str):
+    """``theme`` を実行する一時スクリプトを作り、``AppTest`` を 1 フレーム返す。"""
+    import pathlib as _pathlib
+
+    from streamlit.testing.v1 import AppTest as _AppTest
+
+    src = str(_pathlib.Path(__file__).resolve().parents[1] / "src")
+    script = _pathlib.Path(tmp_path) / filename
+    script.write_text(
+        "import sys\n"
+        f"sys.path.insert(0, {src!r})\n"
+        "import streamlit as st\n"
+        "from shiftai.ui import theme, state\n"
+        "theme.apply_page_config()\n"
+        "state.init_state()\n" + body,
+        encoding="utf-8",
+    )
+    at = _AppTest.from_file(str(script), default_timeout=120)
+    at.run()
+    return at
+
+
+def test_未入力時はデータ入力を促す案内になる(tmp_path) -> None:
+    """データが 1 件も無いときはタブ2 へ進めず、入力を促すこと。
+
+    以前はタブ1 が無条件に「タブ2 へ進んでください」と案内し、
+    タブ2 は「まずデータを投入してください」と返す循環参照になっていた。
+    """
+    at = _hint_app(tmp_path, "hint_empty.py", "theme.next_step_hint(0)\n")
+    assert not at.exception, [str(e.value) for e in at.exception]
+    body = "\n".join(i.value for i in at.info)
+    assert "まだデータが投入されていません" in body
+    assert "タブ2" not in body, "未入力のまま次のタブへ誘導している"
+
+
+def test_古い状態のときは再計算を促す(tmp_path) -> None:
+    """入力が変更された状態では、再計算を案内すること。"""
+    at = _hint_app(
+        tmp_path,
+        "hint_stale.py",
+        "state.mark_inputs_changed('計画期間を変更しました')\n"
+        "theme.next_step_hint(2)\n",
+    )
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert any("再計算が必要です" in w.value for w in at.warning)
+
+
+def test_作成済みなら完了案内になる(tmp_path) -> None:
+    """出力が最終ステップなので、完了案内になること。"""
+    at = _hint_app(
+        tmp_path,
+        "hint_done.py",
+        "st.session_state[state.KEY_LOAD_RESULT] = object()\n"
+        "st.session_state[state.KEY_SOLVE_RESULT] = object()\n"
+        "theme.next_step_hint(4)\n",
+    )
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert any("全ステップ完了" in s.value for s in at.success)
+
+
+def test_ステップ表はモードに追従する(tmp_path) -> None:
+    """上級者モードだけ「必要人員」の語を案内に含めること。"""
+    expert = _hint_app(
+        tmp_path,
+        "hint_expert.py",
+        "st.session_state['ui_simple_mode'] = False\n"
+        "st.session_state[state.KEY_LOAD_RESULT] = object()\n"
+        "theme.next_step_hint(0)\n",
+    )
+    simple = _hint_app(
+        tmp_path,
+        "hint_simple.py",
+        "st.session_state['ui_simple_mode'] = True\n"
+        "st.session_state[state.KEY_LOAD_RESULT] = object()\n"
+        "theme.next_step_hint(0)\n",
+    )
+    assert not expert.exception, [str(e.value) for e in expert.exception]
+    assert not simple.exception, [str(e.value) for e in simple.exception]
+    expert_body = "\n".join(i.value for i in expert.info)
+    simple_body = "\n".join(i.value for i in simple.info)
+    assert "必要人員" in expert_body
+    assert "必要人員" not in simple_body
+
+
+def test_next_actionは両モードで隣を指す() -> None:
+    """``_next_action`` が両モードで正しい次のステップを指すこと。"""
+    import streamlit as _st
+
+    from shiftai.ui import theme as _theme
+
+    try:
+        _st.session_state["ui_simple_mode"] = True
+        simple = [_theme._next_action(i) for i in range(5)]
+        _st.session_state["ui_simple_mode"] = False
+        expert = [_theme._next_action(i) for i in range(5)]
+    finally:
+        _st.session_state.clear()
+    assert "タブ2（② シフト作成）" in simple[0]
+    assert "タブ2（② 必要人員）" in expert[0]
+    assert "タブ3（③ シフト作成）" in expert[1]
+    assert all("必要人員" not in text for text in simple)
+
+
+def test_where_is_periodはウィザードとサイドバーを区別する() -> None:
+    """計画期間の案内が、入力実際の場所を指すこと。"""
+    import streamlit as _st
+
+    from shiftai.ui import theme as _theme
+
+    try:
+        _st.session_state.clear()
+        assert "サイドバー" in _theme.where_is_period()
+        _st.session_state["wizard_answered"] = True
+        assert "サイドバー" not in _theme.where_is_period()
+    finally:
+        _st.session_state.clear()
+
+
+def test_詰まり道でも導線が出る(tmp_path) -> None:
+    """``stuck_hint`` が理由と次のアクションを両方出すこと。"""
+    at = _hint_app(
+        tmp_path,
+        "hint_stuck.py",
+        "st.session_state[state.KEY_LOAD_RESULT] = object()\n"
+        "theme.stuck_hint(2, 'シフトがまだ作成されていません。')\n",
+    )
+    assert not at.exception, [str(e.value) for e in at.exception]
+    body = "\n".join(i.value for i in at.info)
+    assert "シフトがまだ作成されていません。" in body
+    assert "タブ3" in body

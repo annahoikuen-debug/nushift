@@ -14,6 +14,7 @@ import pytest
 
 from shiftai import local_rules
 from shiftai.domain import (
+    AgeClass,
     CellState,
     ChildPlan,
     FacilitySettings,
@@ -34,6 +35,7 @@ from shiftai.domain import (
 from shiftai.gap_analysis import (
     GapReport,
     SlotGap,
+    _required_break_minutes,
     analyze_gap,
     check_violations,
     compute_cost,
@@ -576,3 +578,92 @@ def test_職員が0人なら過不足はすべて不足(small_requirements):
     report = analyze_gap(small_requirements, result, [])
     assert report.total_shortfall_slots > 0
     assert all(g.actual_staff == 0 for g in report.gaps)
+
+
+# ---------------------------------------------------------------------------
+# 回帰：法定休憩時間の閾値取り違え
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("work_minutes", "expected"),
+    [
+        (360, 0),  # 6hちょうど：休憩義務なし
+        (420, 45),  # 6h超 → 45分
+        (480, 45),  # 8hちょうど：45分のまま
+        (481, 60),  # 8h超 → 60分（労基法9条）
+        (540, 60),  # 9h
+        (600, 60),  # 10h
+    ],
+)
+def test_法定休憩は8時間超で60分になる(work_minutes, expected):
+    """8時間超の勤務を 45 分で通してはいけない。
+
+    ``STATUTORY_BREAK_THRESHOLDS`` は ``((480, 60), (360, 45))`` と
+    閾値の**降順**で並ぶ。無条件代入すると常に下限側の 45 分が勝ち、
+    8時間超勤務の休憩不足を見逃す。関数の docstring（8時間超60分）と
+    実装が食い違っていたため固定する。
+    """
+    assert _required_break_minutes(work_minutes) == expected
+
+
+def test_法定休憩は閾値の並び順に依存しない(monkeypatch):
+    """定数を昇順に並べ替えても結果が同じであること。"""
+    from shiftai import gap_analysis
+
+    monkeypatch.setattr(gap_analysis, "STATUTORY_BREAK_THRESHOLDS", ((6 * 60, 45), (8 * 60, 60)))
+    assert gap_analysis._required_break_minutes(540) == 60
+    assert gap_analysis._required_break_minutes(420) == 45
+
+
+# ---------------------------------------------------------------------------
+# 回帰：greedy の休憩が勤務ブロックの外に入る
+# ---------------------------------------------------------------------------
+
+
+def test_午後の勤務でも休憩が勤務ブロック内に入る():
+    """勤務可能時間帯が午後の職員にも、休憩が実際に勤められない。
+
+    休憩位置 ``pos`` は ``duty``（勤務スロットの**相対**位置）に対して
+    計算されていたが、そのまま時間帯グリッドの添字として使われていた。
+    勤務ブロックが後方に開始すると ``pos`` が OFF の時間帯を叩き、
+    8時間超の勤務に休憩が 0 分になる。ブロック内の実スロットに変換して
+    解決すること。
+    """
+    day = date(2026, 9, 28)
+    children = [
+        ChildPlan(f"C00{i}", f"園児{i:03d}", day, AgeClass.INFANT, time(9, 0), time(20, 0))
+        for i in range(1, 4)
+    ]
+    requirements = build_requirements(
+        children,
+        [day],
+        STANDARD,
+        day_open=time(9, 0),
+        day_close=time(21, 0),
+        granularity_min=30,
+    )
+    # 13:00 以降しか働けない職員が 1 名だけ。
+    afternoon = [
+        StaffMember(
+            staff_id="S001",
+            name="午後保育士",
+            roles=(Role.HOIKUSHI,),
+            contract=sei_contract(earliest_start=time(13, 0), latest_end=time(21, 0)),
+        )
+    ]
+
+    result = solve_shift_greedy(children, afternoon, requirements, standard=STANDARD)
+
+    slots = list(requirements.slots)
+    row = result.shift_days[0].assignments.get("S001", {})
+    work = [s for s in slots if row.get(s.label) is CellState.WORK]
+    brk = [s for s in slots if row.get(s.label) is CellState.BREAK]
+    assert work, "greedy が勤務を1つも割り当てなかった"
+
+    first, last = slots.index(work[0]), slots.index(work[-1])
+    inside = [s for s in brk if first <= slots.index(s) <= last]
+    assert inside, (
+        f"勤務ブロック {work[0].label}〜{work[-1].label} に休憩が入っていない"
+        f"（休憩スロット: {[s.label for s in brk]}）"
+    )

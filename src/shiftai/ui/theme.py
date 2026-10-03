@@ -16,13 +16,27 @@ from shiftai.config import (
     APP_ICON,
     APP_TITLE,
     APP_VERSION,
+    COLOR_ACCENT,
     COLOR_BREAK,
+    COLOR_BREAK_INK,
+    COLOR_FIXED,
+    COLOR_INK,
     COLOR_OFF,
     COLOR_OVER,
+    COLOR_OVER_INK,
     COLOR_SHORTFALL,
+    COLOR_SHORTFALL_INK,
     COLOR_WORK,
+    COLOR_WORK_INK,
 )
 from shiftai.domain import format_jp_date
+from shiftai.ui.steps import (
+    EXPERT_STEPS,
+    SIMPLE_INDEX,
+    SIMPLE_STEPS,
+    Step,
+    steps_for_mode,
+)
 
 PAGE_TITLE = APP_TITLE
 PAGE_ICON = APP_ICON
@@ -79,7 +93,7 @@ html, body, [class*="css"] {{
   font-size: 1.5rem;
   font-weight: 700;
   line-height: 1.15;
-  color: #1f2430;
+  color: {COLOR_INK};
 }}
 .shiftai-metric-note {{
   font-size: 0.72rem;
@@ -112,7 +126,7 @@ html, body, [class*="css"] {{
 .shiftai-note-card h5 {{
   margin: 0 0 0.3rem 0;
   font-size: 0.95rem;
-  color: #1f2430;
+  color: {COLOR_INK};
 }}
 .shiftai-note-card p {{
   margin: 0 0 0.25rem 0;
@@ -138,10 +152,10 @@ html, body, [class*="css"] {{
   line-height: 1.65;
   margin: 0.35rem 0 0.6rem 0;
 }}
-.shiftai-shortfall {{ background-color: {COLOR_SHORTFALL}22; color: #8e0000; font-weight: 600; }}
-.shiftai-overstaff {{ background-color: {COLOR_OVER}1a; color: #0d47a1; }}
-.shiftai-ok {{ background-color: {COLOR_WORK}1a; color: #1b5e20; }}
-.shiftai-fixed {{ box-shadow: inset 0 0 0 2px #6a1b9a; }}
+.shiftai-shortfall {{ background-color: {COLOR_SHORTFALL}22; color: {COLOR_SHORTFALL_INK}; font-weight: 600; }}
+.shiftai-overstaff {{ background-color: {COLOR_OVER}1a; color: {COLOR_OVER_INK}; }}
+.shiftai-ok {{ background-color: {COLOR_WORK}1a; color: {COLOR_WORK_INK}; }}
+.shiftai-fixed {{ box-shadow: inset 0 0 0 2px {COLOR_FIXED}; }}
 .shiftai-table-tight td, .shiftai-table-tight th {{
   font-size: 0.8rem;
   padding: 0.22rem 0.4rem;
@@ -233,10 +247,10 @@ html, body, [class*="css"] {{
     45deg, var(--shiftai-break) 0 3px, #ffffff 3px 6px
   );
   border: 1px solid var(--shiftai-break);
-  color: #7a5200;
+  color: {COLOR_BREAK_INK};
 }}
 .shiftai-gantt-bar--locked {{
-  box-shadow: inset 0 0 0 2px #6a1b9a;
+  box-shadow: inset 0 0 0 2px {COLOR_FIXED};
 }}
 .shiftai-gantt-empty {{
   position: absolute;
@@ -280,8 +294,8 @@ html, body, [class*="css"] {{
   background: #fbfcfe;
 }}
 .shiftai-tip > summary:hover {{
-  border-color: #1f6feb;
-  color: #1f6feb;
+  border-color: {COLOR_ACCENT};
+  color: {COLOR_ACCENT};
   background: #f0f6ff;
 }}
 /* /details の既定マーカーを消して体裁を整える */
@@ -296,13 +310,13 @@ html, body, [class*="css"] {{
   max-width: 78vw;
   padding: 0.6rem 0.8rem;
   border: 1px solid rgba(49, 51, 63, 0.18);
-  border-left: 4px solid #1f6feb;
+  border-left: 4px solid {COLOR_ACCENT};
   border-radius: 0.5rem;
   background: #ffffff;
   box-shadow: 0 6px 20px rgba(15, 23, 42, 0.14);
   font-size: 0.82rem;
   line-height: 1.7;
-  color: #1f2430;
+  color: {COLOR_INK};
   white-space: normal;
   text-align: left;
 }}
@@ -378,25 +392,14 @@ def render_footer() -> None:
     )
 
 
-STEP_NAMES: tuple[str, ...] = (
-    "① データ投入",
-    "② 必要人員",
-    "③ シフト作成",
-    "④ シフト表・微調整",
-    "⑤ 出力",
-)
-"""上級者モード（5 タブ）のステップ。"""
+STEP_NAMES: tuple[str, ...] = tuple(step.label for step in EXPERT_STEPS)
+"""上級者モード（5 タブ）のステップ。値は ``steps.EXPERT_STEPS`` から作る。"""
 
-STEP_NAMES_SIMPLE: tuple[str, ...] = (
-    "① データ",
-    "② シフト作成",
-    "③ 出力",
-)
-"""シンプルモード（3 タブ）のステップ。"""
+STEP_NAMES_SIMPLE: tuple[str, ...] = tuple(step.label for step in SIMPLE_STEPS)
+"""シンプルモード（3 タブ）のステップ。値は ``steps.SIMPLE_STEPS`` から作る。"""
 
-#: 5 タブの番号 → シンプルモードの番号。どちらのモードでも
-#: 同じ呼び出し側（``step_indicator(2)`` など）で済むように写像する。
-STEP_INDEX_SIMPLE: dict[int, int] = {0: 0, 1: 1, 2: 1, 3: 1, 4: 2}
+STEP_INDEX_SIMPLE: dict[int, int] = SIMPLE_INDEX
+"""5 タブ番号からシンプルモード番号への書像（``steps.SIMPLE_INDEX`` の別名）。"""
 
 MODE_KEY = "ui_simple_mode"
 """シンプルモード切替のキーは ``streamlit_app.MODE_KEY`` と共有する。"""
@@ -409,19 +412,85 @@ def simple_mode() -> bool:
 
 def step_names() -> tuple[str, ...]:
     """現在のモードに対応するステップ名の並びを返す。"""
-    return STEP_NAMES_SIMPLE if simple_mode() else STEP_NAMES
+    return tuple(step.label for step in steps_for_mode(simple_mode()))
 
 
 def step_index(current: int) -> int:
-    """5 タブ番号を、現在のモードのインデックスに変換する。"""
+    """5 タブ番号を、現在のモードのインデックスに変換する。
+
+    シンプルモードでは ``steps.SIMPLE_INDEX`` で読み替える。未知番号は
+    例外にせずそのまま返す（描画の途中で止まらないため）。
+    """
     if simple_mode():
-        return STEP_INDEX_SIMPLE.get(current, current)
+        return SIMPLE_INDEX.get(current, current)
     return current
 
 
 def empty_state(message: str = "まずタブ1でデータを投入してください") -> None:
     """データ未投入時に呼び出す案内。"""
     st.info(message)
+
+
+def current_step(current: int) -> Step:
+    """5 タブ番号を、現在のモードの :class:`~shiftai.ui.steps.Step` へ変換する。
+
+    上級者モードではそのまま、シンプルモードでは
+    ``steps.SIMPLE_INDEX`` を経由して対応するステップへ読み替える。
+
+    範囲外の番号でも例外にはしない。最後のステップを返す。
+    """
+    if not simple_mode():
+        if 0 <= current < len(EXPERT_STEPS):
+            return EXPERT_STEPS[current]
+        return EXPERT_STEPS[-1]
+    position = SIMPLE_INDEX.get(current, current)
+    if 0 <= position < len(SIMPLE_STEPS):
+        return SIMPLE_STEPS[position]
+    return SIMPLE_STEPS[-1]
+
+
+def heading(current: int) -> None:
+    """タブの H3 見出しを描画する。番号と文は ``steps`` から取る。"""
+    st.markdown(f"### {current_step(current).title}")
+
+
+def tab_ref(current: int) -> str:
+    """他の画面から現在のステップへ誘導する文言を返す（例: タブ2）。"""
+    return current_step(current).tab_ref
+
+
+STAGE_LABELS: dict[str, str] = {
+    "empty": "① データ: 未入力",
+    "loaded": "① データ: 読込済み ／ ② 必要人員: 未計算 ／ ③ シフト: 未作成",
+    "ready": "② 必要人員: 計算済み ／ ③ シフト: 未作成",
+    "solved": "③ シフト: 作成済み",
+}
+"""``state.STAGE_*`` を 1 行の説明にまとめた対応表。
+
+``stale`` は内容が実行時に決まるので、ここには載せない。
+"""
+
+
+def render_status_bar() -> None:
+    """すべてのタブより上に、現在の段階を 1 行で示す。
+
+    ``state`` をモジュールレベルで import すると循環するため、
+    関数の中で取り込む。
+    """
+    from shiftai.ui import state
+
+    stage = state.pipeline_stage()
+    if stage == state.STAGE_EMPTY:
+        return
+    if stage == state.STAGE_STALE:
+        reason = state.get(state.KEY_STALE_REASON) or "入力が変更されました"
+        label = f"⚠️ 再計算が必要です（{reason}）"
+    else:
+        label = STAGE_LABELS.get(stage, "")
+    if not label:
+        return
+    with st.container(border=True):
+        st.caption(label)
 
 
 def step_indicator(current: int) -> None:
@@ -449,7 +518,7 @@ def chips(names: Sequence[str], active: int, *, mark_done: bool = False) -> None
         text = str(name)
         if index == active:
             rows.append(
-                f'<span class="shiftai-chip" style="background:#1f6feb;color:#ffffff;'
+                f'<span class="shiftai-chip" style="background:{COLOR_ACCENT};color:#ffffff;'
                 f'font-weight:700">{escape(text)}</span>'
             )
             continue
@@ -465,18 +534,82 @@ def chips(names: Sequence[str], active: int, *, mark_done: bool = False) -> None
     )
 
 
+def _position_of(current: int) -> int:
+    """5 タブ番号を、現在のモードのステップ並びの中での位置へ変換する。
+
+    ``SIMPLE_INDEX`` を使わず ``steps_for_mode`` の並びで位置を返すので、
+    モードに存在しないステップ（シンプルモードの「必要人員」など）は
+    自然に範囲外になる。
+    """
+    group = steps_for_mode(simple_mode())
+    if not simple_mode():
+        index = EXPERT_STEPS[current].index if 0 <= current < len(EXPERT_STEPS) else current
+        return index
+    position = SIMPLE_INDEX.get(current, current)
+    if 0 <= position < len(group):
+        return group[position].index
+    return -1
+
+
+def _next_action(current: int) -> str:
+    """次にやることの 1 文を返す。最終ステップでは締めの文言を返す。"""
+    group = steps_for_mode(simple_mode())
+    position = _position_of(current)
+    if position < 0 or position + 1 >= len(group):
+        return "シフト表と出力ファイルを確認し、運用前に園長・設置責任者の承認を受けてください。"
+    nxt = group[position + 1]
+    return f"上の {nxt.tab_ref}（{nxt.label}）を開いてください。"
+
+
 def next_step_hint(current: int) -> None:
-    """タブ末尾に「次にやること」を示す導線を表示する。"""
-    names = step_names()
-    active = step_index(current)
-    if active >= len(names) - 1:
+    """タブ末尾に「次にやること」を示す導線を表示する。
+
+    静的な文字列ではなく ``state.pipeline_stage()`` を見て決める。
+    データが未投入のときにも「タブ2 へ進みましょう」と案内していたため、
+    タブ2 側の「まずデータを投入してください」と循環していた。
+    """
+    from shiftai.ui import state
+
+    stage = state.pipeline_stage()
+    step = current_step(current)
+    if step.key == "export":
         st.success(
             "🎉 これで全ステップ完了です。シフト表と出力ファイルを確認し、"
             "運用前に園長・設置責任者の承認を受けてください。"
         )
         return
-    nxt = names[active + 1]
-    st.info(f"👉 次のステップ: 上のタブ **{nxt}** を開いてください。")
+    if stage == state.STAGE_STALE:
+        reason = state.get(state.KEY_STALE_REASON) or "入力が変更されました"
+        st.warning(f"⚠️ 再計算が必要です（{reason}）。{_next_action(current)}")
+        return
+    if stage == state.STAGE_EMPTY:
+        st.info(
+            "まだデータが投入されていません。"
+            f"{tab_ref(0)}（{current_step(0).label}）から始めてください。"
+        )
+        return
+    if stage in (state.STAGE_SOLVED, state.STAGE_READY) and step.key == "solve":
+        st.success("✅ シフトを作成しました。内容を確認してから出力に進んでください。")
+    st.info(f"👉 次のステップ: {_next_action(current)}")
+
+
+def stuck_hint(current: int, reason: str) -> None:
+    """通過できなかったときに、理由と次にどうするかを出す。
+
+    ``reason`` は日本語の短文。``current`` は 5 タブ番号。
+    """
+    st.info(f"{reason}\n\n👉 {_next_action(current)}")
+
+
+def where_is_period() -> str:
+    """計画期間の入力場所を指す文言を返す。
+
+    ウィザードが条件入力を受け持つときはタブ内、そうでなければサイドバー。
+    キーは ``wizard.KEY_ANSWERED`` と同じ文字列 ``"wizard_answered"`` を使う。
+    """
+    if st.session_state.get("wizard_answered", False):
+        return "このタブの「園の条件」で計画期間を設定してください。"
+    return "サイドバーで計画期間を設定してください。"
 
 
 def format_day(day: Any) -> str:
@@ -542,7 +675,7 @@ def legend(items: Sequence[tuple[str, str]]) -> None:
     """凡例チップを描画する。
 
     ``label`` はエスケープする（現状は定数のみだが、凡例を外部から
-    渡せるようにするMoment のために境界で守る）。
+    渡せるようにするために境界で守る）。
     ``color`` は CSS の ``background`` にそのまま入るので、
     ``style`` 属性 inject で外れないよう ``#`` で始まる値だけ許可する。
     """

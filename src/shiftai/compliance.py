@@ -227,10 +227,10 @@ class FacilitySpec:
         """この施設で必要な保育士比率。判定できない制度では ``None``。"""
         if not self.regulation.is_unlicensed:
             return None
-        if self.is_shared_operator or self.capacity >= 20:
-            # 利用定員20人以上の保育事業者型事業は4分の3以上。
-            # 単独の認可外施設（共同利用枠でない）は半数以上。
-            return 0.75 if self.is_shared_operator else 0.5
+        # 保育事業者型事業は「利用定員20名以上」のときだけ 4分の3 以上。
+        # 共同利用枠（is_shared_operator）でも定員20名未満なら単独認可外と同じ半数。
+        if self.is_shared_operator and self.capacity >= 20:
+            return 0.75
         return 0.5
 
 
