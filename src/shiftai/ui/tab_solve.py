@@ -40,7 +40,7 @@ def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveRes
     """最適化を実行して結果を session_state に保存する。
 
     ``force`` が True のときは再計算を強制する。
-    ``relaxation`` を渡すと、その緩和段階（上から缓める）で実行する。
+    ``relaxation`` を渡すと、その緩和段階（上から緩める）で実行する。
     例外は呼び出し側で表示する。
     """
     settings = state.current_settings()
@@ -58,6 +58,12 @@ def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveRes
         raise ValueError("職員データが未投入です。")
 
     limit = int(state.get(state.KEY_TIME_LIMIT_SEC))
+    # 求解に失敗しても**前回の結果がそのまま出力可能なまま残らない**ようにする。
+    # 失敗時に古い結果を残すと、エラーの出ている新しい計算と、
+    # 「一番新しい結果」としてダウンロードできてしまう古いシフトが混在し、
+    # ``pipeline_stage`` も ``STAGE_SOLVED`` のまま（= stale 印が付かない）になる。
+    # 開始時点で破棄し、例外が出ても「結果なし」の状態に戻す。
+    _clear_solve_outputs()
     progress = st.progress(0.0, text=PROGRESS_STEPS[0][1])
     try:
         progress.progress(PROGRESS_STEPS[0][0], text=PROGRESS_STEPS[0][1])
@@ -114,6 +120,22 @@ def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveRes
     st.session_state.pop("gap_editor", None)
     st.session_state.pop("_fix_slot_label", None)
     return result
+
+
+def _clear_solve_outputs() -> None:
+    """直近の求解結果を破棄する。
+
+    新しい求解の開始時に呼ぶ。失敗時に前回の結果を残しておくと、
+    「新しい計算のエラー」が出ながら「一番新しいシフト」として
+    古いものがダウンロードできてしまう。
+    """
+    for key in (
+        state.KEY_SOLVE_RESULT,
+        state.KEY_GAP_REPORT,
+        state.KEY_VIOLATIONS,
+        state.KEY_PATTERN_SNAP_REPORT,
+    ):
+        state.reset(key)
 
 
 def _ratio_text(ratio: float) -> str:

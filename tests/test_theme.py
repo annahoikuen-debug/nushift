@@ -77,7 +77,7 @@ def test_rule_note_cardsが全プリセットで例外を投げない() -> None:
     for key in local_rules.MUNICIPAL_PRESETS:
         standard = local_rules.get_standard(key)
         notes = getattr(standard, "notes", None) or []
-        assert isinstance(notes, (list, tuple))
+        assert isinstance(notes, list | tuple)
 
 
 def test_rule_note_cardが任意の要素を受け付ける() -> None:

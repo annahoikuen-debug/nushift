@@ -371,6 +371,17 @@ def _apply_min_two(
 
     在園児が1名でもいる時間帯について、必要人員の合計が ``min_staff_per_room``
     に達するよう最も年少の年齢クラスの行を加算する。
+
+    底上げ分は ``needed_qualified`` を増やさない（必要保育士数は据え置き）。
+    2名のうち2人目を保育士でなくてもよい扱いになるため、
+    ``docs/03_配置基準と自治体ルール.md``（3.3 の実測例）でも
+    `2026年9月28日(月) 09:00-09:30／0歳児（定員比3:1）：在園1名 → 必要人員2名（うち保育士1名）／区分=保育標準時間／必須`
+    と写在している。README も同じ数字（{RD_LINE}）を示例として示す。
+
+    なお、認可保育所の職員配置基準を厳密に解釈すると2名とも保育士で
+    ある必要があり、この実装はその点で弱い。基準の解釈を変える場合は
+    ``docs/03``・README・本テスト（``test_2名ルール_0歳児1名でも必要人員2名``）
+    を同時に更新すること。
     """
     if not enforce_min_two or not slot_rows:
         return slot_rows
@@ -383,6 +394,7 @@ def _apply_min_two(
     slot_rows[target_index] = replace(
         target,
         needed_staff=target.needed_staff + gap,
+        needed_qualified=target.needed_qualified,
         basis=f"{target.basis}／{_MIN_TWO_TEXT}",
     )
     return slot_rows

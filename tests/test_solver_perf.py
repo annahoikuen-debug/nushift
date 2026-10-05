@@ -333,7 +333,7 @@ def test_verify_solutionは意図的に壊した解を検出する(small_childre
     assert verify_solution(ctx) == []
     for i in range(len(table.slots)):
         variable = ctx.work[("S001", DAY, i)]
-        if not isinstance(variable, (int, float)):
+        if not isinstance(variable, int | float):
             variable.varValue = 1.0
     bad = verify_solution(ctx)
     daily_caps = [n for n in ctx.prob.constraints if n.startswith("dailycap_S001")]
@@ -345,7 +345,7 @@ def test_verify_solutionは未評価の変数を例外にしない(small_staff, 
     """変数値が ``None`` の制約は「違反ではないが検査不能」として静かに除外されること。"""
     ctx = _build(small_staff, small_requirements)
     ctx.prob.solve(pulp.PULP_CBC_CMD(msg=False, timeLimit=20))
-    variable = next(v for v in ctx.work.values() if not isinstance(v, (int, float)))
+    variable = next(v for v in ctx.work.values() if not isinstance(v, int | float))
     variable.varValue = None
     assert verify_solution(ctx) == []
 
@@ -359,7 +359,7 @@ def test_未評価の変数がある解は採用しない(small_staff, small_req
     for var in ctx.prob.variables():
         var.varValue = None
     for v in ctx.work.values():
-        if not isinstance(v, (int, float)):
+        if not isinstance(v, int | float):
             v.varValue = 1.0
     status, raw = _run_cbc(ctx, 1, False)
     assert status is SolveStatus.INFEASIBLE
@@ -1117,7 +1117,7 @@ def test_希望する時間帯はソフト制約になる(small_staff, small_req
 def test_勤務セルが1つも無い解は解なし扱い(small_staff, small_requirements):
     empty = replace(small_requirements, rows={DAY: []})
     ctx = _build(small_staff, empty)
-    assert ctx.work and all(isinstance(v, (int, float)) for v in ctx.work.values())
+    assert ctx.work and all(isinstance(v, int | float) for v in ctx.work.values())
     status, _raw = _run_cbc(ctx, 5, False)
     assert status is SolveStatus.INFEASIBLE
 
@@ -1865,7 +1865,7 @@ def test_配置基準の破れはcoverqとして検出される(small_staff, sma
     ctx = _solved_ctx(small_staff, small_requirements)
     assert verify_solution(ctx) == [], "前提となる正常解が既に違反扱い"
     for variable in ctx.work.values():
-        if not isinstance(variable, (int, float)):
+        if not isinstance(variable, int | float):
             variable.varValue = 0.0
     bad = verify_solution(ctx)
     assert bad, "配置基準を破ったのに空リストが返った（検査が機能していない）"
@@ -1887,7 +1887,7 @@ def test_在勤ブロック分裂はsplitcapとして検出される(small_staff
     ctx.work[("S001", DAY, len(slots) - 1)].varValue = 1.0
     for i in range(1, len(slots) - 1):
         cell = ctx.work[("S001", DAY, i)]
-        if not isinstance(cell, (int, float)):
+        if not isinstance(cell, int | float):
             cell.varValue = 0.0
     slack = next(v for v in ctx.prob.variables() if v.name == "duty_S001_0928_split")
     slack.varValue = 0.0
@@ -1908,7 +1908,7 @@ def test_検査不能な制約だけが除外され他は検出される(small_s
     ``None`` を 0 とみなして誤検出する実装に退行しても、このテストが鳴る。
     """
     ctx = _solved_ctx(small_staff, small_requirements)
-    first = next(v for v in ctx.work.values() if not isinstance(v, (int, float)))
+    first = next(v for v in ctx.work.values() if not isinstance(v, int | float))
     # 「その変数を含む制約」は未判定なので、違反リストに現れない
     touched = {
         spec.name for spec in _constraint_specs(ctx) if any(var is first for var, _ in spec.terms)
@@ -1927,8 +1927,8 @@ def test_検査不能な制約だけが除外され他は検出される(small_s
     # （テストがバグの副作用に結合していた）。
     # ここでは「現在値をさらに大きくした値は確実に違反になる」量まで増やす。
     upper = getattr(first, "upBound", None)
-    step = (upper + 1.0) if isinstance(upper, (int, float)) and upper is not None else 1.0
-    current = first.varValue if isinstance(first.varValue, (int, float)) else 0.0
+    step = (upper + 1.0) if isinstance(upper, int | float) and upper is not None else 1.0
+    current = first.varValue if isinstance(first.varValue, int | float) else 0.0
     first.varValue = current + max(1.0, float(step))
     detected = verify_solution(ctx)
     assert touched & set(detected), (
@@ -2064,7 +2064,7 @@ def test_全経路でstatsの必須キーが揃う(small_children, small_staff, 
     for result in results:
         for key in ("elapsed_sec", "num_variables", "num_constraints"):
             assert key in result.stats, (result.status, key)
-            assert isinstance(result.stats[key], (int, float)), (key, result.stats[key])
+            assert isinstance(result.stats[key], int | float), (key, result.stats[key])
         assert result.stats["elapsed_sec"] >= 0.0
 
 
@@ -2250,7 +2250,7 @@ def test_9時間以下の勤務は長時間勤務ペナルティを受けない(
         pytest.skip("longd 変数が生成されていない（この構成では不要）")
     for var in longs:
         worked_min = var.value()
-        assert isinstance(worked_min, (int, float)), worked_min
+        assert isinstance(worked_min, int | float), worked_min
         if worked_min <= 9 * 60:
             assert var.varValue == 0, (
                 f"{var.name}: {worked_min} 分勤務なのに longd={var.varValue}"

@@ -100,7 +100,7 @@ def _text(value: Any) -> str:
             return ""
     except (TypeError, ValueError):
         pass
-    if isinstance(value, (datetime, date, time)):
+    if isinstance(value, datetime | date | time):
         return str(value)
     return str(value).strip()
 
@@ -109,7 +109,7 @@ def _number(value: Any) -> float | None:
     """数値へ変換する。解釈できなければ ``None``。"""
     if isinstance(value, bool):
         return 1.0 if value else 0.0
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return None if pd.isna(value) else float(value)
     text = _text(value).replace(",", "")
     if not text:
@@ -610,7 +610,7 @@ def analyze_staff(
                     "資格（主）が空です。保育士・子育て支援員などを 1 つ以上指定してください。",
                 )
             )
-        elif day_close is not None:
+        elif day_close is not None and day_open is not None:
             earliest_txt = _text(col.get("最早始業"))
             latest_txt = _text(col.get("最遅終業"))
             if (

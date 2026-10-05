@@ -431,7 +431,7 @@ def _push_tables() -> None:
 def _render_patterns() -> None:
     """勤務パターン（早番・日勤・遅番）の定義（優先2）。
 
-    有効にすると、勤務ブロックの開始・終了時刻を aquí の境界へ引き寄せる。
+    有効にすると、勤務ブロックの開始・終了時刻をパターンの境界へ引き寄せる。
     """
     st.markdown("#### ⏰ 勤務パターン（早番・日勤・遅番）")
     settings = state.current_settings()

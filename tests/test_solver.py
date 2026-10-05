@@ -351,7 +351,7 @@ def test_判定不能は_run_cbcが先に弾く(small_staff, small_requirements)
     for variable in ctx.prob.variables():
         variable.varValue = None
     for value in ctx.work.values():
-        if not isinstance(value, (int, float)):
+        if not isinstance(value, int | float):
             value.varValue = 1.0
 
     status, raw = _run_cbc(ctx, 1, False)

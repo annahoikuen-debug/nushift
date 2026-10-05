@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import date
 from typing import Any
 
@@ -57,6 +58,20 @@ def compute_requirements() -> None:
     state.reset(state.KEY_VIOLATIONS)
 
 
+def _ratio_label(ratio: float) -> str:
+    """必要／供給比の表示。
+
+    ``state.supply_demand_ratio`` は供給 0・需要 >0 のとき ``inf`` を返す。
+    ``"%.2f" % inf`` は ``"inf"`` になるため、そのまま整形すると
+    ``!inf`` という無意味なカード、および「``!`` が tone 判定に使われる」
+    ``components.metric_html`` の挙動を招く（``tab_solve._ratio_text`` は
+    ``inf`` / ``nan`` を明示的に扱うので、この呼び出しだけが漏れていた）。
+    """
+    if math.isinf(ratio) or math.isnan(ratio):
+        return "充足不能"
+    return ("!%.2f" if ratio > 1.0 else "~%.2f") % ratio
+
+
 def _render_kpis(table: Any) -> None:
     """KPI カード（ピーク必要人員・総必要人時・園児数・職員数）。"""
     standard = state.current_standard()
@@ -86,7 +101,7 @@ def _render_kpis(table: Any) -> None:
             ),
             (
                 "必要／供給 比",
-                ("!%.2f" if ratio > 1.0 else "~%.2f") % ratio,
+                _ratio_label(ratio),
                 "1.00 を超えると構造的に基準を満たせません",
             ),
         ]

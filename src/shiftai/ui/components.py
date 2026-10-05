@@ -335,7 +335,7 @@ def style_live_grid(
     warning_cols = report.warning_columns()
 
     def paint(row: pd.Series) -> list[str]:
-        # 行ごとにapplicable な CSS を列の順に並べる（pandas 3.x の ``map`` は
+    # 行ごとに CSS を列の順に伦べる
         # ``axis`` を受け取らないため、行単位の ``apply(axis=1)`` を使う）
         sid = labels.get(str(row.name), "")
         out: list[str] = []
@@ -636,10 +636,10 @@ def _stat_display(value: object) -> str:
     """
     if value is None:
         return "—"
-    if isinstance(value, (set, frozenset)):
+    if isinstance(value, set | frozenset):
         # ``set`` の反復順は乱数依存なので、表示が実行ごとに変わらないよう並べる
         value = sorted(value, key=str)
-    if isinstance(value, (list, tuple, set, frozenset)):
+    if isinstance(value, list | tuple | set | frozenset):
         items = [str(v) for v in value]
         return "、".join(items) if items else "（なし）"
     if isinstance(value, bool):

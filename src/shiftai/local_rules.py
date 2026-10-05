@@ -43,7 +43,13 @@ from datetime import time
 from typing import Any
 
 from shiftai import config
-from shiftai.domain import AgeClass, AgeRatio, Role, StaffingStandard
+from shiftai.domain import (
+    HEADCOUNT_FACILITY_FORMULA,
+    AgeClass,
+    AgeRatio,
+    Role,
+    StaffingStandard,
+)
 
 
 def _t(hour: int, minute: int = 0) -> time:
@@ -781,26 +787,40 @@ def _note_hours(standard: StaffingStandard, source: str) -> LocalRuleNote:
 
 
 def _note_headcount(standard: StaffingStandard, source: str) -> LocalRuleNote:
-    lines = [
-        f"{age_class.value}: 在園児{a}人 ÷ {b:g} = {standard.headcount_for(age_class, a)}名"
-        for age_class, a in ((ac, 10) for ac in _AGE_ORDER)
-        if age_class in standard.ratios
-        for b in [standard.ratio_for(age_class).children_per_staff]
-    ]
-    detail = (
-        "必要人員は「定員比（園児:職員）」で求め、割り上げ（切り上げ）て整数名とする。\n\n"
-        + "\n".join(f"- {line}" for line in lines)
-        + "\n\n（在園児0名の時間帯は行を作らない。計算例は在園児10名の場合。）"
-    )
+    if standard.headcount_mode == HEADCOUNT_FACILITY_FORMULA:
+        counts = {age_class: 10 for age_class in _AGE_ORDER if age_class in standard.ratios}
+        example = standard.headcount_for_slot(counts)
+        detail = (
+            "必要人員は「乳児3人:1／1・2歳児6人:1／3歳児20人:1／4歳以上児30人:1」を合計し "
+            "**1 を加え**、各区分は小数第2位以下を切り捨ててから合計し、小数第1位で四捨五入する。"
+            "1・2歳児と4歳以上児は**合算**してから割る。\n\n"
+            f"計算例（在園児が各区分10名ずつ、つまり合計{sum(counts.values())}名の場合）: "
+            f"必要人員 {example} 名。\n\n"
+            "認可保育所の「年齢クラス毎に切り上げる」算法とは結果が一致しない。"
+        )
+        legal_reference = _FACILITY_SOURCE
+    else:
+        lines = [
+            f"{age_class.value}: 在園児{a}人 ÷ {b:g} = {standard.headcount_for(age_class, a)}名"
+            for age_class, a in ((ac, 10) for ac in _AGE_ORDER)
+            if age_class in standard.ratios
+            for b in [standard.ratio_for(age_class).children_per_staff]
+        ]
+        detail = (
+            "必要人員は「定員比（園児:職員）」で求め、割り上げ（切り上げ）て整数名とする。\n\n"
+            + "\n".join(f"- {line}" for line in lines)
+            + "\n\n（在園児0名の時間帯は行を作らない。計算例は在園児10名の場合。）"
+        )
+        legal_reference = (
+            "保育所の職員配置基準（昭和52年厚生省告示第49号）"
+            "（0歳児3:1、1・2歳児6:1、3歳児8:1、4・5歳児20:1が標準）"
+        )
     return LocalRuleNote(
         key="headcount",
         title="必要人数の算定方法（定員比の分子/分母）",
         detail=detail,
         source=source,
-        legal_reference=(
-            "保育所の職員配置基準（昭和52年厚生省告示第49号）"
-            "（0歳児3:1、1・2歳児6:1、3歳児8:1、4・5歳児20:1が標準）"
-        ),
+        legal_reference=legal_reference,
     )
 
 
@@ -846,19 +866,34 @@ def _note_standard_time(standard: StaffingStandard, source: str) -> LocalRuleNot
     start = standard.standard_time[0]
     end = standard.standard_time[1]
     minutes = (end.hour * 60 + end.minute) - (start.hour * 60 + start.minute)
-    detail = (
-        f"保育標準時間は{start.strftime('%H:%M')}〜{end.strftime('%H:%M')}"
-        f"（{minutes // 60}時間{minutes % 60}分＝法定11時間のうち8時間45分）。\n\n"
-        "この時間帯が保育標準時間であり、園児数（定員比の分子）は"
-        "この時間帯の在園者数を使う。早朝保育・延長保育は保育標準時間外の扱いとなり、"
-        "同一基準でも時間帯により必要人員が変わることがある。"
-    )
+    hours_text = f"{minutes // 60}時間{minutes % 60}分"
+    if standard.headcount_mode == HEADCOUNT_FACILITY_FORMULA:
+        # 認可外保育施設には「保育標準時間」の制度が無く、
+        # このプリセットの standard_time は主たる開所時間（11時間）である。
+        # 認可保育所向けの「＝法定11時間のうち8時間45分」という説明を
+        # そのまま出すと、11時間0分と8時間45分が併記され矛盾する。
+        duration_text = f"{hours_text}（＝認可外保育施設指導監督基準の主たる開所時間）"
+        body = (
+            "この時間帯が「主たる開所時間」であり、園児数（定員比の分子）は"
+            "この時間帯の在園者数を使う。認可外保育施設に保育標準時間の制度は無く、"
+            "短時間保育（保育標準時間認定）を使う運用はしないこと。"
+        )
+        legal_reference = _FACILITY_SOURCE
+    else:
+        duration_text = f"{hours_text}＝法定11時間のうち8時間45分"
+        body = (
+            "この時間帯が保育標準時間であり、園児数（定員比の分子）は"
+            "この時間帯の在園者数を使う。早朝保育・延長保育は保育標準時間外の扱いとなり、"
+            "同一基準でも時間帯により必要人員が変わることがある。"
+        )
+        legal_reference = "児童福祉法第18条の4／保育所の職員配置基準／保育所保育指針"
+    detail = f"保育標準時間は{start.strftime('%H:%M')}〜{end.strftime('%H:%M')}（{duration_text}）。\n\n{body}"
     return LocalRuleNote(
         key="standard_time",
         title="保育標準時間の定義",
         detail=detail,
         source=source,
-        legal_reference="児童福祉法第18条の4／保育所の職員配置基準／保育所保育指針",
+        legal_reference=legal_reference,
     )
 
 
@@ -943,7 +978,7 @@ def _note_scope(standard: StaffingStandard) -> LocalRuleNote:
             "（実測で 1 時間帯あたり最大 4 名ずれる）。認可外保育施設で本プリセットを"
             "使うと、基準を満たしていると誤認する可能性がある。\n\n"
             "認可外保育施設は `compliance.py` のチェックリストと、"
-            '`headcount_mode="facility_formula"` のプリセット在对すること。'
+            '`headcount_mode="facility_formula"` のプリセットを選ぶこと。'
         ),
         source=standard.remarks,
         legal_reference=_LEGAL_BASE,
@@ -970,7 +1005,7 @@ def _note_caveat(standard: StaffingStandard) -> LocalRuleNote:
     )
 
 
-def _note_facility(qualified_ratio: float) -> LocalRuleNote:
+def _note_facility(qualified_ratio: float, nurse_as_qualified_cap: int) -> LocalRuleNote:
     """認可外保育施設（指導監督基準・企業主導型保育事業）固有の説明カード。"""
     if qualified_ratio >= 0.75:
         numerator = "4分の3"
@@ -978,6 +1013,16 @@ def _note_facility(qualified_ratio: float) -> LocalRuleNote:
         numerator = "半数"
     else:
         numerator = "3分の1"
+    if nurse_as_qualified_cap > 0:
+        nurse_line = "保健師・看護師・准看護師は**1人に限り保育士とみなせる**。"
+    else:
+        # 指導監督基準の施設は看護師が「1人に限り保育士とみなせる」扱いにならず、
+        # そのまま比率の分子に入る。以前は 3 プリセット全てにこの文を出しており、
+        # 当該プリセットの `remarks` と矛盾していた。
+        nurse_line = (
+            "保健師・看護師・准看護師は「1人に限り保育士とみなせる」扱いにならず、"
+            "そのまま比率の分子に入る。"
+        )
     return LocalRuleNote(
         key="unlicensed",
         title="認可外保育施設の基準（認可保育所との違い）",
@@ -994,7 +1039,7 @@ def _note_facility(qualified_ratio: float) -> LocalRuleNote:
             f"   保育従事者の**{numerator}以上**が保育士。\n"
             "   その他の保育従事者は「子育て支援員研修（地域保育コースのうち地域型保育）」\n"
             "   修了者、または市町村研修の修了者（当該年度中に受講予定者を含む）。\n"
-            "   保健師・看護師・准看護師は**1人に限り保育士とみなせる**。\n\n"
+            f"   {nurse_line}\n\n"
             "3. 最低配置\n"
             "   必要数が 1 名と計算される時間帯でも最低2名、うち1名以上は保育士。\n"
             "   開所〜開所+11時間を主たる開所時間とし、それを超える時間帯は\n"
@@ -1171,9 +1216,9 @@ _PRESET_EXTRA_NOTES: dict[str, list[LocalRuleNote]] = {
             legal_reference=_LEGAL_BASE,
         )
     ],
-    "認可外保育施設（指導監督基準）": [_note_facility(0.0)],
-    "企業主導型保育事業（単独枠）": [_note_facility(0.5)],
-    "企業主導型保育事業（保育事業者型・20名以上）": [_note_facility(0.75)],
+    "認可外保育施設（指導監督基準）": [_note_facility(0.0, 0)],
+    "企業主導型保育事業（単独枠）": [_note_facility(0.5, 1)],
+    "企業主導型保育事業（保育事業者型・20名以上）": [_note_facility(0.75, 1)],
 }
 
 

@@ -376,7 +376,7 @@ class LoadResult:
 def _is_missing(value: Any) -> bool:
     if value is None:
         return True
-    if isinstance(value, (str, bytes, list, tuple, dict, set)):
+    if isinstance(value, str | bytes | list | tuple | dict | set):
         return False
     if isinstance(value, float) and math.isnan(value):
         return True
@@ -384,7 +384,7 @@ def _is_missing(value: Any) -> bool:
         flag = pd.isna(value)
     except (TypeError, ValueError):
         return False
-    return isinstance(flag, (bool, np.bool_)) and bool(flag)
+    return isinstance(flag, bool | np.bool_) and bool(flag)
 
 
 def _text(value: Any) -> str:
@@ -397,7 +397,7 @@ def _text(value: Any) -> str:
         return value.strip()
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, (datetime, date, time)):
+    if isinstance(value, datetime | date | time):
         return str(value)
     if isinstance(value, float):
         if math.isnan(value):
@@ -426,7 +426,7 @@ def parse_date(value: Any) -> date | None:
             return value.to_pydatetime().date()
         except (TypeError, ValueError):
             return None
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
+    if isinstance(value, int | float) and not isinstance(value, bool):
         serial = float(value)
         if 1.0 <= serial <= 2958465.0:
             return date(1899, 12, 30) + timedelta(days=int(serial))
@@ -466,7 +466,7 @@ def parse_time(value: Any) -> time | None:
             return value.to_pydatetime().time()
         except (TypeError, ValueError):
             return None
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
+    if isinstance(value, int | float) and not isinstance(value, bool):
         frac = float(value)
         if 0.0 <= frac < 1.0:
             total = int(round(frac * 24 * 60))
@@ -512,7 +512,7 @@ def parse_bool(value: Any, default: bool = False) -> bool:
         return default
     if isinstance(value, bool):
         return value
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return float(value) != 0.0
     text = unicodedata.normalize("NFKC", _text(value)).strip().lower()
     if not text:
@@ -1047,7 +1047,7 @@ def _decode(data: bytes) -> str:
 
 def _dataframe_from_json(payload: Any) -> pd.DataFrame:
     if isinstance(payload, dict):
-        if "data" in payload and isinstance(payload["data"], (list, dict)):
+        if "data" in payload and isinstance(payload["data"], list | dict):
             payload = payload["data"]
         else:
             records = []

@@ -474,9 +474,14 @@ def _staff_totals(
         totals[member.staff_id] = {
             "name": member.name,
             "roles": _role_text(member),
+            # ``worked`` は WORK セルだけを溜めたもので、休憩（BREAK）は
+            # 別変数 ``brk`` に分けている（＝already 休憩を含まない）。
+            # ここで ``worked - brk`` すると休憩を二重に引くことになるため、
+            # ``payroll_dataframe``（exporter.py:255）と同じく ``worked`` を
+            # そのまま実働時間として出す。
             "worked": worked,
             "break": brk,
-            "net": max(worked - brk, 0),
+            "net": worked,
             "days": len(days),
         }
     return totals

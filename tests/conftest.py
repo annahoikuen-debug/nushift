@@ -379,7 +379,7 @@ def _module_functions_that_use_cbc() -> dict[str, bool]:
             continue
         # **モジュールレベル**の関数だけを集める（入れ子を除外する）
         nodes = {
-            n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            n.name: n for n in tree.body if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
         }
 
         def uses_cbc(

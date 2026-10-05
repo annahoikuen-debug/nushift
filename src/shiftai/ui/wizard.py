@@ -110,7 +110,7 @@ def use_wizard() -> bool:
 def mode_selector(label: str = "入力方法") -> str:
     """入力方法のラジオ（問い合わせ画面とサイドバーが同じキーで共有する）。
 
-    キーが同じでパラメータも同じなので、問い合わせ画面（メインarea）から
+    キが同じでパラメータとサイドバーとして値は持持される。
     サイドバーへ移動しても値は保持される。**両方同時には描かない**
     （同じキーのウィジェットを 2 つ作ると Streamlit が例外を投げる）。
     """
@@ -217,6 +217,12 @@ def render_conditions(*, expanded: bool = False) -> None:
 def _apply_conditions(day_open: time, day_close: time, start: date, count: int) -> None:
     """ウィジェット値を園設定と計画期間へ反映する（サイドバーと同じ処理）。"""
     settings = state.current_settings()
+    # 先に「変更前」の値を控えておく。開所・閉所時刻と計画期間は
+    # ``.sidebar`` と同じく変更を ``mark_inputs_changed`` で記録する必要がある。
+    # ここを忘れると、ウィザードモード（既定）がサイドバーの期間変更と
+    # 同じ「古い結果のまま現在の結果として表示される」不具合になる。
+    previous_days = list(state.get(state.KEY_DAYS) or [])
+    previous_times = (settings.day_open, settings.day_close)
     state.set(
         state.KEY_SETTINGS,
         FacilitySettings(
@@ -242,6 +248,13 @@ def _apply_conditions(day_open: time, day_close: time, start: date, count: int) 
         f"{len(days)} 日（{theme.format_day(days[0])} 〜 {theme.format_day(days[-1])}）"
         f"／ 開園 {len(open_days)} 日"
     )
+    if not state.get(state.KEY_INPUT_FINGERPRINT):
+        # 初回（読み込み直後）は「変更」ではなく「基準の記録」。
+        return
+    if days != previous_days:
+        state.mark_inputs_changed("計画期間を変更しました")
+    elif previous_times != (day_open, day_close):
+        state.mark_inputs_changed("開所・閉所時刻を変更しました")
 
 
 # ---------------------------------------------------------------------------

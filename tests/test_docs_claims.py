@@ -282,7 +282,7 @@ def test_週契約時間はMILP制約ではない() -> None:
     tree = ast.parse(src)
     users: set[str] = set()
     for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             continue
         for sub in ast.walk(node):
             if isinstance(sub, ast.Attribute) and sub.attr == "weekly_hours":

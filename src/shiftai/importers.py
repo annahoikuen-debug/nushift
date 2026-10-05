@@ -274,7 +274,7 @@ def _age_years(value: Any) -> str:
         return "0"
     if isinstance(value, int):
         return str(max(0, min(5, value)))
-    if isinstance(value, (float, Decimal)):
+    if isinstance(value, float | Decimal):
         if value != value:  # NaN
             return "0"
         return str(max(0, min(5, int(value))))

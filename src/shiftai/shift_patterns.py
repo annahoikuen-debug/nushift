@@ -60,7 +60,11 @@ class ShiftPattern:
 
     @property
     def end_minutes(self) -> int:
-        return to_minutes(self.end)
+        """終端の分。終日（00:00 表記）は 1440 とする（:attr:`Slot.end_minutes` と同じ規約）。"""
+        minutes = to_minutes(self.end)
+        if minutes == 0 and self.start_minutes > 0:
+            return 24 * 60
+        return minutes
 
     @property
     def minutes(self) -> int:
@@ -72,7 +76,8 @@ class ShiftPattern:
 
     def span(self) -> str:
         """``07:30〜16:30（9.0h）`` のような表示用文字列。"""
-        return f"{self.start.strftime('%H:%M')}〜{self.end.strftime('%H:%M')}（{self.hours:.1f}h）"
+        end_label = "24:00" if self.end_minutes >= 24 * 60 else self.end.strftime("%H:%M")
+        return f"{self.start.strftime('%H:%M')}〜{end_label}（{self.hours:.1f}h）"
 
     def covers(self, minutes: int) -> bool:
         """その時刻をパターンが覆っているか。"""
@@ -142,9 +147,15 @@ def default_patterns(
 
 
 def _clock(minutes: int) -> time:
-    """分 → :class:`datetime.time`（0:00 を 24:00 扱いできるよう 1440 を許容）。"""
+    """分 → :class:`datetime.time`。
+
+    1440（=24:00）は :class:`datetime.time` の表現範囲外（hour は 0..23）のため、
+    翌朝 0:00 の 0:00 に丸める。``Slot.end_minutes`` が 24:00 を保持するのと
+    同じ「24:00 を 0:00 として扱う」規約であり、``ShiftPattern.start_minutes``
+    と実時刻の相互変換が相互逆になるようにしておく。
+    """
     value = max(0, min(24 * 60, int(minutes)))
-    return time(value // 60, value % 60)
+    return time((value // 60) % 24, value % 60)
 
 
 def normalize_patterns(patterns: Sequence[ShiftPattern] | None) -> tuple[ShiftPattern, ...]:

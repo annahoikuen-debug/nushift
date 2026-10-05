@@ -107,7 +107,12 @@ def coerce_frame(kind: str, frame: pd.DataFrame) -> pd.DataFrame:
             continue
         series = result[column]
         if column_kind == "date":
-            result[column] = pd.to_datetime(series, errors="coerce")
+            # pandas の `to_datetime` は**最初の値の書式**で推測を固定する。
+            # その結果 `2026-10-01` と `2026/10/02` が混在する列では
+            # 後者以降が全て `NaT` になり、園児が黙って名簿から消える
+            # （`load_bundle` は「登園日を解釈できません」として行を落とすだけ）。
+            # `format="mixed"` で要素ごとに解釈し直す。
+            result[column] = pd.to_datetime(series, errors="coerce", format="mixed")
         elif column_kind == "time":
             result[column] = series.map(data_loader.parse_time)
         elif column_kind in ("number", "int"):

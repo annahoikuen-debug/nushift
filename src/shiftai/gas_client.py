@@ -65,7 +65,7 @@ def _streamlit_secrets() -> dict[str, str]:
         for key, value in items:
             if key in out or value is None:
                 continue
-            if isinstance(value, (dict, list, tuple, bool)):
+            if isinstance(value, dict | list | tuple | bool):
                 # ネストしたセクションは設定値ではないので拾わない。
                 continue
             # TOML では timeout_sec = 25 は int になる。数値も文字列化して読む。

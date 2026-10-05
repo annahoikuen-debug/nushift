@@ -143,7 +143,7 @@ def _var_value(v: object) -> float:
     """変数でも定数でも未決定でも数値に変換する。"""
     if v is None:
         return 0.0
-    if isinstance(v, (int, float)):
+    if isinstance(v, int | float):
         return float(v)
     value = v.value()
     return 0.0 if value is None else float(value)
@@ -155,12 +155,12 @@ def _is_zero(v: object) -> bool:
     PuLP の ``LpVariable.__eq__`` は線形制約オブジェクトを返すので、
     ``if var == 0:`` は常に真になって「変数セルを定数0扱い」になってしまう。
     """
-    return isinstance(v, (int, float)) and v == 0
+    return isinstance(v, int | float) and v == 0
 
 
 def _is_var(v: object) -> bool:
     """定数化していない（最適化に残っている）変数セルか。"""
-    return not isinstance(v, (int, float))
+    return not isinstance(v, int | float)
 
 
 def _linear(items: Sequence[tuple[object, float]]) -> object:
@@ -299,7 +299,7 @@ def _constraint_specs(ctx: object) -> tuple[_ConstraintSpec, ...]:
 
 def _hard_le(ctx: _ModelCtx, expr: object, rhs: float, name: str | None = None) -> None:
     """expr <= rhs を追加する。定数化成している場合は矛盾を記録するだけにする。"""
-    if isinstance(expr, (int, float)):
+    if isinstance(expr, int | float):
         if float(expr) > rhs + _EPS:
             ctx.conflicts.append(name or "定数条件が矛盾しました")
         return
@@ -311,7 +311,7 @@ def _hard_le(ctx: _ModelCtx, expr: object, rhs: float, name: str | None = None) 
 
 def _hard_ge(ctx: _ModelCtx, expr: object, rhs: float, name: str | None = None) -> None:
     """expr >= rhs を追加する。定数化成している場合は矛盾を記録するだけにする。"""
-    if isinstance(expr, (int, float)):
+    if isinstance(expr, int | float):
         if float(expr) < rhs - _EPS:
             ctx.conflicts.append(name or "定数条件が矛盾しました")
         return
@@ -492,7 +492,16 @@ def _build_cells(
             if w_only:
                 # PuLP の LpAffineExpression は int による除算持っていないため、
                 # 「n で割る」を「1/n 倍する」で書く（時間帯 1 個の問題が落ちるのを防ぐ）。
-                _hard_ge(ctx, yvar, _linear([(v, 1) for v in w_only]) * (1.0 / n))
+                # 割る分母は **時間帯総数 n ではなく、実際に勤務変数がある
+                # 時間帯数 ``len(w_only)``** でなければならない。
+                # 契約時間帯の外側（最早始業より前など）は ``w_cells[i] == 0``
+                # になるため、n で割ると 1 個だけ働いた日が ``1/n``（=0.06 程度）
+                # のまま取り残り、勤務変数が分数になる。すると
+                # ``y`` を「その日働いたか 0/1 のフラグ」として使う
+                # 連続勤務日数・週所定出勤日数・休憩時間の各制約が
+                # まとめて弱まってしまう（``:func:`_fairness_day_flag`` が
+                # ``1.0 / len(items)`` としているのと同じ不整合）。
+                _hard_ge(ctx, yvar, _linear([(v, 1) for v in w_only]) * (1.0 / len(w_only)))
                 _hard_le(ctx, yvar, _linear([(v, 1) for v in w_only]))
         ctx.prob += hours == _linear(week_items)
 
@@ -984,7 +993,7 @@ def _add_hours_objective(
         obj.append(weights.max_shift_length_penalty * long_week)
     for sid, day in ctx.day_work:
         expr = ctx.day_work[(sid, day)]
-        if isinstance(expr, (int, float)):
+        if isinstance(expr, int | float):
             continue
         long_day = pulp.LpVariable(f"longd_{sid}_{day.strftime('%m%d')}", lowBound=0)
         # ``ctx.day_work`` は **勤務分数（分単位）** の式である。
@@ -1188,21 +1197,21 @@ def _add_fairness(
         _fairness_spread(ctx, staff, periods, obj, weight, key, indices, None)
     if saturday_weight > 0:
         saturday_days = {day for day in days if day.weekday() == config.WEEKEND_START_WEEKDAY}
-        if saturday_days:
-            _fairness_spread(
-                ctx,
-                staff,
-                periods,
-                obj,
-                saturday_weight,
-                "sat",
-                all_indices,
-                saturday_days,
-            )
-        else:
-            # 対象期間に土曜が無いときでも項は作る（値が 0 になるだけ）。
-            # 「重みを上げると必ず反応する」という性質を保つため。
-            _fairness_spread(ctx, staff, [[]], obj, saturday_weight, "sat", all_indices, None)
+        # 対象期間に土曜が無い場合も**項は作る**（値は 0 になる）。
+        # 作らないと「重みを上げても反応しない」係数が現れ、
+        # 「重みが黙って無視されない」という保証が崩れる。
+        # 空の袋で値がずれる問題は :func:`_fairness_spread` 側で
+        # ``top == bottom`` として処理している。
+        _fairness_spread(
+            ctx,
+            staff,
+            periods,
+            obj,
+            saturday_weight,
+            "sat",
+            all_indices,
+            saturday_days,
+        )
 
 
 def _fairness_spread(
@@ -1242,8 +1251,26 @@ def _fairness_spread(
             ]
             if terms:
                 items.append((_linear(terms), 1))
+        if not items:
+            # 対象者が 1 人もいない袋では、項を**0 に固定**する。
+            #
+            # 何も制約を付けると CBC は ``top=0, bottom=cap`` を選び、
+            # ``top - bottom = -cap``（= ``-len(window)``）を定数として
+            # 目的関数に組み込んでしまう。その結果「土曜の無い計画では
+            # 1 袋ごとに目的関数が ``-fairness_saturday_penalty`` ずれる」
+            # という、実行値を比較できなくなるズレが生まれる。
+            #
+            # ``top == bottom`` を明示すれば値は 0 になり、かつ変数は残るため
+            # 「重みを上げると必ず反応する」（= 重みが黙って無視されない）という
+            # 保証も保てる。項ごと ``continue`` するとこの保証を壊す。
+            cap = max(1, len(window))
+            top = pulp.LpVariable(f"fmax_{key}_{w}", lowBound=0, upBound=cap)
+            bottom = pulp.LpVariable(f"fmin_{key}_{w}", lowBound=0, upBound=cap)
+            ctx.prob += top == bottom, f"fmx_{key}_{w}_empty"
+            obj.append(weight * (top - bottom))
+            continue
         # 上限は「その週の日数」。これを上回る回数にはならないので有界にする。
-        # ここを無制限にすると ``top - bottom`` が目的関数を -∞ に也成为させ、
+        # ここを無制限にすると ``top - bottom`` が目的関数を -∞ まで下げてしまい、
         # CBC が「解なし」と誤判定する（回帰の実際例）。
         cap = max(1, len(window))
         top = pulp.LpVariable(f"fmax_{key}_{w}", lowBound=0, upBound=cap)
@@ -1548,7 +1575,7 @@ def _run_cbc(ctx: _ModelCtx, limit_sec: int, msg: bool) -> tuple[SolveStatus, st
 
 def _has_solution(ctx: _ModelCtx) -> bool:
     """求まった解に勤務セルが1つでも含まれるか。"""
-    return any(_var_value(v) > 0.5 for v in ctx.work.values() if not isinstance(v, (int, float)))
+    return any(_var_value(v) > 0.5 for v in ctx.work.values() if not isinstance(v, int | float))
 
 
 def _feasibility_status(ctx: _ModelCtx, limit_sec: int, msg: bool) -> tuple[SolveStatus, str]:
@@ -1556,7 +1583,7 @@ def _feasibility_status(ctx: _ModelCtx, limit_sec: int, msg: bool) -> tuple[Solv
 
     :func:`_run_cbc` は勤務セルが 1 つでも入っていないと「解なし」と見なす。
     制約グループを外したモデルでは「全員オフ」が最適解になりうるので、
-    診断の判定にはAssignments の有無ではなく CBC の報告だけを採る。
+    診断の判定には CBC の報告だけを参考にする。 Assignments の有無は問わない。
     """
     try:
         ctx.prob.solve(pulp.PULP_CBC_CMD(msg=msg, timeLimit=max(1, int(limit_sec))))
@@ -2289,8 +2316,13 @@ def solve_shift_greedy(
     worked_days: dict[str, set[date]] = {sid: set() for sid in order}
     # 「週所定出勤日数」を判定するための週区画（7 日ずつの窓）。
     workable_windows = [set(w) for w in weekly_windows(days)]
+    # 利用者が確認した OFF を持つセル。充填時はこの場所を一切見ない。
+    pinned_off: set[tuple[str, date, int]] = set()
 
     def _cell_ok(sid: str, day: date, i: int) -> bool:
+        if (sid, day, i) in pinned_off:
+            # 利用者が OFF と確認したセルは埋めない
+            return False
         if not _day_is_workable(by_id[sid], day, settings):
             return False
         if not _slot_is_contractible(by_id[sid], slots[i]):
@@ -2424,6 +2456,67 @@ def solve_shift_greedy(
     def _working(day: date, idx: int) -> list[StaffMember]:
         return [by_id[sid] for sid in order if cells[(sid, day)][idx] is CellState.WORK]
 
+    # 利用者が出力画面で確認した ``fixed`` セルは、貪欲法の充填の**前**に適用する。
+    #
+    # 修正前: 充填が終わった「後」に適用していたため、
+    # - 固定 WORK が ``worked_minutes`` / ``worked_days`` に入らず、その日の
+    #   連続勤務日数・週所定出勤日数が「未出勤」扱いになっていた
+    # - 契約時間帯・希望休・休園日・1日上限を再確認しないまま上書きされ、
+    #   基準を割るセルがそのまま残っていた
+    # - 固定 OFF が充填済みの WORK を上書きし、在勤ブロックの連続性を断っていた
+    #
+    # 先に適用しておけば、以降の充填は ``_put_block`` の
+    # 「``row[i] is CellState.OFF``」条件と ``_day_ok`` の出勤日数・連続日数によって
+    # 固定セルの影響を考慮したうえで、残る枠だけを埋める。
+    fixed_notes: list[str] = []
+    for (fid, fday, label), state in fixed.items():
+        if (fid, fday) not in cells or fid not in by_id:
+            continue
+        try:
+            idx = slots.index(_slot_by_label(slots, label))
+        except KeyError:
+            fixed_notes.append(
+                f"{fid} {fday.isoformat()} の時間帯「{label}」が見つからないため反映できませんでした"
+            )
+            continue
+        if state is CellState.OFF:
+            cells[(fid, fday)][idx] = CellState.OFF
+            pinned_off.add((fid, fday, idx))
+            continue
+        # WORK / BREAK は、その日の業務量と各制約の枠を消費する。
+        # 制約に反する固定指定は**適用しない**（黙って上書きしない）。
+        if not _day_is_workable(by_id[fid], fday, settings):
+            fixed_notes.append(
+                f"{fid} {fday.isoformat()} は勤務可能日ではないため固定セルを反映しませんでした"
+            )
+            continue
+        if not _slot_is_contractible(by_id[fid], slots[idx]):
+            fixed_notes.append(
+                f"{fid} {fday.isoformat()} の「{label}」は契約時間帯外のため固定セルを反映しませんでした"
+            )
+            continue
+        if _is_unavailable(prefs.get(fid), fday, slots[idx]):
+            fixed_notes.append(
+                f"{fid} {fday.isoformat()} の「{label}」は希望休と重なるため固定セルを反映しませんでした"
+            )
+            continue
+        cap = _daily_cap_minutes(by_id[fid].contract)
+        used = sum(
+            slots[i].minutes
+            for i in range(n)
+            if cells[(fid, fday)][i] in (CellState.WORK, CellState.BREAK)
+        )
+        if used + slots[idx].minutes > cap:
+            fixed_notes.append(
+                f"{fid} {fday.isoformat()} の「{label}」は法定1日上限（{cap // 60}時間）を"
+                "超えるため固定セルを反映しませんでした"
+            )
+            continue
+        cells[(fid, fday)][idx] = state
+        if state is CellState.WORK:
+            worked_minutes[fid] += slots[idx].minutes
+            worked_days[fid].add(fday)
+
     for day in days:
         keys = [i for i in range(n) if need_all.get((day, i), 0) > 0]
         keys.sort(key=lambda i: (-need_all[(day, i)], i))
@@ -2467,15 +2560,6 @@ def solve_shift_greedy(
                     break
                 _put_break(chosen, day)
 
-    for (sid, day, label), state in fixed.items():
-        if (sid, day) not in cells:
-            continue
-        try:
-            idx = slots.index(_slot_by_label(slots, label))
-        except KeyError:
-            continue
-        cells[(sid, day)][idx] = state
-
     shift_days: list[ShiftDay] = []
     assignments: list[ShiftAssignment] = []
     for day in days:
@@ -2493,7 +2577,10 @@ def solve_shift_greedy(
         shift_days=shift_days,
         assignments=assignments,
         objective_value=None,
-        messages=["貪欲法による暫定シフトを生成しました（最適解ではありません）。"],
+        messages=[
+            "貪欲法による暫定シフトを生成しました（最適解ではありません）。",
+            *fixed_notes,
+        ],
         stats=stats,
     )
     try:
