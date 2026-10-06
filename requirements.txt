@@ -41,3 +41,8 @@ pulp>=2.9,<3         # <3 は厳守すること。3.x / 4.x は LpVariable の�
 
 # openpyxl — .xlsx の読み書き（入力の Excel 取り込みと成果物の Excel 出力）。
 openpyxl>=3.1        # 3.1 系で検証済み。上限は不要なため付けない
+
+# reportlab — 日別ガントチャート PDF（A4 縦 1 枚）の描画。
+# gantt_pdf.py はモジュール import 時に reportlab を読み込むため、
+# 入れていないと tab_export / gantt_pdf を含むテストが収集段階で ImportError になる。
+reportlab>=4.0       # 5.0 系で検証済み（pyproject.toml と同じ下限）

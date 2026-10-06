@@ -33,7 +33,7 @@ from shiftai.domain import (
     Violation,
     ViolationSeverity,
 )
-from shiftai.ui import state, tab_data, tab_export, wizard
+from shiftai.ui import state, tab_data, tab_export, theme, wizard
 from tests.conftest import DAY_CLOSE, DAY_OPEN, STANDARD_KEY  # noqa: E402  (計画値との整合)
 
 #: ヘッドレス実行時の「missing ScriptRunContext!」警告でテスト出力を濁さないようにする。
@@ -1149,6 +1149,7 @@ def test_出力タブは各種ダウンロードを用意する(export_app):
         "dl_ics",
         "dl_requirements_csv",
         "dl_excel",
+        "dl_gantt_pdf",
         "dl_zip",
         "dl_summary",
     ):
@@ -1157,10 +1158,14 @@ def test_出力タブは各種ダウンロードを用意する(export_app):
     assert "出力前の確認" in _markdown_text(export_app)
 
 
-def _blocker_violation(day, slot) -> Violation:
-    """出力前の確認を「未達」にする BLOCKER 違反を 1 件作る。"""
+def _warning_violation(day, slot) -> Violation:
+    """出力前の確認を「未達」にする WARNING 違反を 1 件作る。
+
+    案2・案4の変更により、ゲートは未確認の WARNING のみでブロックするようになった。
+    BLOCKER 違反（result.blockers()）は配置基準チェックで別途扱われる。
+    """
     return Violation(
-        severity=ViolationSeverity.BLOCKER,
+        severity=ViolationSeverity.WARNING,
         code="SHORTFALL",
         message="配置基準を満たしていません",
         day=day,
@@ -1177,7 +1182,7 @@ def test_確認未達ならダウンロードを無効にする(tmp_path, solved
     **生成したまま** 無効化するので、既存の存在検査は壊れない。
     """
     payload = {key: dict(value) for key, value in solved_payload.items()}
-    payload["state"][state.KEY_VIOLATIONS] = [_blocker_violation(one_day[0], slots[0])]
+    payload["state"][state.KEY_VIOLATIONS] = [_warning_violation(one_day[0], slots[0])]
     at = _run_tabs(tmp_path / "gated", ("tab_export",), payload=payload)
     assert not at.exception, [str(e.value) for e in at.exception]
     buttons = {b.key: b for b in at.get("download_button")}
@@ -1189,10 +1194,26 @@ def test_確認未達ならダウンロードを無効にする(tmp_path, solved
 
 
 def test_ダウンロードの無効化は確認リストに一致する(export_app):
-    """ボタンの無効状態が「出力前の確認」の判定と一致すること。"""
+    """ボタンの無効状態が「出力前の確認」の判定と一致すること。
+
+    チェックリスト（"#### ✅ 出力前の確認" 以下の "- ✅/⚠️ ..." 行）が
+    すべて ✅ ならボタンは有効、いずれかが ⚠️ なら無効になる。
+    """
     body = _markdown_text(export_app)
-    unmet = "⚠️" in body
     assert "出力前の確認" in body
+    # チェックリスト部分だけを抽出（"#### ✅ 出力前の確認" から次の "####" まで）
+    checklist_section = ""
+    in_checklist = False
+    for line in body.split("\n"):
+        if line.startswith("#### ✅ 出力前の確認"):
+            in_checklist = True
+            continue
+        if in_checklist and line.startswith("#### "):
+            break
+        if in_checklist:
+            checklist_section += line + "\n"
+    # チェックリスト内に ⚠️ があれば未達
+    unmet = "⚠️" in checklist_section
     for key, button in {b.key: b for b in export_app.get("download_button")}.items():
         assert button.proto.disabled is unmet, (
             f"{key} の無効状態が確認リストと一致しない（未達={unmet}）"
@@ -1202,7 +1223,7 @@ def test_ダウンロードの無効化は確認リストに一致する(export_
 def test_確認未達でも修正ボタンを出す(tmp_path, solved_payload, one_day, slots):
     """出力タブからも違反の修正対象にできるようにすること。"""
     payload = {key: dict(value) for key, value in solved_payload.items()}
-    payload["state"][state.KEY_VIOLATIONS] = [_blocker_violation(one_day[0], slots[0])]
+    payload["state"][state.KEY_VIOLATIONS] = [_warning_violation(one_day[0], slots[0])]
     at = _run_tabs(tmp_path / "fix_actions", ("tab_export",), payload=payload)
     assert not at.exception, [str(e.value) for e in at.exception]
     fix_buttons = [b for b in at.button if b.key.startswith("export_fix_")]
@@ -1212,7 +1233,7 @@ def test_確認未達でも修正ボタンを出す(tmp_path, solved_payload, on
 def test_修正ボタンで対象を指定できる(tmp_path, solved_payload, one_day, slots):
     """修正ボタンを押すとシフト表側が受け取れる対象が入ること。"""
     payload = {key: dict(value) for key, value in solved_payload.items()}
-    payload["state"][state.KEY_VIOLATIONS] = [_blocker_violation(one_day[0], slots[0])]
+    payload["state"][state.KEY_VIOLATIONS] = [_warning_violation(one_day[0], slots[0])]
     at = _run_tabs(tmp_path / "fix_click", ("tab_export",), payload=payload)
     assert not at.exception, [str(e.value) for e in at.exception]
     target = at.button(key="export_fix_0")
@@ -1273,6 +1294,123 @@ def test_safe_nameは日本語の園名を残す():
     default_name = FacilitySettings().facility_name
     assert tab_export._safe_name(default_name) == "あさひ保育園"
     assert tab_export._safe_name("あおば 保育園/2") == "あおば_保育園_2"
+
+
+def test_未達なら手順と移動ボタンが出る(tmp_path, solved_payload, one_day, slots):
+    """「直してください」だけでは次に押す_buttonが分からないため、手順と
+    タブへ移動するボタンを出すこと。
+    """
+    payload = {key: dict(value) for key, value in solved_payload.items()}
+    payload["state"][state.KEY_VIOLATIONS] = [_warning_violation(one_day[0], slots[0])]
+    at = _run_tabs(tmp_path / "blocked_help", ("tab_export",), payload=payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    body = _all_text(at)
+    assert "ダウンロードを解除する手順" in body
+    assert "次の一手" in body, "未達項目ごとに次の一手がない"
+    assert "export_help_fix" in {b.key for b in at.button}, "シフト表へ移るボタンが無い"
+
+
+def test_未達手順のメッセージはダウンロード不能を明示する(
+    tmp_path, solved_payload, one_day, slots
+):
+    """手順の説明に、ダウンロードできないことと手順名があること。"""
+    payload = {key: dict(value) for key, value in solved_payload.items()}
+    payload["state"][state.KEY_VIOLATIONS] = [_warning_violation(one_day[0], slots[0])]
+    at = _run_tabs(tmp_path / "blocked_msg", ("tab_export",), payload=payload)
+    messages = " ".join(e.value for e in at.error)
+    assert "出力前の確認に未達" in messages
+    assert "手順" in messages
+
+
+def test_解除手順の出し分けは確認リストに一致する(export_app):
+    """確認リストがすべて ✅ のときだけ「手順」を出さないこと。
+
+    手順を出すかどうかはダウンロードの無効状態と同じ条件に揃える。
+    """
+    body = _all_text(export_app)
+    # チェックリスト部分だけを抽出
+    checklist_section = ""
+    in_checklist = False
+    for line in body.split("\n"):
+        if line.startswith("#### ✅ 出力前の確認"):
+            in_checklist = True
+            continue
+        if in_checklist and line.startswith("#### "):
+            break
+        if in_checklist:
+            checklist_section += line + "\n"
+    unmet = "⚠️" in checklist_section
+    assert ("ダウンロードを解除する手順" in body) is unmet
+
+
+def test_修正ボタンはシフト表のタブへ移動する(
+    tmp_path, solved_payload, one_day, slots
+):
+    """出力タブの修正ボタンで、シフト表のタブが選択されること。
+
+    以前は「上の修正ボタンを押してください」とだけ言ってタブを移動しなかったため、
+    押しても何も起こらないように見えた。
+    """
+    payload = {key: dict(value) for key, value in solved_payload.items()}
+    payload["state"][state.KEY_VIOLATIONS] = [_warning_violation(one_day[0], slots[0])]
+    at = _run_tabs(tmp_path / "fix_jump", ("tab_export",), payload=payload)
+    at.button(key="export_fix_0").click().run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert at.session_state[theme.MAIN_TABS_KEY] == theme.tab_position("shift")
+
+
+def test_セルで直せない違反は理由と件数を示す(
+    tmp_path, solved_payload, one_day, slots
+):
+    """日や職員を特定できない違反には修正ボタンを作らず、理由を示すこと。
+
+    以前は修正ボタンが 1 つも出ないままダウンロードだけが無効化され、
+    出口のない状態になっていた。
+    """
+    whole_period = Violation(
+        severity=ViolationSeverity.WARNING,
+        code="MONTHLY_HOURS_EXCEEDED",
+        message="月間の勤務時間が上限超過",
+    )
+    payload = {key: dict(value) for key, value in solved_payload.items()}
+    payload["state"][state.KEY_VIOLATIONS] = [whole_period]
+    at = _run_tabs(tmp_path / "unfixable", ("tab_export",), payload=payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert not [b for b in at.button if b.key.startswith("export_fix_")]
+    body = _all_text(at)
+    assert "修正ボタンを出せません" in " ".join(w.value for w in at.warning)
+    assert "セルでは直せない違反" in body
+
+
+def test_シフト表は出力タブへ戻るボタンを持つ(shift_app):
+    """修正後に確認し直すため、出力タブへ移る導線があること。"""
+    assert "back_to_export_check" in {b.key for b in shift_app.button}
+
+
+def test_goto_tabは存在しないタブで何もしない():
+    """未知の key で例外を投げないこと（描画を止めない）。"""
+    assert theme.tab_position("存在しない") is None
+    st.session_state.clear()
+    try:
+        theme.goto_tab("存在しない")
+        assert theme.MAIN_TABS_KEY not in st.session_state
+    finally:
+        st.session_state.clear()
+
+
+def test_シンプルモードの参照はタブ2に読み替わる():
+    """shift / requirements が無い構成でも文言がタブ2を指すこと。"""
+    st.session_state.clear()
+    try:
+        st.session_state[theme.MODE_KEY] = True
+        assert theme.tab_position("shift") == 1
+        assert theme.tab_position("requirements") == 1
+        assert theme.tab_ref_for("shift") == "タブ2（② シフト作成）"
+        st.session_state[theme.MODE_KEY] = False
+        assert theme.tab_position("shift") == 3
+        assert theme.tab_ref_for("shift") == "タブ4（④ シフト表・微調整）"
+    finally:
+        st.session_state.clear()
 
 
 def test_safe_nameはパス区切りと制御文字を落とす():

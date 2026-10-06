@@ -358,15 +358,18 @@ def _apply_fix_target() -> None:
     if wanted in options:
         st.session_state["active_day"] = wanted
         st.session_state["_fix_slot_label"] = slot_label
+        name = state.staff_name_map().get(staff_id, "")
+        who = f"{staff_id}（{name}）" if name else staff_id
         st.info(
-            f"修正対象: {theme.format_day(wanted)} ／ {staff_id} ／ {slot_label}"
-            " のセル。下の「✏️ 微調整」で変更できます。"
+            f"🎯 修正対象: {theme.format_day(wanted)} ／ {who} ／ {slot_label}"
+            " のセル。\n\n"
+            "1. 下の「✏️ 微調整」で値を「勤務」「休憩」「オフ」に変える\n"
+            "2. 「✅ 変更を確定して再最適化」を押す（確定しないと反映されません）\n"
+            "3. 解消したら上の「出力前の確認」が ✅ になります"
         )
     else:
         st.session_state.pop("_fix_slot_label", None)
-        st.warning(
-            "修正対象の日付が現在のシフトに存在しません。期間を確認してください。"
-        )
+        st.warning("修正対象の日付が現在のシフトに存在しません。期間を確認してください。")
     st.session_state[state.KEY_FIX_REQUESTED] = False
 
 
@@ -384,9 +387,7 @@ def render_section(*, in_simple: bool = False) -> None:
     _apply_fix_target()
     result = state.get(state.KEY_SOLVE_RESULT)
     if result is None or not result.shift_days:
-        theme.empty_state(
-            f"まず{theme.tab_ref(2)}（シフト作成）でシフトを作成してください。"
-        )
+        theme.empty_state(f"まず{theme.tab_ref(2)}（シフト作成）でシフトを作成してください。")
         theme.stuck_hint(3, "シフトがまだ作成されていません。")
         return
     staff = state.get(state.KEY_STAFF) or []
@@ -409,6 +410,17 @@ def render_section(*, in_simple: bool = False) -> None:
     _render_grid(result, day, slots, staff)
     st.divider()
     _render_editor(result, day, slots, staff)
+    st.button(
+        f"✅ 修正を確定したら {theme.tab_ref_for('export')} に戻って確認する",
+        key="back_to_export_check",
+        width="stretch",
+        help=(
+            "「出力前の確認」がすべて ✅ になると、ダウンロードが有効になります。"
+            "ここを押すと出力タブへ移動します。"
+        ),
+        on_click=theme.goto_tab,
+        args=("export",),
+    )
     st.divider()
     _render_fixed_list()
     st.divider()

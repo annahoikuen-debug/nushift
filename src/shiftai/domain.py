@@ -317,7 +317,7 @@ class Contract:
     max_consecutive_days: int = 5
     """最大連続勤務日数。``0`` は「上限なし」を意味する。"""
     min_rest_hours: float = float(config.STATUTORY_MIN_REST_HOURS)
-    """勤務間の最低休息時間（労働基準法第9条に対応）。"""
+    """勤務間の最低休息時間（労働安全衛生法第68条第2項に対応）。"""
     granularity_min: int = config.DEFAULT_GRANULARITY_MIN
     earliest_start: time = time(6, 0)
     latest_end: time = time(22, 0)
@@ -594,7 +594,7 @@ class StaffingStandard:
     min_qualified_ratio: float = 0.5
     """配置人員に占める保育士の最低割合。"""
     break_minutes: int = config.DEFAULT_BREAK_MINUTES
-    """職員1人あたりの休憩時間（労働基準法第9条）。"""
+    """職員1人あたりの休憩時間（労働基準法第34条）。"""
     break_stagger_minutes: int = config.DEFAULT_BREAK_STAGGER_MINUTES
     """休憩者の重複を避けるための時間ずれ。"""
     work_start_base: time = config.STANDARD_TIME_START
@@ -1041,6 +1041,29 @@ class Violation:
     slot: Slot | None = None
     staff_id: str | None = None
     detail: dict = field(default_factory=dict)
+    acknowledged: bool = False
+    """担当者が内容を確認して「調整済み」と認めたか。
+
+    出力タブのチェックリストは「**未確認の**要調整項目が 0 件」を条件にする。
+    修正前は INFO（参考）も含めて件数を数えていたため、``HOURS_IMBALANCE`` が
+    1 件あるだけで全ダウンロードが無効になり、解除する手段がなかった。
+    """
+
+    @property
+    def fingerprint(self) -> str:
+        """確認済み状態を突き合わせるための安定した識別子。
+
+        ``message`` は文言を含むため文言を変えると別物になってしまう。
+        コード・日付・時間帯・職員IDだけで組む。
+        """
+        return "|".join(
+            [
+                self.code,
+                self.day.isoformat() if self.day else "",
+                self.slot.label if self.slot else "",
+                self.staff_id or "",
+            ]
+        )
 
     def to_dict(self) -> dict:
         return {
@@ -1050,6 +1073,7 @@ class Violation:
             "日付": self.day.isoformat() if self.day else "",
             "時間帯": self.slot.label if self.slot else "",
             "職員ID": self.staff_id or "",
+            "確認済み": "○" if self.acknowledged else "",
         }
 
 
@@ -1094,6 +1118,22 @@ class ObjectiveWeights:
     early_shift_penalty: float = 2.0
     late_shift_penalty: float = 2.0
     break_conflict_penalty: float = 50.0
+    break_deficit_penalty: float = 600.0
+    """休憩が法定量に満たないときの不足1時間帯あたりのペナルティ。
+
+    :func:`~shiftai.solver._add_breaks` の ``brkdef`` に使う。労働基準法第34条の
+    休憩義務に対応するので、他のどの目的項より大きい値にして
+    「配置基準を満たす代わりに休憩を削る」ことが起きないようにしている。
+    実測: 通勤ペナルティ（``split_duty_penalty``）と区別されていないと、
+    総休憩時間が 137.5h → 54.5h まで削られ ``BREAK_INSUFFICIENT`` が
+    13 → 24 件に劣化した。"""
+    split_duty_penalty: float = 120.0
+    """勤務ブロックを「下班（帰宅）を挟んで」再開する1セルあたりのペナルティ。
+
+    :func:`~shiftai.solver._add_commute_penalty` が使う。昼休みのような
+    短い穴はこの罰が効かない（下班の長さが閾値に満たないため）ので、
+    設定不足のときだけ効く。``break_conflict_penalty`` より大きく、
+    ``shortfall_penalty`` より小さくあることが運用上の狙い。"""
     consecutive_day_penalty: float = 8.0
     hours_imbalance_penalty: float = 4.0
     fairness_early_penalty: float = 4.0
@@ -1102,7 +1142,21 @@ class ObjectiveWeights:
     """遅番回数の上限と最小の差（週レンジ）を縮めるペナルティ。"""
     fairness_saturday_penalty: float = 4.0
     """土曜出勤日数の上限と最小の差（週レンジ）を縮めるペナルティ。"""
-    unused_staff_penalty: float = 0.5
+    break_edge_penalty: float = 800.0
+    """休息の前後に在勤がないときの不足1セルあたりのペナルティ（D3）。
+
+    ハード制約にすると 2〜3 時間帯だけの短勤務には休息を一切入れられなくなる
+    （前後に勤務がないため）ので、不足分だけを罰する。
+
+    実測（7日計画・サンプルデータ）で通勤の穴 52 → 37 個、
+    ``BREAK_FRAGMENTED`` 59 → 33 件になる値。
+    """
+    unused_staff_penalty: float = 2.0
+    """職員を出勤させないことへのペナルティ。
+
+    通勤ペナルティのように「現場運用できない勤務」の方が「出勤させない」方が
+    安いと求解器が判断すると、契約時間を満たせない職員が続く。
+    """
     monthly_hours_penalty: float = 3.0
     rest_violation_penalty: float = 40.0
     max_shift_length_penalty: float = 6.0

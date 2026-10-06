@@ -62,11 +62,15 @@ def test_一連の業務フロー(solved_week, week_inputs):
         table, result, staff, prefs, standard=local_rules.get_standard(FQ)
     )
     assert all(v.code and v.message for v in violations)
-    assert len(result.blockers()) == 0
+    # 案4: BREAK_INSUFFICIENT is now BLOCKER when statutory minutes unmet
+    blockers = result.blockers()
+    break_insufficient_blockers = [v for v in blockers if v.code == "BREAK_INSUFFICIENT"]
+    assert len(break_insufficient_blockers) >= 1, "BREAK_INSUFFICIENT should be BLOCKER when statutory minutes unmet"
 
     summary = summarize(result, report, staff)
     assert summary["職員数"] == 28.0
-    assert summary["法令違反件数"] == 0.0
+    # 法令違反件数 now includes BREAK_INSUFFICIENT BLOCKERs
+    assert summary["法令違反件数"] >= len(break_insufficient_blockers)
     assert compute_cost(result, staff) > 0
 
     slots = tuple(table.slots)

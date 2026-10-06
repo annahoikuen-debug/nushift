@@ -10,10 +10,10 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _dist_version
 
-#: インストールされていない環境（``src`` を直接 sys.path に入れた場合など）は
-#: pyproject.toml の記載にフォールバックする。ここもハードコードせず、
-#: pyproject を解析して取る。
-_FALLBACK = "0.1.0"
+#: インストールされておらず、かつ pyproject.toml も読めない環境の表示値。
+#: ``0+unknown`` は setuptools/SETUPTOOLS_SCM 等の「未計算」表現に倣ったもので、
+#: ここにリリース番号を書かない（版は pyproject.toml だけが持つ）。
+_FALLBACK = "0+unknown"
 
 
 def _resolve_version() -> str:

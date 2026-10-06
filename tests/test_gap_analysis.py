@@ -401,7 +401,7 @@ def test_違反コードは既知の集合に収まる(week_inputs, solved_week)
 
 
 def test_compute_costは正の値(day_report, solved_day, small_staff):
-    """勤務があれば人件費weaver が正になること。"""
+    """勤務があれば人件費が正になること。"""
     cost = compute_cost(solved_day, small_staff)
     assert cost > 0
     assert isinstance(cost, float)

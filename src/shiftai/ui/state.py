@@ -11,6 +11,7 @@ import copy
 import hashlib
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import date, timedelta
 from typing import Any
 
@@ -52,6 +53,12 @@ KEY_REQUIREMENTS = "requirements"
 KEY_SOLVE_RESULT = "solve_result"
 KEY_GAP_REPORT = "gap_report"
 KEY_VIOLATIONS = "violations"
+KEY_ACKNOWLEDGED = "acknowledged_violations"
+"""出力タブで「確認済み」とした違反の ``Violation.fingerprint`` 集合。
+
+    保持するのは指紋の集合で ``Violation`` の複製ではない。違反一覧は再計算の
+    たびに作り直されるため、指紋で突き合わせないと確認状態が失われる。
+    """
 KEY_FIXED_ASSIGNMENTS = "fixed_assignments"
 KEY_INPUT_FINGERPRINT = "input_fingerprint"
 """計算結果に影響する入力の指紋。最後に計算したときと同じかを比べる。"""
@@ -325,8 +332,37 @@ def invalidate_pipeline() -> None:
         KEY_GAP_REPORT,
         KEY_VIOLATIONS,
         KEY_FIXED_ASSIGNMENTS,
+        KEY_ACKNOWLEDGED,
     ):
         reset(key)
+
+
+def acknowledged_fingerprints() -> frozenset[str]:
+    """「確認済み」とした違反の指紋集合を返す（無ければ空集合）。
+
+    このモジュールの ``set`` は上の関数で組み込み ``set`` を隠しているため、
+    ここでは ``frozenset`` を使う（``in`` 判定しかしないため問題ない）。
+    """
+    return frozenset(get(KEY_ACKNOWLEDGED) or ())
+
+
+def set_acknowledged(fingerprints) -> None:
+    """確認済みの指紋集合をそのまま置き換える。"""
+    set(KEY_ACKNOWLEDGED, frozenset(fingerprints))
+
+
+def apply_acknowledgements(violations):
+    """確認済み状態を ``Violation.acknowledged`` に反映した新しいリストを返す。
+
+    ``Violation`` は値オブジェクト（``dataclass``）なので ``dataclasses.replace`` で
+    複製する。元のリストは書き換えない。
+    """
+    if not violations:
+        return []
+    marks = acknowledged_fingerprints()
+    if not marks:
+        return list(violations)
+    return [replace(v, acknowledged=True) if v.fingerprint in marks else v for v in violations]
 
 
 def _fingerprint_parts() -> list[str]:
@@ -358,8 +394,7 @@ def _fingerprint_parts() -> list[str]:
     parts.append(
         "ratios="
         + ",".join(
-            f"{key}:{standard.ratios[key].children_per_staff:.6f}"
-            f":{standard.ratios[key].rounding}"
+            f"{key}:{standard.ratios[key].children_per_staff:.6f}:{standard.ratios[key].rounding}"
             for key in sorted(standard.ratios)
         )
     )

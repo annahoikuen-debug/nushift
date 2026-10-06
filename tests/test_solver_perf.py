@@ -51,6 +51,7 @@ from shiftai.domain import (
     ViolationSeverity,
     to_time,
 )
+from shiftai.relaxation import RelaxLevel
 from shiftai.solver import (
     _add_block,
     _consecutive_streak,
@@ -151,7 +152,7 @@ def _solve(children, staff, requirements, **kwargs):
     return solve_shift(children, staff, requirements, **kwargs)
 
 
-def _build(staff, requirements, *, prefs=None, fixed=None, settings=None, standard=STANDARD):
+def _build(staff, requirements, *, prefs=None, fixed=None, settings=None, standard=STANDARD, relaxation=0):
     return solver_mod._build_problem(
         staff,
         requirements,
@@ -160,6 +161,7 @@ def _build(staff, requirements, *, prefs=None, fixed=None, settings=None, standa
         settings or FacilitySettings(),
         ObjectiveWeights(),
         standard,
+        relaxation=relaxation,
     )
 
 
@@ -1828,12 +1830,18 @@ def test_台帳は全ハード制約ファミリを収録する(small_staff, sma
     assert any(n.startswith("coverq_") or n.startswith("cover_") for n in names), (
         "配置基準が入っていない"
     )
-    assert any(n.endswith("_splitcap") and n.startswith("duty_") for n in names), (
-        "在勤ブロックが入っていない"
-    )
-    assert any(n.endswith("_splitcap") and n.startswith("brk_") for n in names), (
-        "休憩ブロックが入っていない"
-    )
+    # 在勤・休憩ブロック制約は定式化によって 2 通りある（案1）。
+    # 候補数が上限内なら区間列挙のハード制約（``_oneinterval``）、
+    # 超える／緩和段階なら従来のソフトペナルティ（``_splitcap``）。
+    # どちらの定式化でも「在勤ブロックが台帳にある」ことを保証する。
+    assert any(
+        (n.endswith("_splitcap") or n.endswith("_oneinterval")) and n.startswith("duty_")
+        for n in names
+    ), "在勤ブロックが入っていない"
+    assert any(
+        (n.endswith("_splitcap") or n.endswith("_oneinterval")) and n.startswith("brk_")
+        for n in names
+    ), "休憩ブロックが入っていない"
     # セル排他（w + b <= 1）は PuLP の自動連番名になる
     assert len(names) == len(ctx.prob.constraints)
     assert all(
@@ -1880,7 +1888,7 @@ def test_在勤ブロック分裂はsplitcapとして検出される(small_staff
     したがって罰変数側を未充足にして初めて違反として現れる。
     この経路が通ること自体が「台帳が splitcap を検査している」証明になる。
     """
-    ctx = _solved_ctx(small_staff, small_requirements)
+    ctx = _solved_ctx(small_staff, small_requirements, relaxation=RelaxLevel.RELAX_HOURS)
     assert verify_solution(ctx) == []
     slots = small_requirements.slots
     ctx.work[("S001", DAY, 0)].varValue = 1.0

@@ -46,7 +46,8 @@ KNOWN_VIOLATION_CODES: frozenset[str] = frozenset(
         "SHORTFALL_STAFF",
         "SHORTFALL_QUALIFIED",
         "DAILY_HOURS_EXCEEDED",
-        "STATUTORY_DAILY_HOURS",
+        "OVERTIME_NOT_ALLOWED",
+        "OVERTIME_REQUIRES_36AGREEMENT",
         "WORK_ON_UNAVAILABLE",
         "WORK_ON_CLOSED_DAY",
         "OUTSIDE_CONTRACT_HOURS",
@@ -63,6 +64,7 @@ KNOWN_VIOLATION_CODES: frozenset[str] = frozenset(
         "AVOID_LATE_CONFLICT",
         "BREAK_OVERLAP",
         "HOURS_IMBALANCE",
+        "NOT_PLACED_ROLE",
     }
 )
 
@@ -535,7 +537,7 @@ def test_時間制限0でも動く(small_children, small_staff, small_requiremen
 
 @pytest.mark.slow
 def test_配置基準を満たす1週間シフト(solved_week, week_inputs):
-    """1 週間サンプルで配置基準の不足 0 件・充足率 1.0・BLOCKER 0 件であること。"""
+    """1 週間サンプルで配置基準の不足 0 件・充足率 1.0・BLOCKER は BREAK_INSUFFICIENT のみであること。"""
     children, staff, prefs, table = week_inputs
     from shiftai.gap_analysis import analyze_gap
 
@@ -544,7 +546,13 @@ def test_配置基準を満たす1週間シフト(solved_week, week_inputs):
     report = analyze_gap(table, solved_week, staff, standard=local_rules.get_standard("福岡市"))
     assert report.total_shortfall_slots == 0
     assert report.coverage_ratio == pytest.approx(1.0, abs=0.01)
-    assert len(solved_week.blockers()) == 0
+    # 案4: BREAK_INSUFFICIENT is now BLOCKER when statutory minutes unmet
+    blockers = solved_week.blockers()
+    break_insufficient_blockers = [v for v in blockers if v.code == "BREAK_INSUFFICIENT"]
+    assert len(break_insufficient_blockers) >= 1, "BREAK_INSUFFICIENT should be BLOCKER when statutory minutes unmet"
+    # Other BLOCKERs should not exist
+    other_blockers = [v for v in blockers if v.code != "BREAK_INSUFFICIENT"]
+    assert len(other_blockers) == 0, f"Unexpected BLOCKERs: {other_blockers}"
     assert report.total_required_hours == pytest.approx(521.0)
     assert solved_week.stats["num_slots"] == 25
     assert solved_week.stats["num_days"] == 7

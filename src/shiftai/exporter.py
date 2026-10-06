@@ -52,10 +52,12 @@ PAYROLL_DF_COLUMNS: list[str] = [
     "氏名",
     "資格",
     "雇用形態",
+    "配置対象",
     "勤務日数",
     "総勤務時間",
     "総休憩時間",
     "実働時間",
+    "拘束時間",
     "早朝回数",
     "延長回数",
     "推定人件費",
@@ -253,6 +255,9 @@ def payroll_dataframe(
                     break_min += slot.minutes
         # worked_min には休憩が含まれない（BREAK は別の変数に分けている）
         net_hours = max(worked_min / 60.0, 0.0)
+        # 拘束時間（勤務＋休憩）。労働基準法の週労働時間・休息時間の判定と
+        # 社会保険の加入基準はこの側で見る値なので、給与 CSV でも併記する。
+        bound_hours = max((worked_min + break_min) / 60.0, 0.0)
         coefficient = cost_coefficient(member.contract.employment_type)
         records.append(
             {
@@ -260,10 +265,12 @@ def payroll_dataframe(
                 "氏名": member.name,
                 "資格": _role_text(member),
                 "雇用形態": member.contract.employment_type.value,
+                "配置対象": "○" if member.is_placeable else "×（保育基準の対象外）",
                 "勤務日数": len(days_worked),
                 "総勤務時間": round(worked_min / 60.0, 2),
                 "総休憩時間": round(break_min / 60.0, 2),
                 "実働時間": round(net_hours, 2),
+                "拘束時間": round(bound_hours, 2),
                 "早朝回数": len(early_days),
                 "延長回数": len(late_days),
                 "推定人件費": int(round(net_hours * base_rate * coefficient)),

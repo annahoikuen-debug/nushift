@@ -80,6 +80,7 @@ def _streamlit_secret(key: str) -> str | None:
     values = _streamlit_secrets()
     return values.get(SECRET_ALIASES.get(key, key)) or values.get(key)
 
+
 SHEET_ALIASES: dict[str, str] = {
     "children": "attendance",
     "attendance": "attendance",

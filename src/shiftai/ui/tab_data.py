@@ -740,9 +740,7 @@ def render_apply_block() -> None:
         try:
             with st.spinner("設定を読み込んでいます…"):
                 apply_load_result(build_load_result())
-            st.success(
-            f"読み込みました。{theme.tab_ref(2)}（シフト作成）で自動作成できます。"
-        )
+            st.success(f"読み込みました。{theme.tab_ref(2)}（シフト作成）で自動作成できます。")
         except Exception as exc:  # noqa: BLE001 - 読み込み失敗で画面を落とさない
             st.error(f"読み込みに失敗しました: {exc}")
 

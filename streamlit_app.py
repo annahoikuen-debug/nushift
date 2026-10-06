@@ -113,7 +113,7 @@ def render_data_tab() -> None:
 def render_tabs() -> None:
     """モードに応じてタブを描画する。"""
     if simple_mode():
-        tabs = st.tabs(list(SIMPLE_TABS), key="main_tabs")
+        tabs = st.tabs(list(SIMPLE_TABS), key=theme.MAIN_TABS_KEY)
         with tabs[0]:
             render_data_tab()
         with tabs[1]:
@@ -121,7 +121,7 @@ def render_tabs() -> None:
         with tabs[2]:
             tab_export.render()
         return
-    tabs = st.tabs(list(TAB_LABELS), key="main_tabs")
+    tabs = st.tabs(list(TAB_LABELS), key=theme.MAIN_TABS_KEY)
     with tabs[0]:
         render_data_tab()
     with tabs[1]:

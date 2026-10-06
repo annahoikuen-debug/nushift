@@ -627,8 +627,7 @@ def render(*, auto_requirements: bool = False, embed_shift: bool = False) -> Non
             )
         else:
             st.warning(
-                f"先に{theme.tab_ref(1)}（必要人員）で"
-                "「必要人員を再計算」を押してください。"
+                f"先に{theme.tab_ref(1)}（必要人員）で「必要人員を再計算」を押してください。"
             )
         theme.stuck_hint(2, "必要人員がまだ計算されていません。")
         return

@@ -459,6 +459,69 @@ def tab_ref(current: int) -> str:
     return current_step(current).tab_ref
 
 
+MAIN_TABS_KEY = "main_tabs"
+"""タブ列（``st.tabs``）が選択中タブを保持する ``session_state`` のキー。
+
+``streamlit_app`` がこの名前でタブを作る。別モジュールからタブを
+** Programmatically に** 切り替えるには、このキーにインデックスを
+代入する（代入はウィジェット生成後ではなく **コールバックの中** で行う
+必要がある。そうしないと Streamlit が例外を投げる）。
+"""
+
+#: シンプルモードに存在しないステップを、実際に開いているタブへ読み替える表。
+#: 「必要人員」と「シフト表」はシンプルモードではタブ2（シフト作成）の中に入っている。
+SIMPLE_TAB_ALIASES: dict[str, str] = {"requirements": "solve", "shift": "solve"}
+
+
+def step_for_key(step_key: str) -> Step:
+    """``step_key``（``steps`` の key）に対応する Step を返す。
+
+    シンプルモードに無いステップ（``requirements`` / ``shift``）は
+    :data:`SIMPLE_TAB_ALIASES` 把他のタブへ読み替える。未知の key は
+    例外にせず最後のステップを返す（描画を止めないため）。
+    """
+    group = steps_for_mode(simple_mode())
+    wanted = SIMPLE_TAB_ALIASES.get(step_key, step_key) if simple_mode() else step_key
+    for step in group:
+        if step.key == wanted:
+            return step
+    return group[-1]
+
+
+def tab_position(step_key: str) -> int | None:
+    """``step_key`` が tabs 並びの何番目か（0 始まり）を返す。
+
+    そのステップがタブとして現れない構成なら ``None``。
+    """
+    group = steps_for_mode(simple_mode())
+    wanted = SIMPLE_TAB_ALIASES.get(step_key, step_key) if simple_mode() else step_key
+    for position, step in enumerate(group):
+        if step.key == wanted:
+            return position
+    return None
+
+
+def tab_ref_for(step_key: str) -> str:
+    """``step_key`` を他の画面から指すときの文言（例: タブ4（シフト表・微調整））。"""
+    step = step_for_key(step_key)
+    return f"{step.tab_ref}（{step.label}）"
+
+
+def goto_tab(step_key: str) -> None:
+    """``step_key`` のタブを開くよう選択状態を立てる。
+
+    **ウィジェット生成後のスクリプト本体からは呼ばない。**
+    ``st.button(..., on_click=goto_tab, args=("shift",))`` のように
+    コールバックから呼ぶこと（Streamlit の ``st.tabs`` は選択中インデックスを
+    ``MAIN_TABS_KEY`` に保存するため、そこを書き換えるとタブが切り替わる）。
+    タブとして現れないステップなら何もしない。
+    """
+    position = tab_position(step_key)
+    if position is None:
+        return
+    st.session_state[MAIN_TABS_KEY] = position
+
+
 STAGE_LABELS: dict[str, str] = {
     "empty": "① データ: 未入力",
     "loaded": "① データ: 読込済み ／ ② 必要人員: 未計算 ／ ③ シフト: 未作成",

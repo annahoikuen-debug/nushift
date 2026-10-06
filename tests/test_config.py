@@ -12,13 +12,13 @@ from shiftai import config
 
 
 def test_休憩の法定閾値が変わらない() -> None:
-    """6時間超が45分、8時間超が60分であること（労働基準法第9条）。"""
+    """6時間超が45分、8時間超が60分であること（労働基準法第34条）。"""
     assert config.STATUTORY_BREAK_THRESHOLDS == ((8 * 60, 60), (6 * 60, 45))
     assert config.STATUTORY_BREAK_MINUTES == 45
 
 
 def test_休息時間の法定下限が変わらない() -> None:
-    """勤務間の最低休息時間は11時間であること（労働基準法第9条）。"""
+    """勤務間の最低休息時間は11時間であること（労働安全衛生法第68条第2項）。"""
     assert config.STATUTORY_MIN_REST_HOURS == 11
 
 
@@ -90,7 +90,8 @@ def test_週上限定数に法的経緯がコメントにある() -> None:
     from shiftai import config as config_module
 
     source = inspect.getsource(config_module)
-    assert "2019" in source, "2019年の改正について触れていること"
+    assert "2024" in source, "2024年の改正について触れていること"
+    assert "改正後" in source or "従業者数規模別" in source, "改正後の枠組みを述べていること"
     assert "失効" in source or "法定の上限ではなく" in source, "旧基準の失効に触れていること"
     assert "月45時間" in source or "月 45 時間" in source, "現行の枠組みを述べていること"
 
