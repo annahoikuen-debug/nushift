@@ -39,7 +39,6 @@ from shiftai.domain import (
     cost_coefficient,
     qualified_ids,
     weekly_periods,
-    weekly_windows,
 )
 from shiftai.solver import staff_work_hours
 
