@@ -695,7 +695,7 @@ def _build_cells(
             for i, slot in enumerate(slots):
                 key = (sid, day, i)
                 forced = fixed.get((sid, day, slot.label))
-                allowed = day_ok and ("contract" in drop_groups or _slot_is_contractible(st, slot))
+                allowed = day_ok and ("contract" in drop_groups or _slot_is_contractible(st, slot)) and st.is_placeable
                 if allowed and _is_unavailable(prefs_st, day, slot):
                     allowed = False
                 if forced is CellState.WORK:

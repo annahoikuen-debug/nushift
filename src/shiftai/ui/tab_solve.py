@@ -138,11 +138,7 @@ def _clear_solve_outputs() -> None:
         state.reset(key)
 
 
-def _ratio_text(ratio: float) -> str:
-    """必要／供給比を表示用文字列にする（``inf`` は「∞」表記）。"""
-    if ratio == float("inf"):
-        return "∞"
-    return f"{ratio:.2f}"
+
 
 
 def _render_diagnosis(table: Any, result: SolveResult | None) -> None:
@@ -353,7 +349,7 @@ def _render_precheck(table: Any) -> None:
     required = standards.total_required_hours(table)
     supply = state.contract_hours()
     ratio = state.supply_demand_ratio(required)
-    shown = _ratio_text(ratio)
+    shown = theme.format_ratio(ratio)
     with st.expander("✅ 最適化の前提を確認する", expanded=True):
         components.metric_row(
             [

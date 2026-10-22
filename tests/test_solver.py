@@ -143,7 +143,8 @@ def test_結果は日ごとのシフト表を持つ(solved_day, small_staff, sma
     assert shift_day is not None
     for member in small_staff:
         for slot in small_requirements.slots:
-            assert shift_day.get(member.staff_id, slot) in set(CellState)
+            assert member.staff_id in shift_day.assignments
+            assert slot.label in shift_day.assignments[member.staff_id]
 
 
 def test_空の入力はERROR(small_requirements):

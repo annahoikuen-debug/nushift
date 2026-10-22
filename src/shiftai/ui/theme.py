@@ -680,6 +680,31 @@ def format_day(day: Any) -> str:
     return format_jp_date(day)
 
 
+def format_ratio(value: float) -> str:
+    """Ratio formatting for UI display.
+    
+    Formats ratios for display, showing infinity as ∞ symbol.
+    Used in requirements and solve tabs for staff-to-child ratios.
+    
+    Args:
+        value: The ratio value to format
+        
+    Returns:
+        Formatted string representation of the ratio
+    """
+    if value == float("inf"):
+        return "∞"
+    if value == float("-inf"):
+        return "-∞"
+    # For regular numbers, remove trailing zeros but keep at least one decimal if needed
+    # This matches the behavior of the original _ratio_text function
+    if value == 0:
+        return "0"
+    # Format to avoid scientific notation for small numbers
+    formatted = f"{value:.10f}".rstrip("0").rstrip(".")
+    return formatted if formatted else "0"
+
+
 def caveat_box(*, collapsed: bool = True) -> None:
     """配置基準の数値には要確認である旨の注意書きを出す。
 

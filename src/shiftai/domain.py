@@ -370,6 +370,11 @@ class StaffMember:
         """看護師・准看護師の資格を持つか（みなし保育士の上限を数えるために使う）。"""
         return self.has_role(Role.KANGSHI)
 
+    @property
+    def is_placeable(self) -> bool:
+        """保育室への配置対象か（園長・主任は配置対象外だが、副資格に保育士があれば配置可能）。"""
+        return Role.HOIKUSHI in self.roles or Role.ENJOGAKUIN not in self.roles
+
     def is_qualified_under(self, standard: StaffingStandard | None) -> bool:
         """この基準で「必要保育士数」を満たす資格を持つか。
 

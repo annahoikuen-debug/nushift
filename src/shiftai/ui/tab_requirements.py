@@ -64,7 +64,7 @@ def _ratio_label(ratio: float) -> str:
     ``state.supply_demand_ratio`` は供給 0・需要 >0 のとき ``inf`` を返す。
     ``"%.2f" % inf`` は ``"inf"`` になるため、そのまま整形すると
     ``!inf`` という無意味なカード、および「``!`` が tone 判定に使われる」
-    ``components.metric_html`` の挙動を招く（``tab_solve._ratio_text`` は
+    ``components.metric_html`` の挙動を招く（``theme.format_ratio`` は
     ``inf`` / ``nan`` を明示的に扱うので、この呼び出しだけが漏れていた）。
     """
     if math.isinf(ratio) or math.isnan(ratio):
@@ -254,19 +254,13 @@ def _render_gap_preview(table: Any) -> None:
     )
 
 
-def _ratio_text(ratio: float) -> str:
-    """必要／供給比を表示用文字列にする（``inf`` は「∞」表記）。"""
-    if ratio == float("inf"):
-        return "∞"
-    return f"{ratio:.2f}"
-
 
 def _render_supply_warning(table: Any) -> float:
     """必要人時と供給可能人時の比による事前警告。戻り値は比率（``inf`` あり）。"""
     required = standards.total_required_hours(table)
     supply = state.contract_hours()
     ratio = state.supply_demand_ratio(required)
-    shown = _ratio_text(ratio)
+    shown = theme.format_ratio(ratio)
     with st.expander("✅ 必要人員の計算結果（内訳）", expanded=False):
         st.markdown(f"- 総必要人時: **{required:,.1f} h**（{len(table.all_days())} 日）")
         st.markdown(f"- 供給可能人時（契約時間ベース）: **{supply:,.1f} h**")

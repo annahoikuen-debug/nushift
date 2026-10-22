@@ -92,7 +92,8 @@ def test_勤務表が全日全職員を埋める(solved_week, week_inputs):
         assert len(shift_day.assignments) == 28
         for member in staff:
             for slot in table.slots:
-                assert shift_day.get(member.staff_id, slot) in set(CellState)
+                assert member.staff_id in shift_day.assignments
+                assert slot.label in shift_day.assignments[member.staff_id]
     hours = staff_work_hours(solved_week, staff)
     counts = staff_shift_count(solved_week)
     assert set(hours) == {m.staff_id for m in staff}

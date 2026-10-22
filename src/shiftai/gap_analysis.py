@@ -39,6 +39,7 @@ from shiftai.domain import (
     cost_coefficient,
     qualified_ids,
     weekly_periods,
+    weekly_windows,
 )
 from shiftai.solver import staff_work_hours
 
@@ -330,7 +331,7 @@ def coverage_matrix(
             actual = sum(
                 1
                 for s in staff
-                if lookup.get((s.staff_id, day, slot.label), CellState.OFF) is CellState.WORK
+                if s.is_placeable and lookup.get((s.staff_id, day, slot.label), CellState.OFF) is CellState.WORK
             )
             row[slot.label] = f"{actual}/{need}"
         records.append(row)
@@ -988,7 +989,7 @@ VIOLATION_CODE_LABELS: dict[str, str] = {
     "OUTSIDE_CONTRACT_HOURS": "契約の勤務時間帯外で勤務しています。",
     "MONTHLY_HOURS_EXCEEDED": "対象期間の勤務時間が契約基準の上限を超えています。",
     "MONTHLY_HOURS_SHORT": "対象期間の勤務時間が契約基準の下限に届いていません。",
-    "WEEKLY_HOURS_EXCEEDED": "週の労働時間が内部目安の週44時間を超えている週があります。",
+    "WEEKLY_HOURS_EXCEEDED": "週の勤務が44時間を超えている週があります。",
     "WEEKLY_DAYS_EXCEEDED": "週の勤務日数が契約の週最大出勤日数を超えている週があります。",
     "CONSECUTIVE_DAYS": "連続勤務日数が契約上限を超えています。",
     "REST_HOURS_SHORT": "勤務間の休息時間が11時間を下回っています。",
