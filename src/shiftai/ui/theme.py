@@ -347,6 +347,8 @@ def apply_page_config() -> None:
 
 def inject_css() -> None:
     """カスタム CSS を読み込む。"""
+    import streamlit as st
+
     st.markdown(CSS, unsafe_allow_html=True)
 
 
@@ -675,8 +677,12 @@ def where_is_period() -> str:
     return "サイドバーで計画期間を設定してください。"
 
 
-def format_day(day: Any) -> str:
+def format_day(day: Any, month: int | None = None, d: int | None = None) -> str:
     """``9/28(月)`` 形式の日本語日付表記。ウィジェットの ``format_func`` 向け。"""
+    if month is not None and d is not None:
+        import datetime as dt
+
+        day = dt.date(day, month, d)
     return format_jp_date(day)
 
 
@@ -751,11 +757,16 @@ def rule_note_card(note: Any) -> None:
     st.markdown(body, unsafe_allow_html=True)
 
 
-def rule_note_cards(notes: Sequence[Any], *, title: str = "この基準の説明") -> None:
+def rule_note_cards(notes: Sequence[Any] | Any, *, title: str = "この基準の説明") -> None:
     """``LocalRuleNote`` 群を expander の中にカード描画する。"""
+    import streamlit as st
+
+    note_list = getattr(notes, "notes", notes)
+    if not isinstance(note_list, (list, tuple, Sequence)):
+        note_list = [note_list] if note_list else []
     with st.expander(title, expanded=False):
         caveat_box()
-        for note in notes:
+        for note in note_list:
             rule_note_card(note)
 
 
@@ -767,6 +778,8 @@ def legend(items: Sequence[tuple[str, str]]) -> None:
     ``color`` は CSS の ``background`` にそのまま入るので、
     ``style`` 属性 inject で外れないよう ``#`` で始まる値だけ許可する。
     """
+    import streamlit as st
+
     chips = "".join(
         f'<span class="shiftai-chip" style="background:{_safe_css_color(color)}">'
         f'<span style="color:#ffffff;{"font-weight:600" if color != COLOR_OFF else ""}">'

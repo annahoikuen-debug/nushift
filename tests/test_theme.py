@@ -23,12 +23,15 @@ def test_CAVEAT_TEXTに自治体確認の文言が含まれる() -> None:
 
 def test_format_day() -> None:
     """日付を「月/日(曜日)」形式にフォーマットすること。"""
+    import datetime as dt
+
     assert theme.format_day(2026, 10, 1) == "10/1(木)"
-    assert theme.format_day(2026, 1, 1) == "1/1(金)"
+    assert theme.format_day(dt.date(2026, 10, 1)) == "10/1(木)"
+    assert theme.format_day(2026, 1, 1) == "1/1(木)"
     assert theme.format_day(2026, 12, 31) == "12/31(木)"
 
 
-def test_format_ratioは無限大を∞表記にする() -> None:
+def test_format_ratioは無限大を無限大表記にする() -> None:
     """無限大を ∞ 表記にすること。"""
     assert theme.format_ratio(float("inf")) == "∞"
     assert theme.format_ratio(float("-inf")) == "-∞"
@@ -39,7 +42,7 @@ def test_format_ratioは無限大を∞表記にする() -> None:
 
 def test_rule_note_cardsが全プリセットで例外を投げない() -> None:
     """全プリセットに対して rule_note_cards が例外を投げないこと。"""
-    from shiftai import local_rules, standards
+    from shiftai import local_rules
 
     for key, std in local_rules.MUNICIPAL_PRESETS.items():
         # UI を起動しないので、関数自体の例外のみを検証
@@ -54,10 +57,18 @@ def test_inject_cssとlegendが例外を投げない() -> None:
     pytest.importorskip("streamlit.testing.v1")
     from streamlit.testing.v1 import AppTest
 
-    at = AppTest.from_function(theme.inject_css)
+    def run_inject():
+        from shiftai.ui import theme
+        theme.inject_css()
+
+    def run_legend():
+        from shiftai.ui import theme
+        theme.legend([("テスト", "#ffffff")])
+
+    at = AppTest.from_function(run_inject)
     at.run()
     assert not at.exception
 
-    at = AppTest.from_function(theme.legend)
+    at = AppTest.from_function(run_legend)
     at.run()
     assert not at.exception
