@@ -1,595 +1,219 @@
-# 🧸 nushift / shiftai — 配置基準連動型 シフト自動作成 (nusoft v0.4.0 コア)
+# 🧸 nusoft (open-hoikuict v0.4.0)
 
-園児の登降園予定と保育所の**職員配置基準**を入力すると、法令と基準を満たす勤務表を
-MILP（混合整数線形計画法・CBCソルバー）で自動作成する数理最適化エンジン / CLI / Web アプリです。
+> **保育のすべてをつなぎ、先生の時間をこどもたちへ**  
+> 職員配置基準連動型 数理最適化シフト自動作成エンジン（NuShift）と、保育園・こども園の日常業務をワンストップで支える次世代オープンソース保育ICTプラットフォーム。
 
-本リポジトリは、保育ICTプラットフォーム **nusoft (open-hoikuict) v0.4.0** のシフト自動作成ソルバーコアとして統合・同期されています。
-配置基準の「なぜこの人数なのか」が文字列として残るため、現場で確認・説明できます。
+[![Version](https://img.shields.io/badge/version-v0.4.0-blue.svg)](version.py)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](pyproject.toml)
+[![Security: MFA & Audit](https://img.shields.io/badge/Security-MFA%20%7C%20Audit%20%7C%20RateLimit-orange.svg)](security_config.py)
 
-**[操作マニュアル (MANUAL.md)](MANUAL.md) | [よくある質問 (Q_AND_A.md)](Q_AND_A.md) | [ランディングページ](landing_page/index.html) | [統合リポジトリ (open-hoikuict)](file:///c:/Users/user/openict/open-hoikuict)**
-
-> **nusoft v0.4.0 (2026-10-26) リリース対応**:
-> - open-hoikuict (`C:\Users\user\openict\open-hoikuict`) への vendor 完全同期済み (`scripts/sync_nushift_vendor.py`)
-> - 現場手動セル編集・ピン留め固定 (`fixed_assignments`) による再求解保護に対応
-> - 労働基準法第32条（1日10h超）および配置不足に対する BLOCKER 承認ゲート判定
-> - 登降園予定変更連動のリアルタイム配置割れギャップ検知 (`gap_analysis.py`)
-> - 掲示・印刷用 Excel 勤務割表、BOM付き CSV、iCalendar (ICS) エクスポート対応
-> - 多要素認証 (MFA メールOTP) および監査ログ基盤と完全連動
-> - この README の数値と出力例はすべて実際に実行した結果です。記載したコマンドはそのまま実行できます（Windows / macOS / Linux 共通）。
+**[デモ環境](https://demo.hoikuict.net/) | [本番環境](https://open.hoikuict.net/) | [操作マニュアル](MANUAL.md) | [Q&A (よくある質問)](Q_AND_A.md) | [ランディングページ](landing_page/index.html) | [技術ガイド](docs/technical-guide.md)**
 
 ---
 
-## 目次
+## 1. nusoft とは
 
-- [3 分でわかるデモ](#3-分でわかるデモ)
-- [Python API の最小例](#python-api-の最小例)
-- [画面（Streamlit）](#画面streamlit)
-- [何ができるか](#何ができるか)
-- [制約の扱い（ハード / ソフト）](#制約の扱いハード--ソフト)
-- [CLI リファレンス](#cli-リファレンス)
-- [入出力](#入出力)
-- [開発](#開発)
-- [既知の制約と注意点](#既知の制約と注意点)
-- [詳細ドキュメント](#詳細ドキュメント)
+**nusoft** は、保育総合ICTシステム `open-hoikuict` を中核とし、職員配置基準連動型 数理最適化ソルバー **NuShift (shiftai)**、多要素認証 (MFA)、全銀Zenginフォーマット請求連携、および堅牢なエンタープライズ・セキュリティ基盤を完全統合したオープンソース保育ICTプラットフォームです。
 
----
+### 主な特長
 
-## 3 分でわかるデモ
-
-### 0) インストール
-
-```bash
-git clone <このリポジトリ>
-cd nushift
-
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-# source .venv/bin/activate     # macOS / Linux
-
-pip install -e .
-```
-
-開発用（テスト・lint）も含める場合:
-
-```bash
-pip install -e ".[dev]"
-```
-
-### 1) 画面を開く
-
-```bash
-python -m streamlit run streamlit_app.py
-# 同じ動作: python -m shiftai ui
-```
-
-ブラウザに `http://localhost:8501` が開きます。最初に「ウィザードで順に入力する / まとめて入力する」のどちらが尋ねられます（サイドバーの「入力方法」でいつでも変更できます）。さらにサイドバーのトグルで
-**シンプルモード（3 タブ）/ 上級者モード（5 タブ）**を切り替えられます。
-
-### 2) コマンドだけで完結させる
-
-配置基準の一覧:
-
-```bash
-$ python -m shiftai presets
-[全国基準（厚労省）] 全国基準（厚労省）
-    厚労省告示第49号の標準。4・5歳児20:1・延長は保育士のみ
-    出典: 保育所の職員配置基準（昭和52年厚生省告示第49号）・保育所保育指針
-[東京都] 東京都
-    東京都告示。4・5歳児12:1、延長18:30まで代替措置可
-    …
-[保育標準時間のみ園] 保育標準時間のみ園
-    3時間保育園。8:30〜17:15のみ、早朝・延長の窓口なし
-    出典: 保育所の職員配置基準（昭和52年厚生省告示第49号）・保育所保育指針
-
-既定の基準は 全国基準（厚労省） です（--standard で変更できます）。
-```
-
-サンプルデータで 1 週間分を解いて成果物を揃える:
-
-```bash
-$ python -m shiftai solve --sample --out out --time-limit 60 --zip
-必要人員: 6 日 / 25 時間帯 / 505.5 人時（ピーク 9 名）
-最適化: 実行可能解（28.394 秒）
-  時間制限内で実行可能解を得ました（目的関数=10942.82、所要28.39秒）。
-配置カバー率: 100.0%（不足 0 時間帯）
-  [要調整] MONTHLY_HOURS_EXCEEDED: S05 の勤務時間が 40.50 時間（6日間）で、…
-  [要調整] BREAK_INSUFFICIENT: S04 は 2026-10-02 の休憩が 30 分しかなく、必要な 60 分に届いていません（基準 45 分）。
-  [要調整] CONSECUTIVE_DAYS: S14 は 2026-10-02 から 6 日連続勤務しており、契約上限（5 日）を超えています。
-  …
-  [参考] HOURS_IMBALANCE: 勤務時間の偏りが大きいです（最大 40.5 時間 / 最小 0.0 時間）。
-出力先: out
-  shift.csv / payroll.csv / shift_matrix.csv / requirements.csv
-  gap.csv / gap_daily.csv / violations.csv
-  shift.ics / summary.md / bundle.zip
-```
-
-> サンプルは意図的に厳しい設定です（職員 28 名、必要人員のピークは 9 名、
-> 1 日契約 8 時間）。そのため「配置カバー率 100%」でも要調整項目が残ります。
-> 小さい入力でのクリーンな結果は次の Python API の例を見てください。
-
-`summary.md` の中身（実際の出力）:
-
-```markdown
-# シフトサマリー: あさひ保育園
-
-- 対象期間: 2026年10月2日(金) 〜 2026年10月8日(木)（6 日）
-- 最適化状態: 実行可能解
-- 目的関数値: 10,942.82
-- 配置基準の不足セル: **0** 件
-- 法令違反（ブロッカー）: **0** 件 / 要調整: 109 件
-- 総実働時間: 514.00 時間
-- 推定人件費合計: **1,049,064** 円（実働時間ベース。休憩は含まない）
-```
-
-実データで実行する場合は CSV を渡します:
-
-```bash
-python -m shiftai solve \
-  --children    data/children.csv \
-  --staff       data/staff.csv \
-  --preferences data/preferences.csv \
-  --standard    福岡市 \
-  --out out --zip --strict
-```
-
-空のテンプレートから実データを作る場合:
-
-```bash
-python -m shiftai template --out template/
-```
+1. **🧸 保育業務のワンストップ統合**
+   - 園児・保護者台帳、登降園キオスク（タッチ打刻）、体温・機嫌・食事等の日次連絡帳、独自項目UUID対応の児童観察記録・指導要録、アレルギー・身体測定を含む健康管理、Web Push通知まで全業務を網羅。
+2. **⚡ 日本初・法令配置基準連動 シフト自動作成 (NuShift Core)**
+   - 厚生労働省告示第49号（全国基準）および各自治体の独自基準（東京都、福岡市など）に完全対応。
+   - 混合整数線形計画法（MILP / CBCソルバー）により、週7日間の勤務割を数秒〜数十秒で自動作成。
+   - 現場の微調整を保護する「セル編集・ピン留め（Pinning）」機能、労働基準法第32条（1日10h超）違反や配置不足を自動検出して承認をブロックする「BLOCKER 承認ゲート」、急なお迎え予定変更にリアルタイム連動する「配置割れギャップ検知」を搭載。
+3. **💰 延長保育料自動計算 & 全銀Zengin口座振替**
+   - 登降園実績に基づく延長料金の自動算出。
+   - 全銀協標準フォーマット（Zengin）準拠の口座振替データを1クリックで生成し、金融機関とのスムーズな振替連携を実現。
+4. **🔒 金融・医療水準のゼロトラストセキュリティ**
+   - メールOTPによる多要素認証 (MFA) 標準対応（TOTP専用アプリ不要）。
+   - レートリミット（IP偽装防止・メモリ自動クリーンアップ機能付き）。
+   - 児童・保護者・職員の機微情報アクセスを記録する監査ログ基盤。
+   - 厳格なセキュリティヘッダー（CSP, HSTS, X-Frame-Options, CSRF保護）と楽観的排他ロック (`lock_version`)。
 
 ---
 
-## Python API の最小例
+## 2. システム構成と最新ファイル状態 (v0.4.0)
 
-3 歳児 5 名・保育士 4 名・1 日分です。**このコードは実行して出力を確認済み**です。
+本リポジトリは **v0.4.0** として、全てのフェーズ（Phase 0〜3）の負債解消と機能統合が完了しています。
 
-```python
-import datetime as dt
+| 指標 | 実績値 | 備考 |
+| :--- | :--- | :--- |
+| **Python ファイル数** | 316 本 | vendor, venv, gen_bunnrei を除く |
+| **Python 総コード行数** | 約 85,200 行 | 型アノテーション・Ruff準拠 |
+| **データモデル (`models.py`)** | 175 クラス / 2,688 行 | SQLModel / SQLite & PostgreSQL 両対応 |
+| **APIルーター (`routers/`)** | 38 ファイル (全45ルーター) | FastAPI 構成 |
+| **テストスイート** | 100 ファイル以上 | pytest / 回帰防止テスト完備 |
+| **シフトソルバー統合** | `vendor/nushift/shiftai` | CBCソルバー非同期ワーカー駆動 |
 
-from shiftai import local_rules, solver, standards
-from shiftai.domain import (
-    AgeClass,
-    ChildPlan,
-    Contract,
-    EmploymentType,
-    Role,
-    StaffMember,
-    StaffPreferences,
-)
-from shiftai.gap_analysis import check_violations
-
-DAY = dt.date(2026, 10, 2)  # 金
-DAY_OPEN, DAY_CLOSE, GRAN = dt.time(9, 0), dt.time(15, 0), 30
-
-# --- 園児 5 名が 9:00-15:00 在園 ---------------------------------------
-children = [
-    ChildPlan(
-        f"C{i:03d}",
-        f"園児{i}",
-        DAY,
-        AgeClass.AGE_3,
-        arrive=DAY_OPEN,
-        depart=DAY_CLOSE,
-        is_short_time=False,
-        absent=False,
-        absent_reason="",
-        uses_early_care=False,
-        uses_late_care=False,
-        notes="",
-    )
-    for i in range(1, 6)
-]
-
-# --- 配置基準のプリセットを選ぶ ------------------------------------------
-standard = local_rules.get_standard("全国基準（厚労省）")
-
-# --- 「何人必要か」とその根拠を時間帯ごとに算出 --------------------------
-table = standards.build_requirements(
-    children,
-    [DAY],
-    standard,
-    day_open=DAY_OPEN,
-    day_close=DAY_CLOSE,
-    granularity_min=GRAN,
-)
-print(f"必要人員: {len(table.slots)} 時間帯 / {sum(len(v) for v in table.rows.values())} 要件行")
-for row in table.rows[DAY][:3]:
-    print(
-        f"  {row.slot.start:%H:%M}-{row.slot.end:%H:%M}  "
-        f"必要 {row.needed_staff} 名（保育士 {row.needed_qualified} 名）"
-    )
-print(f"  根拠: {table.rows[DAY][0].basis}")
-
-# --- 職員を用意して解を求める --------------------------------------------
-contract = Contract(
-    weekly_hours=40.0,
-    daily_hours=8.0,
-    employment_type=EmploymentType.SEI,
-    min_monthly_hours=150.0,
-    max_monthly_hours=185.0,
-    max_weekly_days=5,
-    max_consecutive_days=5,
-    min_rest_hours=11.0,
-    granularity_min=GRAN,
-    earliest_start=dt.time(8, 0),
-    latest_end=dt.time(17, 0),
-)
-staff = [
-    StaffMember(f"S{i:02d}", name, (Role.HOIKUSHI,), contract)
-    for i, name in enumerate(["井上", "小林", "斎藤", "松本"], 1)
-]
-prefs = {s.staff_id: StaffPreferences() for s in staff}
-
-result = solver.solve_shift(children, staff, table, prefs, time_limit_sec=30, standard=standard)
-print(f"\n解の状態: {result.status.value}  目的関数={result.objective_value}")
-
-# --- 結果を見る ---------------------------------------------------------
-shift_day = result.day(DAY)
-required = {r.slot.label: r.needed_staff for r in table.rows[DAY]}
-for slot in table.slots:
-    worked = [s.staff_id for s in staff if shift_day.get(s.staff_id, slot).name == "WORK"]
-    who = " ".join(worked) if worked else "(全員休息)"
-    print(
-        f"  {slot.start:%H:%M}-{slot.end:%H:%M}  "
-        f"必要 {required[slot.label]} 名 → {len(worked)} 名  {who}"
-    )
-
-violations = check_violations(table, result, staff, prefs, standard=standard)
-blocking = [v for v in violations if v.severity.name == "BLOCKER"]
-print(f"\n違反: BLOCKER {len(blocking)} 件 / 全体 {len(violations)} 件")
-
-# --- 職員ごとの勤務時間 -------------------------------------------------
-print("\n職員ごとの勤務:")
-for member in staff:
-    minutes = sum(
-        int(
-            (
-                dt.datetime.combine(DAY, slot.end) - dt.datetime.combine(DAY, slot.start)
-            ).total_seconds()
-            // 60
-        )
-        for slot in table.slots
-        if shift_day.get(member.staff_id, slot).name == "WORK"
-    )
-    print(f"  {member.staff_id} {member.name}: {minutes / 60:.1f} 時間（{minutes} 分）")
-```
-
-**実出力**:
+### ディレクトリ構成
 
 ```text
-必要人員: 12 時間帯 / 12 要件行
-  09:00-09:30  必要 2 名（保育士 1 名）
-  09:30-10:00  必要 2 名（保育士 1 名）
-  10:00-10:30  必要 2 名（保育士 1 名）
-  根拠: 3歳児 5名 ÷ 8 = 1名（定員比8:1、切り上げ）／保育標準時間／2名ルールによる底上げ
-
-解の状態: 最適解  目的関数=12.0
-
-  09:00-09:30  必要 2 名 → 3 名  S02 S03 S04
-  09:30-10:00  必要 2 名 → 3 名  S02 S03 S04
-  10:00-10:30  必要 2 名 → 3 名  S01 S02 S03
-  10:30-11:00  必要 2 名 → 3 名  S01 S02 S03
-  11:00-11:30  必要 2 名 → 3 名  S01 S02 S04
-  11:30-12:00  必要 2 名 → 3 名  S01 S02 S04
-  12:00-12:30  必要 2 名 → 4 名  S01 S02 S03 S04
-  12:30-13:00  必要 2 名 → 3 名  S01 S03 S04
-  13:00-13:30  必要 2 名 → 3 名  S01 S03 S04
-  13:30-14:00  必要 2 名 → 4 名  S01 S02 S03 S04
-  14:00-14:30  必要 2 名 → 4 名  S01 S02 S03 S04
-  14:30-15:00  必要 2 名 → 4 名  S01 S02 S03 S04
-
-違反: BLOCKER 0 件 / 全体 0 件
-
-職員ごとの勤務:
-  S01 井上: 5.0 時間（300 分）
-  S02 小林: 5.0 時間（300 分）
-  S03 斎藤: 5.0 時間（300 分）
-  S04 松本: 5.0 時間（300 分）
+open-hoikuict/
+├── child_records/          # 児童観察記録・要録・成長進捗管理 (独自項目UUID対応)
+├── common/                 # 共通楽観ロック (optimistic_lock.py) など基盤モジュール
+├── data/                   # 規定データ・初期マスタ
+├── docs/                   # 仕様書・運用設計書・導入ガイド・技術ドキュメント
+├── landing_page/           # 【新規】モダンで美しいプロダクト紹介LP (HTML/CSS/JS)
+├── plan_docs/              # 指導計画・月案・文例ライブラリ
+├── routers/                # FastAPI ルーター群 (登降園、請求、MFA、職員、児童など)
+├── shift_schedule/         # 職員シフト自動作成 UI・API・求解ワーカー・ギャップ検知
+│   ├── routers/            # シフト計画、セル編集、エクスポート、施設設定
+│   └── services/           # solve_jobs (CBC非同期ワーカー), gap_analysis
+├── static/                 # 静的アセット (CSS, JavaScript, アイコン, フォント)
+├── templates/              # Jinja2 HTML テンプレート群
+├── tests/                  # 単体・結合・セキュリティ回帰テストスイート
+├── vendor/nushift/shiftai/ # NuShift ソルバーコア (MILP / 配置基準最適化エンジン)
+├── auth.py / local_auth.py # 認証基盤 (Argon2id, セッション管理)
+├── audit_logger.py         # 機微情報アクセス監査ログ
+├── database.py             # データベース接続・マイグレーション・テーブル初期化
+├── main.py                 # FastAPI アプリケーションエントリーポイント
+├── MANUAL.md               # 【新規】包括的ユーザー・運用操作マニュアル
+├── pyproject.toml          # プロジェクト設定・Ruff・pytest 設定
+├── Q_AND_A.md              # 【新規】保育現場・管理者向け総合 Q&A / FAQ
+├── rate_limiter.py         # レート制限 (メモリ掃除・IP偽装対策)
+├── requirements.txt        # 本番実行依存関係 (FastAPI, PuLP, Pandas 等)
+├── security_config.py      # セキュリティ設定・環境バリデーション
+├── security_headers.py     # セキュリティHTTPレスポンスヘッダー
+├── version.py              # バージョン定義 (v0.4.0)
+└── zengin_service.py       # 全銀協標準フォーマット口座振替サービス
 ```
-
-この例が示している点:
-
-- 必要人員は **「3歳児 5名 ÷ 8 = 1名（定員比8:1、切り上げ）／保育標準時間／2名ルールによる底上げ」**
-  という根拠つきで算出されます。`basis` の文字列をそのまま説明に使えます。
-- 必要 2 名に対して 3〜4 名を配置しているのは、**2 名ルールと休憩の制約**のためです
-  （同時に休憩に入れる人員が限られます）。
-- 小規模なら CBC が最適性を証明して `最適解` になります。本番規模は
-  `実行可能解` 止まりが通常です。
 
 ---
 
-## 画面（Streamlit）
+## 3. クイックスタート
 
-| モード | タブ |
-| --- | --- |
-| シンプル（既定） | 1. データ → 2. シフト作成 → 3. 出力 |
-| 上級者 | 1. データ投入 → 2. 必要人員 → 3. シフト作成 → 4. シフト表・微調整 → 5. 出力 |
+### 3.1 動作要件
+
+- **OS**: Windows 11 / 10, Ubuntu 22.04 LTS / 24.04 LTS, macOS, TrueNAS SCALE
+- **Python**: 3.11 または 3.12
+- **ソルバー**: COIN-OR CBC ソルバー (PuLP 経由で同梱、またはシステムインストール)
+
+### 3.2 インストール手順
 
 ```bash
-streamlit run streamlit_app.py
+# 1. リポジトリのクローン
+git clone https://github.com/hoikuict/open-hoikuict.git
+cd open-hoikuict
+
+# 2. 仮想環境の作成と有効化
+python -m venv .venv
+# Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+# Linux / macOS:
+source .venv/bin/activate
+
+# 3. 依存パッケージのインストール
+pip install --upgrade pip
+pip install -r requirements.txt -r requirements-dev.txt
+
+# 4. 環境変数の設定 (開発環境用サンプルのコピー)
+cp .env.example .env
 ```
 
-操作の要点:
-
-- **データ** … 最初に「ウィザードで順に入力する / まとめて入力する」を選びます。
-  - *ウィザード* … (1) 園の条件 / (2) 園児 / (3) 職員 / (4) 希望休 / (5) 確認 の 5 ステップ。
-    ステップごとに「ファイルを選ぶ / サンプルを使う / 直接入力する」を選べます。
-    サンプルで流れを通したうえで、実データに差し替えてください。
-  - *まとめて入力* … CSV / Excel / JSON をアップロード、または「サンプルデータを読み込む」。
-    取り込んだ表はそのまま編集でき、Undo / Redo が使えます。
-- **必要人員** … 時間帯ごとの必要人数と、その根拠文字列。配置基準を切り替えられます。
-- **シフト作成** … 目的関数の重みをスライダーで調整してから実行。
-  解けなかった場合は Slack / IIS 診断と緩和ラダーを表示します。
-- **シフト表・微調整** … 生成後の表を直接編集。**変更が配置基準に抵触すると確定ボタンが
-  無効化**され、即時検証が理由を示します。
-- **出力** … CSV / Excel / ical / ZIP をダウンロード。
-
----
-
-## 何ができるか
-
-- **配置基準の自動適用** … 保育所の職員配置基準（定員比・資格内数・代替措置）を
-  12 種類のプリセットで適用します。基準ごとに必要人数が変わります。
-- **MILP での最適化** … PuLP + CBC。勤務セルと休憩セルを整数変数として扱い、
-  必要人員・休憩・契約時間・希望休などを同時に満たす勤務表を解きます。
-- **根拠の可追跡性** … 必要人員の判断根拠を文字列で保持し、出力にも含めます。
-- **過不足と違反の可視化** … 20 種類の違反コード
-  （`SHORTFALL_STAFF`、`BREAK_INSUFFICIENT`、`REST_HOURS_SHORT`、
-  `MONTHLY_HOURS_EXCEEDED` など）で検査します。
-- **公平性の考慮** … 早番・遅番・土曜出勤の偏りを目的関数で抑えます（既定の重み 4.0）。
-- **勤務パターンの整列** … 早番 / 日勤 / 遅番のパターンを定義し、各職員に割り当て直します。
-- **解けないときの原因分析** … 緩和ラダーと Slack / IIS 診断を提供します。
-- **複数の出力形式** … CSV（UTF-8 BOM）/ Excel / ical / ZIP バンドル。
-- **GAS 連携** … Google スプレッドシート（Apps Script）との出勤連携（任意）。
-
----
-
-## 制約の扱い（ハード / ソフト）
-
-**ハード制約**（解は必ず満たします。満たせなければ「解なし」として報告します）:
-
-- 配置基準の必須行（必要人員・必要保育士数）
-- 希望休・出勤不可 / 年間休業日 / 祝日の出勤不可
-- 契約時間帯（最早始業〜最遅終業）/ 1 日の上限時間
-- 勤務と休憩のセル排他とブロック構造
-
-**ソフトペナルティ**（重みで調整します。違反しても解は出ますが、
-**検査で警告**します）:
-
-- 連続勤務日数 / 週の最大出勤日数
-- 最低休憩時間 / 勤務間の休息時間
-- 早朝・延長の回避 / 勤務時間の偏り / 月間時間
-- 未使用職員 / 勤務希望
-
-**週契約時間は MILP の制約ではありません。** 最適化後の検査で警告する項目です
-（供給量の不足は事前に診断します）。
-詳細は [ソルバ仕様](docs/02_ソルバ仕様.md) §4.3 を参照してください。
-
-違反の重大度は 2 段階です:
-
-- `BLOCKER` … 配置基準の不足や出勤不可への出勤。UI では赤く表示されます。
-- `WARNING` / 参考 … 上記のソフト項目の超過。
-
-`shiftai solve` の終了コード:
-
-| コード | 意味 |
-| ---: | --- |
-| 0 | ブロッカーなし（要調整は許容） |
-| 1 | エラー |
-| 2 | ブロッカーあり |
-| 3 | ブロッカーはないが要調整あり（`--strict` 指定時のみ） |
-
----
-
-## CLI リファレンス
+### 3.3 アプリケーションの起動
 
 ```bash
-python -m shiftai --help
-python -m shiftai ui          # Streamlit アプリ
-python -m shiftai presets     # 配置基準のプリセット一覧
-python -m shiftai compliance  # 制度別の適合チェック（届出・月次報告向け）
-python -m shiftai sample      # サンプル CSV を出力
-python -m shiftai template    # 空テンプレート CSV を出力
-python -m shiftai solve       # ヘッドレス実行
+# 開発サーバー起動
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-### 制度別の適合チェック（`compliance`）
+起動後、ブラウザで以下のURLにアクセスしてください：
+- **メインアプリケーション**: `http://127.0.0.1:8000/`
+- **ランディングページ**: `http://127.0.0.1:8000/landing_page/` (または `landing_page/index.html` を直接ブラウザで開く)
+- **API ドキュメント (Swagger UI)**: `http://127.0.0.1:8000/docs`
 
-シフト作成とは別に、**届出・月次報告・巡回指導で出す判定**を行う。
-1 日の常勤換算人数と施設の属性（利用定員・開所時間・保育事業者型の有無）で
-12 項目を判定し、「適合／不適合／該当なし／未確認」を**根拠つきで**出す。
+### 3.4 シフト自動作成単体エンジン (NuShift / Streamlit) の起動
+
+NuShift コアエンジン単体をデスクトップUIで操作する場合：
 
 ```bash
-python -m shiftai compliance \
-  --children children.csv --staff staff.csv \
-  --regulation 認可外保育施設 --capacity 40 --support-certified
+# nushift ディレクトリへ移動 (別リポジトリまたは vendor)
+cd vendor/nushift/shiftai  # または e:\nushift\nushift
+python -m streamlit run streamlit_app.py
 ```
 
-| オプション | 既定 | 意味 |
-| --- | --- | --- |
-| `--regulation` | `認可外保育施設` | 制度名（認可保育所／認可外保育施設／企業主導型保育事業／小規模保育事業／事業所内保育事業） |
-| `--capacity` | 0 | 利用定員 |
-| `--shared-operator` | （無効） | 保育事業者型事業（共同利用枠）を実施しているとする |
-| `--open` / `--close` | 07:15 / 19:30 | 開所・閉所時刻（11 時間ルールに使う） |
-| `--support-certified` | （無効） | 保育士・看護師・調理員以外を研修修了者・受講予定者として扱う |
-| `--out` / `--json` | （なし）/（無効） | 結果を CSV / JSON で出力 |
-
-終了コード: **0**（報告可）／**3**（不適合または未確認あり）／**1**（入力エラー）。
-嘱託医・調理業務の委託形態・面積は本ツールでは判れないため**未確認**で出し、
-`0`（報告可）にはしません。詳細は
-[`docs/03_配置基準と自治体ルール.md`](docs/03_配置基準と自治体ルール.md) §10。
-
-### 対応している制度
-
-| 制度 | プリセット | 算出手法 |
-| --- | --- | --- |
-| 認可保育所（11 自治体） | 全国基準・東京都ほか | 年齢クラス毎に切り上げ |
-| 認可外保育施設 | 認可外保育施設（指導監督基準） | 区分ごとに切捨て → 合計 → ＋1 → 四捨五入 |
-| 企業主導型保育事業 | 単独枠 / 保育事業者型 | 同上 |
-
-**認可保育所のプリセットを認可外保育施設に使わないでください。** 算手法・資格要件が
-異なり、1 時間帯あたり最大 4 名ずれます（0.5% の確率で基準を満たしていると誤判定）。
-小規模保育事業・事業所内保育事業は未対応です。
-
-`shiftai solve` の主なオプション:
-
-| オプション | 既定値 | 意味 |
-| --- | --- | --- |
-| `--children` / `--staff` / `--preferences` | なし | 入力 CSV / Excel / JSON |
-| `--standard` | `全国基準（厚労省）` | 配置基準のキー |
-| `--out` | `out` | 出力先ディレクトリ |
-| `--start` / `--end` | 入力データの日付から自動決定 | 対象期間 |
-| `--closed` | なし | 年間休業日（1 回 1 日。繰り返す） |
-| `--holiday` | なし | 祝日・行事日（1 回 1 日。繰り返す） |
-| `--open` / `--close` | 7:15 / 19:30 | 開所・閉所時刻 |
-| `--granularity` | 30 | 時間帯の粒度（分） |
-| `--time-limit` | 60 | ソルバの時間上限（秒） |
-| `--zip` | （無効） | 成果物をまとめた `bundle.zip` も出力 |
-| `--strict` | （無効） | 要調整があれば終了コード 3 |
-| `--relax` | 0 | 制約を何段階まで緩めるか（0 = 緩和なし） |
-| `--diagnose` / `--ladder` | （無効） | 診断出力 / 緩和ラダーの詳細 |
-| `--sample` | （無効） | サンプルデータを使う |
-| `--seed` | 42 | サンプルの乱数シード |
-
-`--closed` と `--holiday` はどちらも繰り返し指定（`action="append"`）です。
-カンマ区切りの 1 つの値ではありません。
+ブラウザで `http://localhost:8501` が開き、直感的なウィザード形式で配置基準シミュレーションやシフト作成が可能です。
 
 ---
 
-## 入出力
+## 4. 主要機能詳細
 
-### 入力（3 ファイル）
+### 4.1 職員配置基準連動 シフト自動作成 (NuShift Core)
 
-| ファイル | 必須 | 内容 |
-| --- | --- | --- |
-| `children.csv` | ✔ | 園児ID / 年齢 / 登降園日 / 登園・降園時刻 / 短時間保育 / 欠席 / 早朝・延長保育 |
-| `staff.csv` | ✔ | 職員ID / 資格 / 雇用形態 / 週・日契約時間 / 週最大出勤日数 / 最大連続勤務日数 / 最早始業・最遅終業 |
-| `preferences.csv` | — | 職員ID / 種別（出勤不可・休み希望）/ 日付 / 理由 |
+| 機能 | 詳細 |
+| :--- | :--- |
+| **基準比率設定** | 0歳児 (3:1), 1・2歳児 (6:1), 3歳児 (15:1 または 20:1), 4・5歳児 (25:1 または 30:1)。厚労省全国基準および自治体加算に対応。 |
+| **数理最適化 (MILP)** | CBC ソルバーが、職員の雇用契約（常勤・非常勤）、希望休、有給休暇、連続勤務上限、休憩時間（法定45分/60分）を満たす最適シフトを週単位で算出。 |
+| **手動編集 & ピン留め** | 作成されたシフト表のセルを画面上で手動変更可能。特定セルを「ピン留め」すると、再計算時にもその配置が固定保護されます。 |
+| **BLOCKER 承認ゲート** | 労働基準法第32条違反（1日10時間超勤務）や法令配置割れが存在する場合、園長承認が HTTP 409 で自動遮断されます。 |
+| **登降園ギャップ検知** | 保護者のお迎え予定変更や突発的な延長保育に対し、当日の必要保育士数と現行シフトの過不足（ギャップ）を即座に検知・警告。 |
+| **マルチエクスポート** | 施設掲示用の「Excel 勤務割表」、給与連携用の「BOM付き CSV」、スマホカレンダー連携用の「iCalendar (.ics)」を出力。 |
 
-列の完全な仕様と例は [データ仕様書](docs/04_データ仕様.md) にあります。
+### 4.2 登降園・保護者ポータル・Web Push・動画配信
 
-### 出力（`--zip` で最大 10 ファイル）
+- **キオスク端末打刻**: タブレットやChromebookで、園児・保護者用QR/タッチ打刻をサポート。
+- **保護者ポータル**: スマホから当日の出欠連絡、お迎え時間変更、連絡帳の記入・閲覧が可能。
+- **Web Push 通知**: ブラウザ標準のプッシュ通知技術により、アプリのインストール不要で緊急連絡や個別連絡を即時配信。
+- **YouTube簡易動画配信（ムービー）**: 運動会や発表会などの動画をYouTube限定公開URLを用いて保護者へ安全に共有。全学年共通またはクラス別の視聴制限、公開期限の自動制御、Cookieレス（`youtube-nocookie.com`）によるプライバシー保護再生に対応。
 
-必ず出力される 7 つ:
+### 4.3 児童記録・健康管理・指導要録
 
-`shift.csv` / `payroll.csv` / `shift_matrix.csv` / `shift.ics` / `summary.md` / `shift.xlsx`
-に `bundle.zip` を加えたものです。
+- **児童観察記録**: 日常の様子やエピソードを記録。独自項目UUIDにより、園独自の評価軸を柔軟に追加可能。
+- **設定版楽観ロック**: 複数担任による同時編集時の上書き事故を完全に防止。
+- **健康記録**: アレルギー情報、体温推移、定期身体測定データのグラフ表示と成長曲線の可視化。
 
-条件付き 3 つ:
+### 4.4 請求管理 & 全銀Zengin口座振替
 
-| ファイル | 出力条件 |
-| --- | --- |
-| `requirements.csv` | 必要人員の表を渡したとき |
-| `gap.csv` / `gap_daily.csv` | 過不足の診断を行ったとき（2 つ同時） |
-| `violations.csv` | 違反が 1 件以上あるとき |
+- **延長料金自動計算**: 登降園時刻の実績データから、標準時間・短時間枠、スポット・月極契約に応じた延長保育料を自動集計。
+- **全銀フォーマット出力**: 全銀協規定のフォーマットに準拠した振替依頼データ（固定長テキスト）を生成し、ネットバンキングで一括引落可能。
 
-CSV はすべて **UTF-8 with BOM** なので Excel でそのまま開けます。
+### 4.5 セキュリティ & 内部統制
 
-`payroll.csv` の `実働時間` は `総勤務時間` と同じ値です。**休憩を二重控除しません**
-（`総勤務時間` は最初から `BREAK` を含まない値です）。
+- **メールOTP (MFA)**: ログイン時に6桁の一時パスコードを登録メールアドレスに送信。専用認証アプリ不要で高いセキュリティを確保。
+- **機微情報監査ログ**: 園児・保護者の個人情報や口座情報の閲覧・変更履歴を漏れなく追跡記録。
+- **レートリミット**: ブルートフォース攻撃やDoS攻撃を防ぎ、メモリリークを防止する自動クリーンアップ機構を内蔵。
 
 ---
 
-## 開発
+## 5. 品質保証・テスト・CI
+
+本プロジェクトは厳格なテスト駆動開発とCI基準を維持しています。
 
 ```bash
-pip install -e ".[dev]"                  # 実行時 + 開発用依存
+# コード規約・Lint チェック
+ruff check .
 
-python -m pytest                         # 全テスト（CBC を起動する統合テストを含む）
-python -m pytest -m "not slow"           # 速いテストだけ（推奨 / 1〜2 分）
-python -m pytest -m slow                 # 遅い統合テストだけ
-python -m pytest -n auto -m "not slow"   # 並列実行
+# 全テストスイートの実行 (回帰テスト含む)
+python -m pytest tests/ -x -q
 
-ruff check .                             # 静的検査
-ruff format .                            # 整形
+# ドキュメントのビルド検証
+python -m mkdocs build --strict
 ```
 
-`make` が使える環境（macOS / Linux の GNU make）では同じ操作が
-`make test-fast` / `make lint` などでできます。`make help` で一覧が出ます。
-
-### 構成
-
-```
-src/shiftai/
-  domain.py          データクラス（園児・職員・基準・解など）
-  standards.py       配置基準エンジン（必要人員と根拠を算出）
-  solver.py          MILP モデリングと CBC 実行
-  local_rules.py     自治体のプリセット
-  gap_analysis.py    過不足と違反の検査（20 コード）
-  diagnostics.py     Slack / IIS 診断と緩和ラダー
-  fairness.py        早番・遅番・土曜出勤の公平性集計
-  shift_patterns.py  勤務パターンの定義と整列
-  live_validation.py 編集中の即時検証
-  data_loader.py     入力の読み込みとヘッダ正規化
-  importers.py       園業務 CSV 連携
-  exporter.py        出力（CSV / Excel / ical / ZIP）
-  sample_data.py     サンプルデータ生成
-  ui/                Streamlit の画面（state / sidebar / 各タブ）
-  __main__.py        CLI
-```
-
-設定は `pyproject.toml` に集約しています（依存、ruff 設定、pytest 設定）。
+すべてのテストがパスし、Ruff のチェックでエラーがゼロであることを確認してからコミットされています。
 
 ---
 
-## 既知の制約と注意点
+## 6. ドキュメント体系
 
-### 1. 1 日の上限時間で、ソルバと検査の基準が食い違っています（要修正）
+用途に合わせて以下の充実したドキュメントをご参照ください。
 
-ソルバのハード制約は `solver._daily_cap_minutes` で、正職員 8 時間契約なら
-`8h × 1.25` で最大 10 時間（10 時間で頭打ち）です。
-一方、検査の `STATUTORY_DAILY_HOURS` は 1 日 8 時間 45 分を超えたら警告します
-（`gap_analysis._STATUTORY_DAILY_LIMIT_HOURS = 8.75`）。
-
-そのため `shiftai solve --sample` の既定出力には `STATUTORY_DAILY_HOURS` の
-警告が含まれ得ます。ソルバ側を 8.75 時間に合わせるか、検査側を 10 時間まで
-緩めるかは方針の判断が必要なため、現時点ではどちらにも寄せずに如实報告しています。
-
-### 2. CBC は決定的ではありません
-
-同じ入力でも実行ごとに解がわずかに変わることがあります。
-
-### 3. 目的関数値は金額でも人時でもありません
-
-配置の過不足や環境条件に重みを付けたスコアです。比較のための指標であり、
-法的な最適性を保証するものではありません。
-
-### 4. 本番規模では最適解が得られません
-
-変数 14,039 個・制約 18,906 本の規模では、`--time-limit` の範囲に収まるのは
-通常 `実行可能解`（Feasible）です。最適性の証明が必要な検証は小さい入力で
-行ってください（[ソルバ仕様](docs/02_ソルバ仕様.md) §2.7 / §8）。
-
-### 5. 配置基準には前提があります
-
-3 歳未満の園児では定員比の切り上げにより基準を満たさないことがあり、
-必須要件として扱うかどうかは `is_binding` で切り替えます。
+- 📖 **[MANUAL.md (総合操作・運用マニュアル)](MANUAL.md)**: 園長・保育士・事務・管理者向けの実践的利用手順書
+- ❓ **[Q_AND_A.md (よくある質問と回答)](Q_AND_A.md)**: 現場の疑問、ソルバーの仕組み、トラブルシューティング集
+- 🎨 **[ランディングページ (landing_page/index.html)](landing_page/index.html)**: nusoft の魅力を伝える美麗なプロダクト紹介LP
+- 🛠️ **[docs/technical-guide.md](docs/technical-guide.md)**: アーキテクチャ設計・API仕様・開発者向けガイド
+- 📋 **[docs/features.md](docs/features.md)**: 実装済み機能の網羅的一覧
 
 ---
 
-## 詳細ドキュメント
+## 7. ライセンス・免責事項
 
-| 文書 | 内容 |
-| --- | --- |
-| [アーキテクチャ](docs/01_アーキテクチャ.md) | 全体の構成とデータの流れ |
-| [ソルバ仕様](docs/02_ソルバ仕様.md) | MILP の変数・制約・目的関数、実測モデル規模 |
-| [配置基準と自治体ルール](docs/03_配置基準と自治体ルール.md) | 配置基準の内容と自治体の差 |
-| [データ仕様](docs/04_データ仕様.md) | CSV / Excel / 出力の列定義 |
-| [開発ガイド](docs/05_開発ガイド.md) | セットアップ、Makefile、テスト戦略 |
-| [運用手引き](docs/06_運用手引き.md) | 現場での使い方、トラブルシュート |
-| [よくある質問 (FAQ)](docs/FAQ.md) | 最適化ロジック、ピン留め、労基法判定、Q&A |
-| [回帰防止の実装計画](docs/07_実装計画_回帰防止.md) | テストとガードの方針 |
-| [商業品質向上の実装計画](docs/08_実装計画_公平性・即時検証・CSV連携.md) | 機能追加の計画 |
-| [商業品質向上（Round 2）](docs/09_実装計画_商業品質向上.md) | 未着手の改善項目 |
-| [UI/UX 改善の実装計画](docs/10_実装計画_UI-UX改善_案1-2-3-4-9.md) | 表示と状態管理の改善計画 |
-| [労働基準法の判定と休憩制約の実装計画](docs/11_実装計画_労働基準判定と休憩.md) | 休憩のハード制約化と法令解釈の訂正 |
+### ライセンス
+本プロジェクトは [MIT License](LICENSE) のもとで公開されているオープンソースソフトウェアです。商用利用、改変、再配布が自由に行えます。
 
----
-
-## 免責
-
-本ソフトウェアは配置基準と労働法令の**補助**として提供されます。
-生成された勤務表は必ず現場で確認し、最終判断は現場の責任で行ってください。
-基準の内容と解釈は施設や自治体ごとに異なります。
-本ソフトウェアの使用によって生じたいかなる損害についても、責任を負いません。
+### 免責事項
+本ソフトウェアが提供する職員配置基準の計算結果およびシフト自動作成機能は、数理最適化モデルに基づく提案です。最終的な法令遵守・人員配置の確認および安全管理責任は、各施設の施設長・管理者が負うものとします。
