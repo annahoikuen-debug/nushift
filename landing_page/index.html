@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>nusoft (NuShift) — 保育のすべてをつなぎ、先生の時間をこどもたちへ | 次世代保育ICT</title>
+  <meta name="description" content="厚労省配置基準連動型 数理最適化シフト自動作成エンジン「NuShift」と、園児台帳・登降園・連絡帳・全銀Zengin請求・MFAセキュリティを完全統合したオープンソース保育ICTプラットフォーム。">
+  <meta name="keywords" content="保育ICT, シフト自動作成, 配置基準, NuShift, nusoft, open-hoikuict, 保育園システム, 全銀フォーマット">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Ambient Glow Background Orbs -->
+  <div class="ambient-glow ambient-1"></div>
+  <div class="ambient-glow ambient-2"></div>
+  <div class="ambient-glow ambient-3"></div>
+
+  <!-- Navigation Bar -->
+  <header class="navbar" id="navbar">
+    <div class="container nav-container">
+      <a href="#hero" class="logo-wrap" id="brandLogo">
+        <span>🧸 nusoft</span>
+        <span class="logo-badge">v0.4.0</span>
+      </a>
+
+      <ul class="nav-links" id="navLinks">
+        <li><a href="#features" class="nav-link">機能一覧</a></li>
+        <li><a href="#simulator" class="nav-link">配置シミュレーター</a></li>
+        <li><a href="#comparison" class="nav-link">選ばれる理由</a></li>
+        <li><a href="#pricing" class="nav-link">料金プラン</a></li>
+        <li><a href="#faq" class="nav-link">Q&A</a></li>
+      </ul>
+
+      <div class="nav-actions">
+        <button class="theme-toggle-btn" id="themeToggleBtn" aria-label="テーマ切り替え" title="ダーク/ライトモード切り替え">
+          <span id="themeIcon"></span>
+        </button>
+        <button class="btn btn-primary open-modal-btn" id="navDemoBtn">
+          無料デモを体験
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero Section -->
+    <section class="hero-section" id="hero">
+      <div class="container">
+        <div class="hero-pill">
+          <span>✨ 2026年最新リリース</span>
+          <span>配置基準連動シフト & 多要素認証(MFA) 標準搭載</span>
+        </div>
+
+        <h1 class="hero-title">
+          保育のすべてをつなぎ、<br>
+          <span class="gradient-text">先生の時間をこどもたちへ</span>
+        </h1>
+
+        <p class="hero-subtitle">
+          厚労省告示基準・自治体基準に完全連動する数理最適化シフトAI「NuShift」と、<br>
+          登降園・連絡帳・要録・全銀Zengin口座振替をワンストップで支える次世代オープンソース保育ICT。
+        </p>
+
+        <div class="hero-cta">
+          <button class="btn btn-primary open-modal-btn" id="heroCtaDemoBtn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            無料オンラインデモを体験
+          </button>
+          <a href="#simulator" class="btn btn-secondary" id="heroCtaSimBtn">
+            必要人員シミュレーターを試す
+          </a>
+        </div>
+
+        <!-- Hero Mockup Display -->
+        <div class="hero-mockup-wrap">
+          <div class="mockup-inner">
+            <div class="mockup-header">
+              <div class="window-dots">
+                <span class="dot dot-red"></span>
+                <span class="dot dot-yellow"></span>
+                <span class="dot dot-green"></span>
+              </div>
+              <span class="mockup-title">NuShift 勤務割最適化ダッシュボード — あさひ保育園 (2026年10月度)</span>
+              <span class="status-pill success">● 最適化完了 (CBC求解 18.2秒)</span>
+            </div>
+
+            <div class="mockup-body">
+              <!-- Left Mini Panel: Rules & Stats -->
+              <div class="shift-preview-card">
+                <div class="card-header-badge">
+                  <span style="font-weight: 700; font-size: 0.95rem;">基準適合判定ステータス</span>
+                  <span class="status-pill success">配置充足率 100%</span>
+                </div>
+                <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6;">
+                  <div>・適用基準: <strong>全国基準（厚労省告示第49号）</strong></div>
+                  <div>・園児数: <strong>84名</strong>（0歳: 6名 / 1-2歳: 24名 / 3-5歳: 54名）</div>
+                  <div>・週契約違反 / 労基法第32条違反: <strong style="color: var(--accent-emerald);">0件 (パス)</strong></div>
+                </div>
+
+                <div style="margin-top: 10px; padding: 12px; background: rgba(99, 102, 241, 0.08); border-radius: 8px; border: 1px solid var(--border-glass-hover);">
+                  <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
+                    <span>📌 ピン留めセル保護:</span>
+                    <strong style="color: var(--accent-primary);">12コマ固定中</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                    <span>⚠️ お迎え変更ギャップ検知:</span>
+                    <strong style="color: var(--accent-emerald);">過不足なし (正常)</strong>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Right Mini Panel: Interactive Schedule Grid Preview -->
+              <div class="shift-preview-card">
+                <div class="card-header-badge">
+                  <span style="font-weight: 700; font-size: 0.95rem;">職員勤務表（抜粋プレビュー）</span>
+                  <span class="status-pill pinned">📌 現場セル微調整対応</span>
+                </div>
+
+                <div class="mini-grid">
+                  <div class="grid-cell" style="background: rgba(255,255,255,0.02);">職員</div>
+                  <div class="grid-cell" style="background: rgba(255,255,255,0.02);">10/02(金)</div>
+                  <div class="grid-cell" style="background: rgba(255,255,255,0.02);">10/03(土)</div>
+                  <div class="grid-cell" style="background: rgba(255,255,255,0.02);">10/05(月)</div>
+
+                  <div class="grid-cell">佐藤 (主幹)</div>
+                  <div class="grid-cell highlight">早番 📌</div>
+                  <div class="grid-cell">休</div>
+                  <div class="grid-cell highlight">中番</div>
+
+                  <div class="grid-cell">田中 (保育士)</div>
+                  <div class="grid-cell">遅番</div>
+                  <div class="grid-cell highlight">土曜 📌</div>
+                  <div class="grid-cell">早番</div>
+
+                  <div class="grid-cell">高橋 (パート)</div>
+                  <div class="grid-cell highlight">短時間</div>
+                  <div class="grid-cell">休</div>
+                  <div class="grid-cell highlight">短時間</div>
+                </div>
+
+                <div style="display: flex; gap: 8px; margin-top: 6px;">
+                  <span style="font-size: 0.72rem; padding: 4px 8px; background: rgba(16,185,129,0.1); border-radius: 4px; color: var(--accent-emerald);">Excel出力可</span>
+                  <span style="font-size: 0.72rem; padding: 4px 8px; background: rgba(99,102,241,0.1); border-radius: 4px; color: var(--accent-primary);">全銀口座振替連携</span>
+                  <span style="font-size: 0.72rem; padding: 4px 8px; background: rgba(6,182,212,0.1); border-radius: 4px; color: var(--accent-cyan);">Web Push通知</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stats Section -->
+    <section class="stats-strip" id="stats">
+      <div class="container">
+        <div class="stats-grid">
+          <div class="stat-item">
+            <h3>95%</h3>
+            <p>シフト作成にかかる時間削減</p>
+          </div>
+          <div class="stat-item">
+            <h3>100%</h3>
+            <p>法令配置基準の自動適合率</p>
+          </div>
+          <div class="stat-item">
+            <h3>0件</h3>
+            <p>労基法32条違反シフトの流出ゼロ</p>
+          </div>
+          <div class="stat-item">
+            <h3>85,000+</h3>
+            <p>堅牢なオープンソースコード行数</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Interactive Simulator Section -->
+    <section class="sim-section" id="simulator">
+      <div class="container">
+        <div style="text-align: center;">
+          <span class="section-tag">Interactive Demo</span>
+          <h2 class="section-title">NuShift 配置基準シミュレーター</h2>
+          <p class="section-desc">
+            園児数を動かすと、厚生労働省の法定配置基準に基づく必要保育士数がリアルタイムに計算されます。
+          </p>
+        </div>
+
+        <div class="sim-box">
+          <!-- Controls -->
+          <div class="sim-controls">
+            <div class="sim-group">
+              <label for="simRuleSelect" style="font-weight: 700; font-size: 0.95rem;">適用する配置基準</label>
+              <select id="simRuleSelect" class="sim-rule-select">
+                <option value="national">全国基準（厚労省告示第49号 / 20:1・30:1）</option>
+                <option value="tokyo">東京都告示基準（手厚い配置 / 15:1・25:1）</option>
+                <option value="handy">モデル園独自基準（超手厚い配置 / 15:1・20:1）</option>
+              </select>
+            </div>
+
+            <div class="sim-group">
+              <div class="sim-label-row">
+                <span>0歳児 園児数</span>
+                <span class="sim-badge" id="valAge0">6名</span>
+              </div>
+              <input type="range" id="simAge0" class="sim-slider" min="0" max="30" value="6">
+            </div>
+
+            <div class="sim-group">
+              <div class="sim-label-row">
+                <span>1・2歳児 園児数</span>
+                <span class="sim-badge" id="valAge1">24名</span>
+              </div>
+              <input type="range" id="simAge1" class="sim-slider" min="0" max="60" value="24">
+            </div>
+
+            <div class="sim-group">
+              <div class="sim-label-row">
+                <span>3歳児 園児数</span>
+                <span class="sim-badge" id="valAge3">20名</span>
+              </div>
+              <input type="range" id="simAge3" class="sim-slider" min="0" max="60" value="20">
+            </div>
+
+            <div class="sim-group">
+              <div class="sim-label-row">
+                <span>4・5歳児 園児数</span>
+                <span class="sim-badge" id="valAge4">30名</span>
+              </div>
+              <input type="range" id="simAge4" class="sim-slider" min="0" max="80" value="30">
+            </div>
+          </div>
+
+          <!-- Output Panel -->
+          <div class="sim-result-panel">
+            <div>
+              <div class="sim-result-header">
+                <div>
+                  <div class="sim-big-label">法令必要保育士数</div>
+                  <div class="sim-big-number" id="simTotalStaff">8</div>
+                </div>
+                <div style="text-align: right;">
+                  <div class="sim-big-label">在籍園児合計</div>
+                  <div style="font-size: 2.2rem; font-weight: 800; color: var(--text-primary);" id="simTotalChildren">80</div>
+                </div>
+              </div>
+
+              <ul class="breakdown-list">
+                <li class="breakdown-item">
+                  <span>0歳児 必要数:</span>
+                  <strong id="bdAge0">2名 (3:1)</strong>
+                </li>
+                <li class="breakdown-item">
+                  <span>1・2歳児 必要数:</span>
+                  <strong id="bdAge1">4名 (6:1)</strong>
+                </li>
+                <li class="breakdown-item">
+                  <span>3歳児 必要数:</span>
+                  <strong id="bdAge3">1名 (20:1)</strong>
+                </li>
+                <li class="breakdown-item">
+                  <span>4・5歳児 必要数:</span>
+                  <strong id="bdAge4">1名 (30:1)</strong>
+                </li>
+              </ul>
+            </div>
+
+            <div style="margin-top: 20px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.5;">
+              ※開所時間帯の最低保育士2名保障ルールが自動適用されます。NuShift ではこの必要数に対し、各職員の雇用契約・希望休・有給を考慮して15分コマ単位で数理最適化求解を行います。
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Feature Showcase Tabs -->
+    <section class="features-section" id="features">
+      <div class="container">
+        <span class="section-tag">All-in-One Platform</span>
+        <h2 class="section-title">保育業務を網羅する 5 つのコア機能</h2>
+        <p class="section-desc">
+          現場の保育士、主任、園長、事務、保護者、それぞれの体験を極限までシンプルに。
+        </p>
+
+        <!-- Tab Buttons -->
+        <div class="tab-nav">
+          <button class="tab-btn active" data-tab="shift">⚡ 職員シフト最適化 (NuShift)</button>
+          <button class="tab-btn" data-tab="attendance">📱 登降園・保護者ポータル</button>
+          <button class="tab-btn" data-tab="records">📖 児童記録・保育要録</button>
+          <button class="tab-btn" data-tab="billing">💰 請求・全銀Zengin口座振替</button>
+          <button class="tab-btn" data-tab="security">🔒 多要素認証(MFA)・監査基盤</button>
+        </div>
+
+        <!-- Tab Content 1: Shift -->
+        <div class="tab-content active" id="tab-shift">
+          <div class="tab-text">
+            <h3>数理最適化ソルバーで、複雑なシフトを瞬時に作成</h3>
+            <p>
+              厚生労働省の配置基準や職員の契約時間、希望休、有給休暇を満たすシフト表を CBC ソルバーが自動計算。現場に合わせたセル微調整やピン留め固定、労基法違反の承認ブロックまで完璧にサポートします。
+            </p>
+            <ul class="feature-bullet-list">
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>厚労省基準・東京都独自基準など多彩なプリセット</span>
+              </li>
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>セル手動修正後の「ピン留め保護」再計算機能</span>
+              </li>
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>労働基準法第32条違反 (1日10h超) を防ぐ承認ゲート</span>
+              </li>
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>急なお迎え時間変更に連動するリアルタイムギャップ検知</span>
+              </li>
+            </ul>
+          </div>
+          <div class="tab-visual">
+            <div style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <span style="font-weight: 700;">🧩 NuShift 最適化アルゴリズム</span>
+                <span class="status-pill success">MILP / CBC</span>
+              </div>
+              <div style="font-family: monospace; font-size: 0.85rem; color: var(--accent-cyan); background: rgba(0,0,0,0.3); padding: 14px; border-radius: 8px; line-height: 1.6;">
+                minimize: TotalLaborCost + Penalty<br>
+                subject to:<br>
+                &nbsp;&nbsp;Coverage[t] &gt;= RequiredStaff[t]<br>
+                &nbsp;&nbsp;DailyHours[s, d] &lt;= MaxDailyContract[s]<br>
+                &nbsp;&nbsp;FixedAssignments[s, t] == 1 (PINNED)<br>
+                &nbsp;&nbsp;ConsecutiveWorkDays[s] &lt;= 6
+              </div>
+              <div style="margin-top: 14px; font-size: 0.88rem; color: var(--text-secondary);">
+                数学的に証明された制約処理により、「配置基準を満たしているか」の確認作業が不要になります。
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab Content 2: Attendance -->
+        <div class="tab-content" id="tab-attendance">
+          <div class="tab-text">
+            <h3>タッチだけの玄関キオスク & スムーズな保護者連絡</h3>
+            <p>
+              玄関のタブレットやChromebookで直感的に打刻。保護者は専用アプリのインストール不要で、スマホのブラウザから出欠連絡、お迎え変更、連絡帳のやりとりが行えます。
+            </p>
+            <ul class="feature-bullet-list">
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>Chromebook / iPad 対応のタッチキオスク打刻</span>
+              </li>
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>アプリ不要！スマホブラウザから届くリアルタイム Web Push 通知</span>
+              </li>
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>お迎え時間変更や代理お迎えのリアルタイム共有</span>
+              </li>
+            </ul>
+          </div>
+          <div class="tab-visual">
+            <div style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass); text-align: center;">
+              <div style="font-size: 3rem; margin-bottom: 10px;">📱</div>
+              <h4 style="font-size: 1.2rem; margin-bottom: 8px;">保護者ポータル & Web Push</h4>
+              <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 16px;">
+                緊急連絡や園だより、日々の連絡帳がワンタップで保護者のスマホに届きます。
+              </p>
+              <div class="status-pill success" style="display: inline-block;">PWA & Web Push 対応</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab Content 3: Records -->
+        <div class="tab-content" id="tab-records">
+          <div class="tab-text">
+            <h3>独自項目UUID & 楽観ロックで安全な児童記録</h3>
+            <p>
+              日常の観察記録や発達段階のチェック、指導要録をデジタル化。独自項目UUIDにより園独自の評価項目を自在に設計でき、複数担任による同時編集の上書き事故も完全に防ぎます。
+            </p>
+            <ul class="feature-bullet-list">
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>設定版楽観ロック (lock_version) による同時編集保護</span>
+              </li>
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>園独自の観察軸を追加できる独自項目UUID</span>
+              </li>
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>アレルギー情報・身体測定グラフの自動連携</span>
+              </li>
+            </ul>
+          </div>
+          <div class="tab-visual">
+            <div style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass);">
+              <h4 style="font-size: 1.1rem; margin-bottom: 12px;">📊 身体測定 & 発育曲線自動プロット</h4>
+              <div style="height: 120px; background: rgba(255,255,255,0.03); border-radius: 8px; display: flex; align-items: flex-end; justify-content: space-around; padding: 10px;">
+                <div style="width: 20px; height: 35%; background: var(--accent-primary); border-radius: 4px;"></div>
+                <div style="width: 20px; height: 50%; background: var(--accent-primary); border-radius: 4px;"></div>
+                <div style="width: 20px; height: 65%; background: var(--accent-primary); border-radius: 4px;"></div>
+                <div style="width: 20px; height: 80%; background: var(--accent-primary); border-radius: 4px;"></div>
+                <div style="width: 20px; height: 95%; background: var(--accent-emerald); border-radius: 4px;"></div>
+              </div>
+              <div style="margin-top: 10px; font-size: 0.85rem; color: var(--text-secondary); text-align: center;">
+                身長・体重の推移から発育曲線を自動描画
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab Content 4: Billing -->
+        <div class="tab-content" id="tab-billing">
+          <div class="tab-text">
+            <h3>延長保育料の自動計算 & 全銀フォーマット口座振替</h3>
+            <p>
+              登降園キオスクの打刻実績から延長料金を15分/30分単位で自動算出。日本のすべての銀行・信金でそのまま使える「全銀協標準フォーマット」でデータを出力し、引き落とし業務を一瞬で完了します。
+            </p>
+            <ul class="feature-bullet-list">
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>登降園実績に基づく延長保育料の自動集計</span>
+              </li>
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>全銀協標準フォーマット (Zengin) 口座振替データの出力</span>
+              </li>
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>銀行振替結果ファイルの取り込みと自動消込</span>
+              </li>
+            </ul>
+          </div>
+          <div class="tab-visual">
+            <div style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass);">
+              <h4 style="font-size: 1.1rem; margin-bottom: 12px;">🏦 全銀協フォーマット データ連携</h4>
+              <div style="font-family: monospace; font-size: 0.8rem; background: rgba(0,0,0,0.4); padding: 12px; border-radius: 6px; color: var(--accent-emerald); line-height: 1.5; overflow-x: auto;">
+                1910000000000あさひ保育園1010<br>
+                20001001みずほ銀行001本店1234567ヤマダタロウ000150000<br>
+                80000010000150000000000000000<br>
+                90000000000000000000000000000
+              </div>
+              <p style="margin-top: 12px; font-size: 0.88rem; color: var(--text-secondary);">
+                ネットバンキングへファイルをアップロードするだけで、保護者の口座から自動振替が完了します。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab Content 5: Security -->
+        <div class="tab-content" id="tab-security">
+          <div class="tab-text">
+            <h3>医療・金融水準のゼロトラストセキュリティ</h3>
+            <p>
+              園児の大切な個人情報と職員の労務データを守るため、メールOTPによる多要素認証 (MFA)、アクセス監査ログ、IP偽装対策済みレート制限、自動整合性バックアップを標準装備しています。
+            </p>
+            <ul class="feature-bullet-list">
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>アプリ不要のメールOTPによる多要素認証 (MFA)</span>
+              </li>
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>個人情報閲覧・変更をすべて記録する機微情報監査ログ</span>
+              </li>
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span>スキーマ契約 (Backup Contract) に基づく安心の自動復元</span>
+              </li>
+            </ul>
+          </div>
+          <div class="tab-visual">
+            <div style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass); text-align: left;">
+              <h4 style="font-size: 1.1rem; margin-bottom: 12px;">🛡️ ゼロトラスト・アーキテクチャ</h4>
+              <div style="display: flex; flex-direction: column; gap: 8px; font-size: 0.85rem;">
+                <div style="padding: 8px 12px; background: rgba(99,102,241,0.1); border-radius: 6px;">・Argon2id ハッシュ化パスワード</div>
+                <div style="padding: 8px 12px; background: rgba(16,185,129,0.1); border-radius: 6px;">・6桁メールワンタイムパスワード (MFA)</div>
+                <div style="padding: 8px 12px; background: rgba(6,182,212,0.1); border-radius: 6px;">・IP偽装対策付きレートリミッター</div>
+                <div style="padding: 8px 12px; background: rgba(245,158,11,0.1); border-radius: 6px;">・CSP / HSTS / CSRF 完全保護</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Comparison Section -->
+    <section class="comparison-section" id="comparison">
+      <div class="container">
+        <span class="section-tag">Why nusoft</span>
+        <h2 class="section-title">従来の保育運営との圧倒的な違い</h2>
+        <p class="section-desc">
+          手計算・紙・Excel の負担から解放され、法令遵守と業務効率を同時に実現します。
+        </p>
+
+        <div class="comparison-grid">
+          <!-- Before Card -->
+          <div class="comp-card before">
+            <h3 class="comp-title" style="color: var(--accent-rose);">❌ 従来の運用 (手作業・旧式システム)</h3>
+            <ul class="comp-list">
+              <li>
+                <span>・月末に主任が数日間かけてExcelや紙でシフトを手動パズル</span>
+              </li>
+              <li>
+                <span>・急な延長保育やお迎え変更で、配置基準が割れていないか常に不安</span>
+              </li>
+              <li>
+                <span>・手作業の変更で労働基準法（1日10時間超など）の違反が見落とされる</span>
+              </li>
+              <li>
+                <span>・シフトを修正すると、過去の調整や希望休が崩れて一からやり直し</span>
+              </li>
+              <li>
+                <span>・請求書作成と銀行振り込みの手動転記でミスや残業が発生</span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- After Card -->
+          <div class="comp-card after">
+            <h3 class="comp-title" style="color: var(--accent-emerald);">✨ nusoft を導入した場合</h3>
+            <ul class="comp-list">
+              <li>
+                <span>・<strong>数理最適化ソルバー</strong>が、法令配置基準を満たすシフトを数十秒で自動作成</span>
+              </li>
+              <li>
+                <span>・お迎え変更時に<strong>リアルタイム警告バナー</strong>が不足人数を即座に通知</span>
+              </li>
+              <li>
+                <span>・労基法違反や配置不足を自動検出する<strong>BLOCKER承認ゲート</strong>で安心</span>
+              </li>
+              <li>
+                <span>・修正箇所を<strong>「ピン留め」</strong>すれば、固定したまま他を自動再計算</span>
+              </li>
+              <li>
+                <span>・登降園実績から<strong>全銀Zenginフォーマット</strong>を1クリック出力で口座引落</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section class="pricing-section" id="pricing">
+      <div class="container">
+        <span class="section-tag">Pricing Plans</span>
+        <h2 class="section-title">園の規模に合わせて選べるプラン</h2>
+        <p class="section-desc">
+          オープンソース版は完全無料。クラウド版や法人サポートも柔軟に対応します。
+        </p>
+
+        <div class="pricing-grid">
+          <!-- Plan 1 -->
+          <div class="pricing-card">
+            <div>
+              <h3>オープンソース (セルフホスト)</h3>
+              <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 6px;">自前のサーバーやNASで自由に運用</p>
+              <div class="price-value">¥0 <span>/ 永久無料</span></div>
+              <ul class="feature-bullet-list" style="margin-top: 24px;">
+                <li><span class="bullet-icon">✓</span><span>全ソースコード利用可能 (MIT)</span></li>
+                <li><span class="bullet-icon">✓</span><span>NuShift シフト最適化コア搭載</span></li>
+                <li><span class="bullet-icon">✓</span><span>園児・職員数無制限</span></li>
+                <li><span class="bullet-icon">✓</span><span>TrueNAS / Ubuntu / Windows 対応</span></li>
+              </ul>
+            </div>
+            <a href="https://github.com/hoikuict/open-hoikuict" class="btn btn-secondary" style="margin-top: 32px;" target="_blank">
+              GitHub でコードを見る
+            </a>
+          </div>
+
+          <!-- Plan 2 (Featured) -->
+          <div class="pricing-card featured">
+            <span class="featured-badge">おすすめ</span>
+            <div>
+              <h3>クラウドマネージド</h3>
+              <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 6px;">サーバー管理不要・安心のおまかせ運用</p>
+              <div class="price-value">¥19,800 <span>/ 月 (税抜)</span></div>
+              <ul class="feature-bullet-list" style="margin-top: 24px;">
+                <li><span class="bullet-icon">✓</span><span>高速クラウド環境 & 独自ドメイン</span></li>
+                <li><span class="bullet-icon">✓</span><span>毎日の自動バックアップ & 障害監視</span></li>
+                <li><span class="bullet-icon">✓</span><span>初期データ移行 (CSV) サポート</span></li>
+                <li><span class="bullet-icon">✓</span><span>メール & チャット専任サポート</span></li>
+              </ul>
+            </div>
+            <button class="btn btn-primary open-modal-btn" style="margin-top: 32px;">
+              30日間 無料トライアル
+            </button>
+          </div>
+
+          <!-- Plan 3 -->
+          <div class="pricing-card">
+            <div>
+              <h3>法人エンタープライズ</h3>
+              <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 6px;">複数園の運営・大規模法人向け</p>
+              <div class="price-value">お問い合わせ <span>/ 個別見積</span></div>
+              <ul class="feature-bullet-list" style="margin-top: 24px;">
+                <li><span class="bullet-icon">✓</span><span>複数園一元管理ダッシュボード</span></li>
+                <li><span class="bullet-icon">✓</span><span>オンプレミス環境への導入構築支援</span></li>
+                <li><span class="bullet-icon">✓</span><span>自治体独自ルールへの個別カスタマイズ</span></li>
+                <li><span class="bullet-icon">✓</span><span>SLA 保証 & 専任担当者</span></li>
+              </ul>
+            </div>
+            <button class="btn btn-secondary open-modal-btn" style="margin-top: 32px;">
+              法人お問い合わせ
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="faq-section" id="faq">
+      <div style="text-align: center; margin-bottom: 50px;">
+        <span class="section-tag">FAQ</span>
+        <h2 class="section-title">よくある質問</h2>
+        <p class="section-desc">
+          システムの導入や運用に関する主要な疑問にお答えします。
+        </p>
+      </div>
+
+      <div class="faq-list">
+        <!-- FAQ 1 -->
+        <div class="faq-item active">
+          <div class="faq-question">
+            <span>自治体ごとの独自配置基準や手厚い配置にも対応できますか？</span>
+            <span class="faq-icon">+</span>
+          </div>
+          <div class="faq-answer" style="max-height: 200px;">
+            はい、完全に対応しています。厚生労働省の全国標準告示基準に加え、東京都基準、福岡市基準などのプリセットを用意しています。また、園独自の手厚い比率（例: 0歳児2:1、4歳児15:1など）も画面から自由にカスタマイズ可能です。
+          </div>
+        </div>
+
+        <!-- FAQ 2 -->
+        <div class="faq-item">
+          <div class="faq-question">
+            <span>手動でシフトを直した後、再計算すると消えてしまいませんか？</span>
+            <span class="faq-icon">+</span>
+          </div>
+          <div class="faq-answer">
+            消えません。「ピン留め（📌）」機能を使用することで、手動で変更したセルを固定保護できます。再計算を実行してもピン留めされたセルはそのまま維持され、未固定のセルのみが法令基準を満たすよう再最適化されます。
+          </div>
+        </div>
+
+        <!-- FAQ 3 -->
+        <div class="faq-item">
+          <div class="faq-question">
+            <span>全銀フォーマットはどのような銀行で利用できますか？</span>
+            <span class="faq-icon">+</span>
+          </div>
+          <div class="faq-answer">
+            日本のほぼすべての金融機関（都市銀行、ゆうちょ銀行、地方銀行、第二地銀、信用金庫、労働金庫、JAバンク等）の法人Webバンキングで利用可能です。全銀協規定に完全準拠した固定長データを出力します。
+          </div>
+        </div>
+
+        <!-- FAQ 4 -->
+        <div class="faq-item">
+          <div class="faq-question">
+            <span>既存の保育システムやエクセルからの移行は大変ですか？</span>
+            <span class="faq-icon">+</span>
+          </div>
+          <div class="faq-answer">
+            CSV 一括取込機能が用意されています。園児台帳、保護者情報、職員情報、契約条件などをCSVテンプレートに入力してアップロードするだけで、短時間で初期移行が完了します。
+          </div>
+        </div>
+
+        <!-- FAQ 5 -->
+        <div class="faq-item">
+          <div class="faq-question">
+            <span>多要素認証 (MFA) のために専用アプリの導入は必要ですか？</span>
+            <span class="faq-icon">+</span>
+          </div>
+          <div class="faq-answer">
+            いいえ、不要です。登録されたメールアドレス宛に6桁の認証コード（メールOTP）が送信される仕組みのため、スマホやPCでメールが受信できれば特別なアプリなしで安全にログインできます。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bottom CTA Banner -->
+    <section class="container">
+      <div class="cta-banner">
+        <h2>保育の現場に、ゆとりと確かな安心を。</h2>
+        <p>
+          配置基準連動型シフトAI「NuShift」の驚異的なスピードと使いやすさを、まずは無料デモでご体感ください。
+        </p>
+        <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+          <button class="btn btn-primary open-modal-btn">
+            無料オンラインデモを予約する
+          </button>
+          <a href="../MANUAL.md" class="btn btn-secondary">
+            📖 操作マニュアルを読む
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal for Demo / Inquiry -->
+  <div class="modal-overlay" id="demoModal">
+    <div class="modal-card">
+      <button class="modal-close-btn" id="closeModalBtn" aria-label="閉じる">&times;</button>
+      <h3 style="font-size: 1.5rem; font-weight: 800; margin-bottom: 8px;">無料オンラインデモお申し込み</h3>
+      <p style="color: var(--text-secondary); font-size: 0.92rem; margin-bottom: 24px;">
+        実際の画面と NuShift の自動シフト作成をお試しいただけます。
+      </p>
+
+      <form id="demoForm">
+        <div class="form-group">
+          <label for="facilityName">施設名・法人名 <span style="color: var(--accent-rose);">*</span></label>
+          <input type="text" id="facilityName" class="form-input" placeholder="例: 社会福祉法人あさひ会 あさひ保育園" required>
+        </div>
+
+        <div class="form-group">
+          <label for="contactName">お名前 <span style="color: var(--accent-rose);">*</span></label>
+          <input type="text" id="contactName" class="form-input" placeholder="例: 山田 花子" required>
+        </div>
+
+        <div class="form-group">
+          <label for="contactEmail">メールアドレス <span style="color: var(--accent-rose);">*</span></label>
+          <input type="email" id="contactEmail" class="form-input" placeholder="例: info@example.com" required>
+        </div>
+
+        <div class="form-group">
+          <label for="inquiryType">ご希望の内容</label>
+          <select id="inquiryType" class="form-input">
+            <option value="demo">オンラインデモの案内希望</option>
+            <option value="trial">30日間無料クラウド試用希望</option>
+            <option value="document">詳しい資料ダウンロード</option>
+            <option value="enterprise">複数園導入・個別見積相談</option>
+          </select>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">
+          お申し込みを送信する
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <a href="#hero" class="footer-logo">🧸 nusoft</a>
+          <p style="color: var(--text-muted); font-size: 0.88rem; line-height: 1.6; max-width: 320px;">
+            厚生労働省配置基準連動型 数理最適化シフト自動作成 (NuShift) とオープンソース保育ICTの統合プラットフォーム。
+          </p>
+        </div>
+
+        <div>
+          <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-bottom: 14px;">プロダクト</h4>
+          <ul class="footer-links">
+            <li><a href="#features">機能一覧</a></li>
+            <li><a href="#simulator">配置シミュレーター</a></li>
+            <li><a href="#pricing">料金プラン</a></li>
+            <li><a href="https://demo.hoikuict.net/" target="_blank">デモ環境</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-bottom: 14px;">ドキュメント</h4>
+          <ul class="footer-links">
+            <li><a href="../MANUAL.md">操作マニュアル</a></li>
+            <li><a href="../Q_AND_A.md">よくある質問 (Q&A)</a></li>
+            <li><a href="../docs/technical-guide.md">技術ガイド</a></li>
+            <li><a href="../docs/features.md">機能詳細仕様</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-bottom: 14px;">オープンソース</h4>
+          <ul class="footer-links">
+            <li><a href="https://github.com/hoikuict/open-hoikuict" target="_blank">GitHub リポジトリ</a></li>
+            <li><a href="../LICENSE">MIT ライセンス</a></li>
+            <li><a href="../SECURITY.md">セキュリティ方針</a></li>
+            <li><a href="../CONTRIBUTING.md">開発に参加する</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        &copy; 2026 nusoft (open-hoikuict / NuShift). Released under the MIT License.
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

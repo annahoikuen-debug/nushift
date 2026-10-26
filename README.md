@@ -1,17 +1,20 @@
-# 🧸 nushift / shiftai — 配置基準連動型 シフト自動作成 (nusoft v0.3.5 コア)
+# 🧸 nushift / shiftai — 配置基準連動型 シフト自動作成 (nusoft v0.4.0 コア)
 
 園児の登降園予定と保育所の**職員配置基準**を入力すると、法令と基準を満たす勤務表を
 MILP（混合整数線形計画法・CBCソルバー）で自動作成する数理最適化エンジン / CLI / Web アプリです。
 
-本リポジトリは、保育ICTプラットフォーム **nusoft (open-hoikuict) v0.3.5** のシフト自動作成ソルバーコアとして統合・同期されています。
+本リポジトリは、保育ICTプラットフォーム **nusoft (open-hoikuict) v0.4.0** のシフト自動作成ソルバーコアとして統合・同期されています。
 配置基準の「なぜこの人数なのか」が文字列として残るため、現場で確認・説明できます。
 
-> **nusoft v0.3.5 (2026-10-22) リリース対応**:
+**[操作マニュアル (MANUAL.md)](MANUAL.md) | [よくある質問 (Q_AND_A.md)](Q_AND_A.md) | [ランディングページ](landing_page/index.html) | [統合リポジトリ (open-hoikuict)](file:///c:/Users/user/openict/open-hoikuict)**
+
+> **nusoft v0.4.0 (2026-10-26) リリース対応**:
 > - open-hoikuict (`C:\Users\user\openict\open-hoikuict`) への vendor 完全同期済み (`scripts/sync_nushift_vendor.py`)
 > - 現場手動セル編集・ピン留め固定 (`fixed_assignments`) による再求解保護に対応
 > - 労働基準法第32条（1日10h超）および配置不足に対する BLOCKER 承認ゲート判定
 > - 登降園予定変更連動のリアルタイム配置割れギャップ検知 (`gap_analysis.py`)
 > - 掲示・印刷用 Excel 勤務割表、BOM付き CSV、iCalendar (ICS) エクスポート対応
+> - 多要素認証 (MFA メールOTP) および監査ログ基盤と完全連動
 > - この README の数値と出力例はすべて実際に実行した結果です。記載したコマンドはそのまま実行できます（Windows / macOS / Linux 共通）。
 
 ---
