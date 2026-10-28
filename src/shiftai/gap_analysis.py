@@ -157,6 +157,8 @@ class GapReport:
 
 
 def _state_lookup(result: SolveResult) -> dict[tuple[str, date, str], CellState]:
+    if isinstance(result.assignments, dict):
+        return dict(result.assignments)
     lookup: dict[tuple[str, date, str], CellState] = {}
     for a in result.assignments:
         lookup[(a.staff_id, a.day, a.slot.label)] = a.state
@@ -462,9 +464,9 @@ def check_violations(
             )
 
     worked_days: dict[str, set[date]] = {}
-    for a in result.assignments:
-        if a.state is CellState.WORK:
-            worked_days.setdefault(a.staff_id, set()).add(a.day)
+    for (sid, d, _), st_val in lookup.items():
+        if st_val is CellState.WORK:
+            worked_days.setdefault(sid, set()).add(d)
 
     for s in staff:
         sid = s.staff_id
@@ -525,21 +527,22 @@ def check_violations(
                 )
             statutory_daily_work_minutes = config.STATUTORY_DAILY_WORK_HOURS * 60
             if work_minutes > statutory_daily_work_minutes + config.FLOAT_TOLERANCE:
-                if not c.overtime_allowed:
+                if not c.overtime_allowed or not c.has_36_agreement:
                     out.append(
                         Violation(
                             severity=ViolationSeverity.BLOCKER,
                             code="OVERTIME_NOT_ALLOWED",
                             message=(
                                 f"{sid} は {day.isoformat()} に {work_minutes / 60.0:.2f} 時間勤務していますが、"
-                                "時間外労働の契約がないため（36協定の締結なし）8時間を超えられません。"
+                                "時間外労働の契約がない、または36協定の締結がないため8時間を超えられません。"
                             ),
                             day=day,
                             staff_id=sid,
                             detail={
                                 "hours": round(work_minutes / 60.0, 2),
                                 "statutory_hours": 8.0,
-                                "overtime_allowed": False,
+                                "overtime_allowed": c.overtime_allowed,
+                                "has_36_agreement": c.has_36_agreement,
                             },
                         )
                     )
@@ -722,52 +725,102 @@ def check_violations(
                 )
             )
         sid_worked = worked_days.get(sid, set())
-        for window in weekly_periods(days):
-            window_hours = sum(daily_hours.get(d, 0.0) for d in window)
-            if window_hours <= STATUTORY_WEEKLY_WORK_HOURS + config.FLOAT_TOLERANCE:
-                continue
-            # 実働時間で超えていないが拘束時間では超える場合に、
-            # 「労働時間としては 44 時間を超えている」と説明する必要がある。
-            # 実働と拘束の両方が 44 時間以内なら静かに跳过する。
-            window_bound = sum(bound_hours.get(d, 0.0) for d in window)
-            basis = "実働時間"
-            measured = window_hours
-            if config.CHECK_BOUND_HOURS_WEEKLY and window_bound > window_hours:
-                basis = "拘束時間（勤務＋休憩）"
-                measured = window_bound
-            elif not config.CHECK_BOUND_HOURS_WEEKLY:
-                # 拘束時間ベース判定が既定で無効なときは、
-                # 実働で超過しているときだけ警告する（挙動を据え置く）。
+        is_variable = c.variable_working_hours or fac.use_variable_working_hours
+        if is_variable:
+            statutory_period_cap = (40.0 * period_days) / 7.0
+            if total_hours > statutory_period_cap + config.FLOAT_TOLERANCE:
+                if not c.has_36_agreement or not c.overtime_allowed:
+                    out.append(
+                        Violation(
+                            severity=ViolationSeverity.BLOCKER,
+                            code="VARIABLE_HOURS_EXCEEDED_NO_36",
+                            message=(
+                                f"{sid} は変形労働時間制の期間総労働時間（{total_hours:.2f}時間）が"
+                                f"法定総枠（{statutory_period_cap:.1f}時間）を超過していますが、"
+                                "36協定の締結がないため違法となります。"
+                            ),
+                            staff_id=sid,
+                            detail={"total_hours": round(total_hours, 2), "cap": round(statutory_period_cap, 2)},
+                        )
+                    )
+                else:
+                    out.append(
+                        Violation(
+                            severity=ViolationSeverity.WARNING,
+                            code="VARIABLE_HOURS_EXCEEDED",
+                            message=(
+                                f"{sid} は変形労働時間制の期間総労働時間（{total_hours:.2f}時間）が"
+                                f"法定総枠（{statutory_period_cap:.1f}時間）を超過しています。"
+                                "36協定に基づく時間外労働として割増賃金の支払いが必要です。"
+                            ),
+                            staff_id=sid,
+                            detail={"total_hours": round(total_hours, 2), "cap": round(statutory_period_cap, 2)},
+                        )
+                    )
+            else:
+                for window in weekly_periods(days):
+                    w_hours = sum(daily_hours.get(d, 0.0) for d in window)
+                    if w_hours > STATUTORY_WEEKLY_WORK_HOURS + config.FLOAT_TOLERANCE:
+                        out.append(
+                            Violation(
+                                severity=ViolationSeverity.INFO,
+                                code="VARIABLE_HOURS_ADAPTED",
+                                message=(
+                                    f"{sid} は {window[0].isoformat()}〜{window[-1].isoformat()} の週に "
+                                    f"{w_hours:.2f} 時間勤務していますが、変形労働時間制の総枠内のため適法です。"
+                                ),
+                                day=window[0],
+                                staff_id=sid,
+                                detail={"week_hours": round(w_hours, 2)},
+                            )
+                        )
+        else:
+            for window in weekly_periods(days):
+                window_hours = sum(daily_hours.get(d, 0.0) for d in window)
+                if window_hours <= STATUTORY_WEEKLY_WORK_HOURS + config.FLOAT_TOLERANCE:
+                    continue
+                # 実働時間で超えていないが拘束時間では超える場合に、
+                # 「労働時間としては 44 時間を超えている」と説明する必要がある。
+                # 実働と拘束の両方が 44 時間以内なら静かに跳过する。
+                window_bound = sum(bound_hours.get(d, 0.0) for d in window)
                 basis = "実働時間"
                 measured = window_hours
-            out.append(
-                Violation(
-                    severity=ViolationSeverity.WARNING,
-                    code="WEEKLY_HOURS_EXCEEDED",
-                    message=(
-                        f"{sid} は {window[0].isoformat()} から {window[-1].isoformat()} の"
-                        f"1 週間で{basis} {measured:.2f} 時間となり、"
-                        f"週{STATUTORY_WEEKLY_WORK_HOURS:.0f}時間（社内目安）を超えています。"
-                        + (
-                            f"（実働 {window_hours:.2f} 時間・休憩 "
-                            f"{window_bound - window_hours:.2f} 時間）"
-                            if basis.startswith("拘束")
-                            else ""
-                        )
-                    ),
-                    day=window[0],
-                    staff_id=sid,
-                    detail={
-                        "hours": round(measured, 2),
-                        "basis": basis,
-                        "work_hours": round(window_hours, 2),
-                        "bound_hours": round(window_bound, 2),
-                        "window_start": window[0].isoformat(),
-                        "window_end": window[-1].isoformat(),
-                        "window_days": len(window),
-                    },
+                if config.CHECK_BOUND_HOURS_WEEKLY and window_bound > window_hours:
+                    basis = "拘束時間（勤務＋休憩）"
+                    measured = window_bound
+                elif not config.CHECK_BOUND_HOURS_WEEKLY:
+                    # 拘束時間ベース判定が既定で無効なときは、
+                    # 実働で超過しているときだけ警告する（挙動を据え置く）。
+                    basis = "実働時間"
+                    measured = window_hours
+                out.append(
+                    Violation(
+                        severity=ViolationSeverity.WARNING,
+                        code="WEEKLY_HOURS_EXCEEDED",
+                        message=(
+                            f"{sid} は {window[0].isoformat()} から {window[-1].isoformat()} の"
+                            f"1 週間で{basis} {measured:.2f} 時間となり、"
+                            f"週{STATUTORY_WEEKLY_WORK_HOURS:.0f}時間（社内目安）を超えています。"
+                            + (
+                                f"（実働 {window_hours:.2f} 時間・休憩 "
+                                f"{window_bound - window_hours:.2f} 時間）"
+                                if basis.startswith("拘束")
+                                else ""
+                            )
+                        ),
+                        day=window[0],
+                        staff_id=sid,
+                        detail={
+                            "hours": round(measured, 2),
+                            "basis": basis,
+                            "work_hours": round(window_hours, 2),
+                            "bound_hours": round(window_bound, 2),
+                            "window_start": window[0].isoformat(),
+                            "window_end": window[-1].isoformat(),
+                            "window_days": len(window),
+                        },
+                    )
                 )
-            )
 
         streak = 0
         worst_streak = 0
@@ -989,6 +1042,9 @@ VIOLATION_CODE_LABELS: dict[str, str] = {
     "MONTHLY_HOURS_EXCEEDED": "対象期間の勤務時間が契約基準の上限を超えています。",
     "MONTHLY_HOURS_SHORT": "対象期間の勤務時間が契約基準の下限に届いていません。",
     "WEEKLY_HOURS_EXCEEDED": "週の勤務が44時間を超えている週があります。",
+    "VARIABLE_HOURS_EXCEEDED_NO_36": "変形労働時間制の期間総労働時間が法定総枠を超過していますが、36協定が未締結のため違法となります（法令違反）。",
+    "VARIABLE_HOURS_EXCEEDED": "変形労働時間制の期間総労働時間が法定総枠を超過しています。36協定に基づく割増賃金が必要です（要調整）。",
+    "VARIABLE_HOURS_ADAPTED": "変形労働時間制が適用されているため、特定週の40時間超過は適法として許容されています（参考）。",
     "WEEKLY_DAYS_EXCEEDED": "週の勤務日数が契約の週最大出勤日数を超えている週があります。",
     "CONSECUTIVE_DAYS": "連続勤務日数が契約上限を超えています。",
     "REST_HOURS_SHORT": "勤務間の休息時間が11時間を下回っています。",

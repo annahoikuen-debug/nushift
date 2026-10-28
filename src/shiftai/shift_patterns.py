@@ -53,6 +53,12 @@ class ShiftPattern:
     label: str
     start: time
     end: time
+    symbol: str = ""
+
+    @property
+    def effective_symbol(self) -> str:
+        """現場のシフト表（マトリクス）に表示する記号（例: 早、日、遅、A、B）。"""
+        return self.symbol if self.symbol else self.label[:2]
 
     @property
     def start_minutes(self) -> int:
@@ -88,9 +94,9 @@ PatternKey = str
 DEFAULT_PATTERN_KEYS: tuple[str, ...] = ("early", "day", "late")
 
 DEFAULT_PATTERNS: tuple[ShiftPattern, ...] = (
-    ShiftPattern("early", "早番", time(7, 30), time(16, 30)),
-    ShiftPattern("day", "日勤", time(8, 30), time(17, 30)),
-    ShiftPattern("late", "遅番", time(10, 30), time(19, 30)),
+    ShiftPattern("early", "早番", time(7, 30), time(16, 30), symbol="早"),
+    ShiftPattern("day", "日勤", time(8, 30), time(17, 30), symbol="日"),
+    ShiftPattern("late", "遅番", time(10, 30), time(19, 30), symbol="遅"),
 )
 """工場既定の 3 枠（開所 7:15〜閉所 19:30 の園を想定）。
 
@@ -135,6 +141,7 @@ def default_patterns(
     day_start = align(open_m + 60)
     late_end = align(close_m)
     patterns: list[ShiftPattern] = []
+    symbols = {"early": "早", "day": "日", "late": "遅"}
     for key, label, start in (
         ("early", "早番", early_start),
         ("day", "日勤", day_start),
@@ -142,7 +149,9 @@ def default_patterns(
     ):
         end = min(start + span, late_end)
         if end > start:
-            patterns.append(ShiftPattern(key, label, _clock(start), _clock(end)))
+            patterns.append(
+                ShiftPattern(key, label, _clock(start), _clock(end), symbol=symbols.get(key, label[:2]))
+            )
     return normalize_patterns(patterns)
 
 
@@ -197,9 +206,18 @@ def parse_pattern_spec(spec: str) -> ShiftPattern:
         end = time.fromisoformat(parts[1].strip())
     except ValueError as exc:
         raise ValueError(f"パターンの時刻が不正です: {spec!r}（例: 早番=07:30-16:30）") from exc
+    symbol = ""
+    if "[" in label and label.endswith("]"):
+        label, _, symbol_part = label[:-1].partition("[")
+        label = label.strip()
+        symbol = symbol_part.strip()
+    elif ":" in label:
+        label, _, symbol_part = label.partition(":")
+        label = label.strip()
+        symbol = symbol_part.strip()
     if not label:
         label = "枠"
-    return ShiftPattern(label=label, key=label, start=start, end=end)
+    return ShiftPattern(label=label, key=label, start=start, end=end, symbol=symbol)
 
 
 def nearest_pattern_window(

@@ -35,6 +35,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from time import perf_counter
+from typing import Any
 
 import pulp
 
@@ -105,19 +106,87 @@ _SOFT_COVERAGE_MESSAGE = (
 )
 
 
-def available_solvers() -> list[str]:
-    """PuLP が検出できる利用可能な MILP ソルバ名の一覧を返す。"""
+def is_highs_available() -> bool:
+    """HiGHS ソルバーが利用可能か判定する。"""
+    if not hasattr(pulp, "HiGHS"):
+        return False
     try:
-        return list(pulp.listSolvers(onlyAvailable=True))
+        return bool(pulp.HiGHS(msg=False).available())
+    except Exception:
+        return False
+
+
+def available_solvers() -> list[str]:
+    """PuLP 経由で利用可能な MILP ソルバーの一覧を返す。"""
+    try:
+        solvers = list(pulp.listSolvers(onlyAvailable=True))
+        if is_highs_available() and "HiGHS" not in solvers:
+            solvers.append("HiGHS")
+        return solvers
     except Exception:
         return []
 
 
+def _get_solver(
+    limit_sec: int,
+    msg: bool,
+    solver_name: str = "auto",
+    warm_start: bool = False,
+) -> tuple[pulp.LpSolver, str]:
+    """指定または自動選択されたソルバーインスタンスとソルバー識別名を返す。"""
+    limit = max(1, int(limit_sec))
+    chosen = (solver_name or "auto").strip()
+    if chosen == "auto":
+        if is_highs_available():
+            chosen = "HiGHS"
+        else:
+            chosen = "PULP_CBC_CMD"
+
+    if chosen.lower() in ("highs", "highspy") and is_highs_available():
+        try:
+            return pulp.HiGHS(msg=msg, timeLimit=limit, warmStart=warm_start), "HiGHS"
+        except Exception:
+            pass
+
+    return pulp.PULP_CBC_CMD(msg=msg, timeLimit=limit, warmStart=warm_start), "PULP_CBC_CMD"
+
+
+def apply_warm_start(
+    ctx: _ModelCtx,
+    slots: Sequence[Slot],
+    warm_assignments: Mapping[tuple[str, date, str], CellState] | Sequence[Any] | None = None,
+) -> int:
+    """決定変数に初期解（ウォームスタート値）を設定する。設定した変数数を返す。"""
+    if not warm_assignments:
+        return 0
+    label_to_idx = {slot.label: i for i, slot in enumerate(slots)}
+    count = 0
+
+    if isinstance(warm_assignments, Mapping):
+        items = list(warm_assignments.items())
+    else:
+        items = [((a.staff_id, a.day, a.slot.label), a.state) for a in warm_assignments]
+
+    for (sid, day, slot_label), state in items:
+        idx = label_to_idx.get(slot_label)
+        if idx is None:
+            continue
+        w_var = ctx.work.get((sid, day, idx))
+        b_var = ctx.brk.get((sid, day, idx))
+        if w_var is not None and not isinstance(w_var, (int, float)):
+            w_var.setInitialValue(1.0 if state is CellState.WORK else 0.0)
+            count += 1
+        if b_var is not None and not isinstance(b_var, (int, float)):
+            b_var.setInitialValue(1.0 if state is CellState.BREAK else 0.0)
+            count += 1
+    return count
+
+
 def _daily_cap_minutes(contract: Contract) -> int:
-    """その職員が1日に置ける勤務分の上限（法定10時間を超えない）。"""
+    """その職員が1日に置ける勤務分の上限（法定10時間を超えない）。36協定なしは8時間で頭打ち。"""
     base = int(round(contract.daily_hours * 60))
-    if not contract.overtime_allowed:
-        return int(min(base, _DAILY_LEGAL_CAP_MIN))
+    if not contract.overtime_allowed or not contract.has_36_agreement:
+        return int(min(base, STATUTORY_DAILY_WORK_HOURS * 60))
     return int(min(base * _OVERTIME_FACTOR, _DAILY_LEGAL_CAP_MIN))
 
 
@@ -1329,31 +1398,19 @@ def _add_pattern_alignment(
     obj: list[object],
     weights: ObjectiveWeights,
     patterns: Sequence[ShiftPattern],
+    *,
+    pattern_mode: bool = False,
 ) -> None:
-    """勤務ブロックを現場のパターン枠へ引き寄せる（ソフトペナルティ）。
+    """現場固有の勤務パターン（早番・日勤・遅番）への整列。
 
-    パターン ``p`` ごとに連続変数 ``u_p``（0〜1）を置き、
-
-    * ``u_p >= duty_i - 1``（パターンが覆う時間帯がすべて在勤なら ``u_p = 1``）
-    * ``u_p * |p| <= Σ_{i∈p} duty_i``（在勤していない時間帯があれば頭打ち）
-    * ``Σ_p u_p <= 1``（1 日に 2 枠は当てない）
-
-    として，目的関数に ``-penalty * u_p`` を加える（＝一致させると目的関数が下がる）。
-    在勤ブロックがパターンと完全に一致したときだけ ``u_p = 1`` になるため、
-    「境界が早稲田/日勤/遅番の枠に揃う」ことが定式化される。
-
-    **変数数が増えない点が重要。** 境界ごとに指示変数（開始・終了で 2 個 × 時間帯数 ×
-    職員数 × 日数）を作ると CBC が時間制限内に解き終わらなくなり、
-    整列していないまま分割勤務が増えてしまう。
-    パターン数（既定 3）分の変数しか増えないので、探索の品質を保てる。
-
-    ハード制約にはしないため、揃う職員がいなくても解は消えない。
+    pattern_mode=True の場合は出勤時にいずれかのパターンへ厳密に一致させる（ハード制約）。
+    False の場合は目的関数で境界を引き寄せる（ソフトペナルティ）。
     """
     slots = tuple(requirements.slots)
     if not slots or not patterns:
         return
     penalty = _pattern_alignment_penalty(weights)
-    if penalty <= 0:
+    if penalty <= 0 and not pattern_mode:
         return
     ranges: list[list[int]] = []
     for pattern in patterns:
@@ -1392,9 +1449,22 @@ def _add_pattern_alignment(
                         terms.append(cell)
                 ctx.prob += len(indices) * var <= _linear([(t, 1) for t in terms])
                 matched.append(var)
-                obj.append(-penalty * var)
+                if penalty > 0:
+                    obj.append(-penalty * var)
             if len(matched) > 1:
                 ctx.prob += _linear([(v, 1) for v in matched]) <= 1
+            if pattern_mode and matched:
+                dvar = ctx.day_var.get((sid, day))
+                if dvar is not None and not _is_zero(dvar):
+                    ctx.prob += pulp.lpSum(matched) == dvar, f"pat_exact_{sid}_{tag}"
+                for i, cell in duty.items():
+                    if _is_zero(cell):
+                        continue
+                    covering = [matched[k] for k, indices in enumerate(ranges) if i in indices]
+                    if covering:
+                        ctx.prob += cell <= pulp.lpSum(covering), f"pat_cover_{sid}_{tag}_{i}"
+                    else:
+                        ctx.prob += cell == 0, f"pat_no_pattern_{sid}_{tag}_{i}"
 
 
 def _fairness_day_flag(
@@ -1592,6 +1662,7 @@ def _build_problem(
     patterns: Sequence[ShiftPattern] | None = None,
     relaxation: int = int(RelaxLevel.STRICT),
     drop_groups: frozenset[str] = frozenset(),
+    pattern_mode: bool = False,
 ) -> _ModelCtx:
     """MILP を構築する。
 
@@ -1606,6 +1677,7 @@ def _build_problem(
         （``coverage`` / ``unavailable`` / ``closed`` / ``contract`` /
         ``weekly`` / ``rest`` / ``break`` / ``daily_cap`` / ``fixed`` / ``fairness``）。
         通常運用では空のまま。診断専用なので、戻り値は使わない前提。
+    :param pattern_mode: ``True`` のとき現場パターン枠への厳密一致をハード制約とする
     """
     ctx = _ModelCtx(prob=pulp.LpProblem("shift_scheduling", pulp.LpMinimize))
     # 園長・主任（配置対象外）は保育基準の充填に使わない。模型的入口で除外する
@@ -1653,7 +1725,7 @@ def _build_problem(
         _add_consecutive(ctx, staff, requirements, obj, weights)
     _add_preferences(ctx, staff, requirements, prefs, kinds, obj, weights)
     _add_hours_objective(ctx, staff, requirements, obj, weights, prefs)
-    _add_pattern_alignment(ctx, staff, requirements, obj, weights, patterns or ())
+    _add_pattern_alignment(ctx, staff, requirements, obj, weights, patterns or (), pattern_mode=pattern_mode)
     if "fairness" not in drop_groups:
         _add_fairness(ctx, staff, requirements, obj, weights, standard, patterns or ())
     if obj:
@@ -1691,6 +1763,10 @@ class _SolveInput:
     standard: StaffingStandard | None
     patterns: tuple[ShiftPattern, ...] = ()
     relaxation: int = int(RelaxLevel.STRICT)
+    solver_name: str = config.DEFAULT_SOLVER
+    warm_start: bool = True
+    warm_start_assignments: Mapping[tuple[str, date, str], CellState] | None = None
+    pattern_mode: bool = False
 
 
 def solve_shift(
@@ -1708,6 +1784,10 @@ def solve_shift(
     patterns: Sequence[ShiftPattern] | None = None,
     relaxation: int = int(RelaxLevel.STRICT),
     drop_groups: frozenset[str] = frozenset(),
+    solver_name: str = config.DEFAULT_SOLVER,
+    warm_start: bool = True,
+    warm_start_assignments: Mapping[tuple[str, date, str], CellState] | None = None,
+    pattern_mode: bool = False,
 ) -> SolveResult:
     """MILP でシフトを最適化する。配置基準を満たせない場合は自動で2パス目に退避する。
 
@@ -1748,12 +1828,16 @@ def solve_shift(
         standard=standard,
         patterns=normalize_patterns(patterns),
         relaxation=level,
+        solver_name=solver_name,
+        warm_start=warm_start,
+        warm_start_assignments=warm_start_assignments,
+        pattern_mode=pattern_mode,
     )
     days = requirements.all_days()
     slots = tuple(requirements.slots)
     budget = max(2, int(time_limit_sec))
     stats: dict = {
-        "solver": "PULP_CBC_CMD",
+        "solver": payload.solver_name,
         "solver_status": "",
         "solver_status_pass1": "",
         "pass": 1,
@@ -1769,6 +1853,8 @@ def solve_shift(
         "relaxation_label": RELAX_LEVELS[level].label,
         "relaxed_constraints": list(describe_relaxations(level)),
         "patterns": [p.label for p in payload.patterns],
+        "pattern_mode": payload.pattern_mode,
+        "warm_start": payload.warm_start,
     }
 
     if not payload.staff or not days or not slots:
@@ -1790,6 +1876,7 @@ def solve_shift(
             patterns=payload.patterns,
             relaxation=payload.relaxation,
             drop_groups=drop_groups,
+            pattern_mode=payload.pattern_mode,
         )
     except Exception as exc:
         stats["elapsed_sec"] = round(perf_counter() - started, 3)
@@ -1806,7 +1893,7 @@ def solve_shift(
                 messages=list(ctx.conflicts),
                 stats=stats,
             )
-        status, raw = _feasibility_status(ctx, max(1, budget), msg)
+        status, raw = _feasibility_status(ctx, max(1, budget), msg, solver_name=payload.solver_name)
         stats["solver_status"] = raw
         return SolveResult(
             status=status,
@@ -1825,7 +1912,35 @@ def solve_shift(
         stats["solver_status_pass1"] = f"Skipped（緩和 L{payload.relaxation}）"
         return _best_effort(payload, stats, started, budget, "Skipped")
 
-    status, raw = _run_cbc(ctx, max(1, int(budget * 0.5)), msg)
+    # ウォームスタート（初期解投入）
+    if payload.warm_start:
+        warm_assignments = payload.warm_start_assignments
+        if warm_assignments is None:
+            try:
+                g_res = solve_shift_greedy(
+                    children=payload.children,
+                    staff=payload.staff,
+                    requirements=requirements,
+                    preferences=payload.prefs,
+                    settings=payload.settings,
+                    standard=payload.standard,
+                )
+                warm_assignments = g_res.assignments
+            except Exception:
+                warm_assignments = None
+        if warm_assignments:
+            applied_count = apply_warm_start(ctx, slots, warm_assignments)
+            stats["warm_start_applied"] = applied_count > 0
+            stats["warm_start_vars"] = applied_count
+
+    status, raw, actual_solver = _run_solver(
+        ctx,
+        max(1, int(budget * 0.5)),
+        msg,
+        solver_name=payload.solver_name,
+        warm_start=payload.warm_start and bool(stats.get("warm_start_applied", False)),
+    )
+    stats["solver"] = actual_solver
     stats["solver_status_pass1"] = raw
     if status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE):
         return _finish(ctx, payload, stats, started, status, pass_no=1, relaxed=False)
@@ -1833,42 +1948,60 @@ def solve_shift(
     return _best_effort(payload, stats, started, budget, raw)
 
 
-def _run_cbc(ctx: _ModelCtx, limit_sec: int, msg: bool) -> tuple[SolveStatus, str]:
-    """CBC を実行して SolveStatus と生のステータス文字列を返す。"""
+def _run_solver(
+    ctx: _ModelCtx,
+    limit_sec: int,
+    msg: bool,
+    solver_name: str = "auto",
+    warm_start: bool = False,
+) -> tuple[SolveStatus, str, str]:
+    """MILP ソルバー（HiGHS または CBC）を実行して SolveStatus とステータス文字列、ソルバー名を返す。"""
+    solver_instance, actual_solver = _get_solver(
+        limit_sec=limit_sec,
+        msg=msg,
+        solver_name=solver_name,
+        warm_start=warm_start,
+    )
     try:
-        ctx.prob.solve(pulp.PULP_CBC_CMD(msg=msg, timeLimit=max(1, int(limit_sec))))
+        ctx.prob.solve(solver_instance)
     except Exception as exc:
-        return SolveStatus.ERROR, f"SolveError / {exc}"
+        return SolveStatus.ERROR, f"SolveError / {exc}", actual_solver
     status_raw = pulp.LpStatus.get(ctx.prob.status, "Undefined")
     sol_raw = pulp.LpSolution.get(ctx.prob.sol_status, "No Solution Found")
     raw = f"{status_raw} / {sol_raw}"
     if status_raw == "Infeasible":
-        return SolveStatus.INFEASIBLE, raw
+        return SolveStatus.INFEASIBLE, raw, actual_solver
     if status_raw == "Unbounded":
-        return SolveStatus.ERROR, raw
+        return SolveStatus.ERROR, raw, actual_solver
     if not _has_solution(ctx):
-        return SolveStatus.INFEASIBLE, raw
+        return SolveStatus.INFEASIBLE, raw, actual_solver
     unassigned = _unassigned_variables(ctx)
     if unassigned:
         raw = f"{raw}（{unassigned} 変数の値なし＝解未読込）"
-        return SolveStatus.INFEASIBLE, raw
+        return SolveStatus.INFEASIBLE, raw, actual_solver
     if _non_integral_variables(ctx):
-        # 時間切れで CBC が LP 緩和値（0.19 や 0.83 のような途中値）を書き戻すことがある。
+        # 時間切れでソルバーが LP 緩和値（0.19 や 0.83 のような途中値）を書き戻すことがある。
         # それを丸めてハード制約を満たすなら正しい MILP 解なので採用し、
         # 満たさないなら「解なし」として 2 パス目（罰変数化）に退避する。
         _round_to_integral(ctx)
         if _non_integral_variables(ctx):
-            return SolveStatus.INFEASIBLE, raw
+            return SolveStatus.INFEASIBLE, raw, actual_solver
         raw = f"{raw}（途中値を0/1に丸めて採用）"
     violated = verify_solution(ctx)
     if violated:
         raw = f"{raw}（制約違反 {len(violated)} 本: {violated[0]}）"
-        return SolveStatus.INFEASIBLE, raw
+        return SolveStatus.INFEASIBLE, raw, actual_solver
     if status_raw == "Optimal" and sol_raw == "Optimal Solution Found":
-        return SolveStatus.OPTIMAL, raw
+        return SolveStatus.OPTIMAL, raw, actual_solver
     if status_raw == "Optimal":
-        return SolveStatus.FEASIBLE, raw
-    return SolveStatus.FEASIBLE, raw
+        return SolveStatus.FEASIBLE, raw, actual_solver
+    return SolveStatus.FEASIBLE, raw, actual_solver
+
+
+def _run_cbc(ctx: _ModelCtx, limit_sec: int, msg: bool) -> tuple[SolveStatus, str]:
+    """後方互換用: CBC を実行して SolveStatus と生のステータス文字列を返す。"""
+    status, raw, _ = _run_solver(ctx, limit_sec, msg, solver_name="PULP_CBC_CMD", warm_start=False)
+    return status, raw
 
 
 def _has_solution(ctx: _ModelCtx) -> bool:
@@ -1876,15 +2009,21 @@ def _has_solution(ctx: _ModelCtx) -> bool:
     return any(_var_value(v) > 0.5 for v in ctx.work.values() if not isinstance(v, int | float))
 
 
-def _feasibility_status(ctx: _ModelCtx, limit_sec: int, msg: bool) -> tuple[SolveStatus, str]:
+def _feasibility_status(
+    ctx: _ModelCtx,
+    limit_sec: int,
+    msg: bool,
+    solver_name: str = "auto",
+) -> tuple[SolveStatus, str]:
     """IIS 診断用: 「解が求まるか」だけを見る。
 
-    :func:`_run_cbc` は勤務セルが 1 つでも入っていないと「解なし」と見なす。
+    :func:`_run_solver` は勤務セルが 1 つでも入っていないと「解なし」と見なす。
     制約グループを外したモデルでは「全員オフ」が最適解になりうるので、
-    診断の判定には CBC の報告だけを参考にする。 Assignments の有無は問わない。
+    診断の判定にはソルバーの報告だけを参考にする。 Assignments の有無は問わない。
     """
+    solver_instance, _ = _get_solver(limit_sec, msg, solver_name=solver_name)
     try:
-        ctx.prob.solve(pulp.PULP_CBC_CMD(msg=msg, timeLimit=max(1, int(limit_sec))))
+        ctx.prob.solve(solver_instance)
     except Exception as exc:
         return SolveStatus.ERROR, f"SolveError / {exc}"
     status_raw = pulp.LpStatus.get(ctx.prob.status, "Undefined")
@@ -1977,11 +2116,23 @@ def _best_effort(
             soft_coverage=True,
             patterns=payload.patterns,
             relaxation=payload.relaxation,
+            pattern_mode=payload.pattern_mode,
         )
     except Exception:
         return _greedy(payload, stats, started, _INFEASIBLE_FALLBACK_MESSAGE, diagnosis)
+
+    if payload.warm_start and payload.warm_start_assignments:
+        apply_warm_start(soft, tuple(payload.requirements.slots), payload.warm_start_assignments)
+
     left = budget - (perf_counter() - started)
-    status, raw = _run_cbc(soft, max(1, int(left)), False)
+    status, raw, actual_solver = _run_solver(
+        soft,
+        max(1, int(left)),
+        False,
+        solver_name=payload.solver_name,
+        warm_start=payload.warm_start and bool(payload.warm_start_assignments),
+    )
+    stats["solver"] = actual_solver
     stats["solver_status"] = f"{raw}（配置基準を罰変数化）"
     if status in (SolveStatus.INFEASIBLE, SolveStatus.ERROR):
         return _greedy(payload, stats, started, _INFEASIBLE_FALLBACK_MESSAGE, diagnosis)
@@ -2901,6 +3052,11 @@ def solve_shift_greedy(
 def staff_work_hours(result: SolveResult, staff: Sequence[StaffMember]) -> dict[str, float]:
     """職員ごとの対象期間内の勤務時間（時間単位・休憩を除く）。"""
     totals: dict[str, float] = {s.staff_id: 0.0 for s in staff}
+    if isinstance(result.assignments, dict):
+        for (sid, _, _), state in result.assignments.items():
+            if sid in totals and state is CellState.WORK:
+                totals[sid] += 0.5
+        return totals
     for a in result.assignments:
         if a.staff_id in totals and a.state is CellState.WORK:
             totals[a.staff_id] += a.slot.hours
@@ -2910,9 +3066,14 @@ def staff_work_hours(result: SolveResult, staff: Sequence[StaffMember]) -> dict[
 def staff_shift_count(result: SolveResult) -> dict[str, int]:
     """職員ごとの勤務日数。"""
     days_by_staff: dict[str, set[date]] = {}
-    for a in result.assignments:
-        if a.state is CellState.WORK:
-            days_by_staff.setdefault(a.staff_id, set()).add(a.day)
+    if isinstance(result.assignments, dict):
+        for (sid, d, _), state in result.assignments.items():
+            if state is CellState.WORK:
+                days_by_staff.setdefault(sid, set()).add(d)
+    else:
+        for a in result.assignments:
+            if a.state is CellState.WORK:
+                days_by_staff.setdefault(a.staff_id, set()).add(a.day)
     counts: dict[str, int] = {}
     for sd in result.shift_days:
         for sid in sd.assignments:

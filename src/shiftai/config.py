@@ -145,6 +145,9 @@ DEFAULT_SAMPLE_SEED = 42
 #: MILP ソルバの既定実行時間上限（秒）。CLI と UI が同じ値を使う。
 DEFAULT_TIME_LIMIT_SEC = 60
 
+#: MILP ソルバの既定エンジン（"auto" | "HiGHS" | "PULP_CBC_CMD"）。
+DEFAULT_SOLVER = "PULP_CBC_CMD"
+
 #: Streamlit の時刻入力ウィジェットに与える step（秒）。15分刻み。
 #: UI 固有の設定であり法定要件ではないため ``APP_`` 規約で持つ。
 APP_TIME_INPUT_STEP_SECONDS = 900

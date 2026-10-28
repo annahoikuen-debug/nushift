@@ -58,9 +58,14 @@ PAYROLL_DF_COLUMNS: list[str] = [
     "総休憩時間",
     "実働時間",
     "拘束時間",
+    "所定内時間",
+    "時間外時間",
+    "深夜時間",
+    "休日時間",
     "早朝回数",
     "延長回数",
     "推定人件費",
+    "割増人件費",
 ]
 
 EARLY_BOUNDARY = time(7, 30)
@@ -194,6 +199,104 @@ def shift_matrices(
     return pd.concat(frames, ignore_index=True)
 
 
+def symbol_matrix_dataframe(
+    result: SolveResult,
+    staff: Sequence[StaffMember],
+    slots: Sequence[Slot] | None = None,
+    patterns: Sequence[Any] | None = None,
+    off_symbol: str = "休",
+) -> pd.DataFrame:
+    """職員×日付の現場用シフト記号マトリクス（早/中/遅/休等）を生成する。
+
+    各行が職員1名、各列が日付（例: '10/01(木)'）で、セル値には「早」「日」「遅」「休」
+    などの園固有記号が入る。右端に出勤日数、総実働時間のサマリー列を付加する。
+    """
+    from shiftai.shift_patterns import DEFAULT_PATTERNS, match_pattern, nearest_pattern_window
+
+    active_patterns = tuple(patterns) if patterns else DEFAULT_PATTERNS
+
+    days = [sd.day for sd in result.shift_days]
+    # 割当マッピングの作成
+    assign_map: dict[tuple[str, date, str], CellState] = {}
+    if isinstance(result.assignments, dict):
+        assign_map = result.assignments
+    elif isinstance(result.assignments, list):
+        assign_map = {(a.staff_id, a.day, a.slot.label): a.state for a in result.assignments}
+
+    if not days and assign_map:
+        days = sorted({day for (_, day, _) in assign_map})
+
+    actual_slots = list(slots) if slots else []
+    if not actual_slots and result.shift_days:
+        actual_slots = list(result.shift_days[0].slots)
+
+    rows: list[dict[str, Any]] = []
+    for st in staff:
+        qual = (
+            st.primary_role.value
+            if hasattr(st, "primary_role")
+            else (st.roles[0].value if getattr(st, "roles", None) else "")
+        )
+        emp = (
+            st.contract.employment_type.value
+            if hasattr(st, "contract") and hasattr(st.contract, "employment_type")
+            else ""
+        )
+        st_row: dict[str, Any] = {
+            "職員ID": st.staff_id,
+            "氏名": st.name,
+            "資格": qual,
+            "雇用形態": emp,
+        }
+        work_days = 0
+        total_work_minutes = 0
+
+        for day in days:
+            day_label = f"{format_jp_date(day)}"
+            day_work_slots = []
+            day_all_slots = []
+            shift_day = result.day(day)
+            for slot in actual_slots:
+                state = CellState.OFF
+                if shift_day is not None:
+                    state = shift_day.get(st.staff_id, slot)
+                if state is CellState.OFF and (st.staff_id, day, slot.label) in assign_map:
+                    state = assign_map[(st.staff_id, day, slot.label)]
+
+                if state is CellState.WORK:
+                    day_work_slots.append(slot)
+                    day_all_slots.append(slot)
+                    total_work_minutes += slot.minutes
+                elif state is CellState.BREAK:
+                    day_all_slots.append(slot)
+
+            if not day_work_slots:
+                st_row[day_label] = off_symbol
+            else:
+                work_days += 1
+                start_m = min(s.start_minutes for s in day_all_slots)
+                end_m = max(s.end_minutes for s in day_all_slots)
+
+                matched = match_pattern(start_m, end_m, active_patterns)
+                if matched is not None:
+                    symbol = getattr(matched, "effective_symbol", matched.symbol or matched.label[:2])
+                else:
+                    nearest = nearest_pattern_window(start_m, end_m, active_patterns)
+                    if nearest is not None:
+                        symbol = getattr(nearest, "effective_symbol", nearest.symbol or nearest.label[:2])
+                    else:
+                        symbol = "出"
+                st_row[day_label] = symbol
+
+        st_row["出勤日数"] = work_days
+        st_row["実働時間"] = round(total_work_minutes / 60.0, 1)
+        rows.append(st_row)
+
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows)
+
+
 REQUIREMENT_DF_COLUMNS: list[str] = [
     "日付",
     "表示日付",
@@ -234,31 +337,72 @@ def payroll_dataframe(
     base_rate = (
         settings.labor_cost_per_hour if settings is not None else config.DEFAULT_LABOR_COST_PER_HOUR
     )
+    closed_days = settings.closed_days if settings is not None else frozenset()
+    holiday_dates = settings.holiday_dates if settings is not None else frozenset()
+    total_days_count = len(result.shift_days) if result.shift_days else 1
+    assign_map: dict[tuple[str, date, str], CellState] = {}
+    if isinstance(result.assignments, dict):
+        assign_map = result.assignments
+    elif isinstance(result.assignments, list):
+        assign_map = {(a.staff_id, a.day, a.slot.label): a.state for a in result.assignments}
+
     records: list[dict[str, Any]] = []
     for member in staff:
         worked_min = 0
         break_min = 0
+        overtime_min = 0
+        night_min = 0
+        holiday_min = 0
         days_worked: set[date] = set()
         early_days: set[date] = set()
         late_days: set[date] = set()
         for shift_day in result.shift_days:
+            day_work_min = 0
+            is_holiday = shift_day.day in closed_days or shift_day.day in holiday_dates
             for slot in slots:
                 state = shift_day.get(member.staff_id, slot)
+                if state is CellState.OFF and (member.staff_id, shift_day.day, slot.label) in assign_map:
+                    state = assign_map[(member.staff_id, shift_day.day, slot.label)]
+
                 if state is CellState.WORK:
                     worked_min += slot.minutes
+                    day_work_min += slot.minutes
                     days_worked.add(shift_day.day)
                     if slot.overlaps(*EARLY_WINDOW):
                         early_days.add(shift_day.day)
                     if slot.overlaps(*LATE_WINDOW):
                         late_days.add(shift_day.day)
+                    if slot.start >= time(22, 0) or slot.end <= time(5, 0) or slot.overlaps(time(22, 0), time(23, 59)):
+                        night_min += slot.minutes
+                    if is_holiday:
+                        holiday_min += slot.minutes
                 elif state is CellState.BREAK:
                     break_min += slot.minutes
-        # worked_min には休憩が含まれない（BREAK は別の変数に分けている）
+            if not is_holiday and day_work_min > 8 * 60:
+                overtime_min += (day_work_min - 8 * 60)
+
+        is_variable = member.contract.variable_working_hours or (
+            settings is not None and settings.use_variable_working_hours
+        )
+        if is_variable:
+            statutory_period_min = int(round((40.0 * total_days_count / 7.0) * 60))
+            non_holiday_work = worked_min - holiday_min
+            if non_holiday_work > statutory_period_min:
+                overtime_min = max(overtime_min, non_holiday_work - statutory_period_min)
+
+        regular_min = max(0, worked_min - overtime_min - holiday_min)
         net_hours = max(worked_min / 60.0, 0.0)
-        # 拘束時間（勤務＋休憩）。労働基準法の週労働時間・休息時間の判定と
-        # 社会保険の加入基準はこの側で見る値なので、給与 CSV でも併記する。
         bound_hours = max((worked_min + break_min) / 60.0, 0.0)
         coefficient = cost_coefficient(member.contract.employment_type)
+        unit_rate = base_rate * coefficient
+        premium_cost = int(
+            round(
+                (regular_min / 60.0) * unit_rate
+                + (overtime_min / 60.0) * unit_rate * 1.25
+                + (night_min / 60.0) * unit_rate * 0.25
+                + (holiday_min / 60.0) * unit_rate * 1.35
+            )
+        )
         records.append(
             {
                 "職員ID": member.staff_id,
@@ -271,9 +415,14 @@ def payroll_dataframe(
                 "総休憩時間": round(break_min / 60.0, 2),
                 "実働時間": round(net_hours, 2),
                 "拘束時間": round(bound_hours, 2),
+                "所定内時間": round(regular_min / 60.0, 2),
+                "時間外時間": round(overtime_min / 60.0, 2),
+                "深夜時間": round(night_min / 60.0, 2),
+                "休日時間": round(holiday_min / 60.0, 2),
                 "早朝回数": len(early_days),
                 "延長回数": len(late_days),
                 "推定人件費": int(round(net_hours * base_rate * coefficient)),
+                "割増人件費": premium_cost,
             }
         )
     return pd.DataFrame.from_records(records, columns=PAYROLL_DF_COLUMNS)
@@ -633,6 +782,7 @@ def export_bundle_zip(
     settings: FacilitySettings | None = None,
     gap_report: Any = None,
     violations: Sequence[Any] = (),
+    patterns: Sequence[Any] | None = None,
 ) -> bytes:
     """CSV 群 + Excel + サマリーを 1 つの ZIP にまとめる。
 
@@ -655,12 +805,17 @@ def export_bundle_zip(
         "職員別勤務": matrices,
         "給与計算": payroll,
     }
+    if patterns is not None:
+        symbol_mat = symbol_matrix_dataframe(result, staff, slots=slots, patterns=patterns)
+        sheets["現場シフト記号"] = symbol_mat
     if requirements is not None:
         sheets["配置基準"] = requirements_dataframe(requirements)
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("shift.csv", to_csv_bytes(shift_df))
+        if patterns is not None:
+            archive.writestr("symbol_matrix.csv", to_csv_bytes(symbol_mat))
         archive.writestr("payroll.csv", to_csv_bytes(payroll))
         archive.writestr("shift_matrix.csv", to_csv_bytes(matrices))
         if requirements is not None:

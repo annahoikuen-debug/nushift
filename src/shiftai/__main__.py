@@ -72,6 +72,7 @@ from shiftai.exporter import (
     shift_matrices,
     shift_to_dataframe,
     summary_markdown,
+    symbol_matrix_dataframe,
     to_ics,
     violations_dataframe,
 )
@@ -550,6 +551,9 @@ def cmd_solve(args: argparse.Namespace) -> int:
         standard=standard,
         patterns=patterns,
         relaxation=relaxation,
+        solver_name=args.solver,
+        warm_start=not args.no_warm_start,
+        pattern_mode=args.pattern_mode,
     )
     _echo(f"最適化: {result.status.value}（{result.stats.get('elapsed_sec', 0.0)} 秒）")
     for message in result.messages:
@@ -608,6 +612,10 @@ def cmd_solve(args: argparse.Namespace) -> int:
     written: list[Path] = [
         _write_csv(shift_to_dataframe(result, slots, loaded.staff), out_dir / "shift.csv"),
         _write_csv(
+            symbol_matrix_dataframe(result, loaded.staff, slots=slots, patterns=patterns),
+            out_dir / "symbol_matrix.csv",
+        ),
+        _write_csv(
             payroll_dataframe(result, slots, loaded.staff, settings), out_dir / "payroll.csv"
         ),
         _write_csv(shift_matrices(result, slots, loaded.staff), out_dir / "shift_matrix.csv"),
@@ -652,6 +660,7 @@ def cmd_solve(args: argparse.Namespace) -> int:
                 settings,
                 gap_report=report,
                 violations=violations,
+                patterns=patterns,
             )
         )
         written.append(zip_path)
@@ -821,6 +830,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-pattern-snap",
         action="store_true",
         help="パターンをMILP へ渡すだけで、生成後の境界の整列は行わない",
+    )
+    solve.add_argument(
+        "--pattern-mode",
+        action="store_true",
+        help="定義パターンへの厳格一致モード（全勤務ブロックを指定パターンのいずれかに完全一致させるハード制約）",
+    )
+    solve.add_argument(
+        "--solver",
+        default=config.DEFAULT_SOLVER,
+        help="数理最適化ソルバー（auto / highs / cbc）。既定: auto（HiGHS 優先）",
+    )
+    solve.add_argument(
+        "--no-warm-start",
+        action="store_true",
+        help="貪欲法解によるウォームスタート（初期解投入）を無効化する",
     )
     solve.add_argument(
         "--relax",

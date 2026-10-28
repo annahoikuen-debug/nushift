@@ -63,6 +63,8 @@ STAFF_COLUMNS: list[str] = [
     "最早始業",
     "最遅終業",
     "能力タグ",
+    "36協定",
+    "変形労働制",
     "備考",
 ]
 
@@ -295,6 +297,8 @@ _COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
     "状態": ("状態", "state", "勤務状態", "セル状態"),
     "勤務分数": ("勤務分数", "分数", "workminutes", "worked", "workmin"),
     "休憩分数": ("休憩分数", "休息分数", "breakminutes", "breakmin", "休憩分"),
+    "36協定": ("36協定", "36協定締結", "36協定あり", "has_36_agreement", "has36agreement", "36"),
+    "変形労働制": ("変形労働制", "変形労働", "変形労働時間制", "variable_working_hours", "variableworkinghours", "1か月変形"),
     "施設名": ("施設名", "園名", "facility", "facilityname"),
 }
 
@@ -921,6 +925,8 @@ def load_staff(df: pd.DataFrame) -> tuple[list[StaffMember], list[LoadIssue]]:
         skills = frozenset(
             s.strip() for s in re.split(r"[|、,，/／\n\r]+", view.text("能力タグ")) if s.strip()
         )
+        has_36 = parse_bool(view.get("36協定"), default=True)
+        variable_hours = parse_bool(view.get("変形労働制"), default=False)
         try:
             contract = Contract(
                 weekly_hours=weekly,
@@ -934,6 +940,8 @@ def load_staff(df: pd.DataFrame) -> tuple[list[StaffMember], list[LoadIssue]]:
                 ),
                 earliest_start=earliest,
                 latest_end=latest,
+                has_36_agreement=has_36,
+                variable_working_hours=variable_hours,
             )
             members.append(
                 StaffMember(

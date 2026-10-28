@@ -323,6 +323,8 @@ class Contract:
     latest_end: time = time(22, 0)
     can_work_holiday: bool = True
     overtime_allowed: bool = True
+    has_36_agreement: bool = True
+    variable_working_hours: bool = False
 
     def __post_init__(self) -> None:
         if self.daily_hours <= 0 or self.weekly_hours <= 0:
@@ -1183,6 +1185,8 @@ class FacilitySettings:
     rooms: tuple[str, ...] = ("0・1歳児室", "2・3歳児室", "4・5歳児室")
     labor_cost_per_hour: float = config.DEFAULT_LABOR_COST_PER_HOUR
     """人件費目安（1時間・パート係数）。"""
+    use_variable_working_hours: bool = False
+    """1か月単位の変形労働時間制を採用するか。"""
 
 
 # ---------------------------------------------------------------------------
