@@ -36,6 +36,7 @@ import pandas as pd
 
 from shiftai import config
 from shiftai.domain import (
+    daily_cap_minutes,
     CellState,
     FacilitySettings,
     RequirementTable,
@@ -427,12 +428,8 @@ def validate_day(
 
 
 def _daily_cap_minutes(contract: Any) -> int:
-    """その職員が1日に置ける勤務分の上限（法定10時間を超えない）。"""
-    legal_cap = int(config.STATUTORY_MAX_DAILY_WORK_HOURS * 60)
-    base = int(round(contract.daily_hours * 60))
-    if not contract.overtime_allowed:
-        return min(base, legal_cap)
-    return min(int(base * config.STATUTORY_OVERTIME_MULTIPLIER), legal_cap)
+    """その職員が1日に置ける勤務分の上限（domain.daily_cap_minutes に委譲）。"""
+    return daily_cap_minutes(contract)
 
 
 def _early_indices(slots: Sequence[Slot], standard: StaffingStandard | None) -> set[int]:

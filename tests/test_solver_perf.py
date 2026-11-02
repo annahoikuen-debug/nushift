@@ -976,7 +976,7 @@ def test_加班不可契約は法定10時間で頭打ち():
     )
     assert (
         _daily_cap_minutes(Contract(weekly_hours=40, daily_hours=15.0, overtime_allowed=False))
-        == 600
+        == 480
     )
     assert (
         _daily_cap_minutes(Contract(weekly_hours=40, daily_hours=5.0, overtime_allowed=False))

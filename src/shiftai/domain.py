@@ -54,6 +54,22 @@ class AgeClass(str, Enum):
             4: cls.AGE_4,
         }.get(years, cls.AGE_5)
 
+    @classmethod
+    def from_birth_date(cls, target_date: date, birth_date: date | None) -> AgeClass:
+        """保育年度（4月1日時点の満年齢、児童福祉法・学校教育法準拠）に基づく年齢区分を返す。
+
+        日本の保育所基準では、4月2日〜翌年4月1日生まれが同一の年齢区分（クラス）となります。
+        年度途中で誕生日を迎えても、当該年度（4月1日〜翌年3月31日）内の年齢区分は変動しません。
+        """
+        if birth_date is None:
+            return cls.INFANT
+        fiscal_year = target_date.year if target_date.month >= 4 else target_date.year - 1
+        if (birth_date.month, birth_date.day) >= (4, 2):
+            years = fiscal_year - birth_date.year - 1
+        else:
+            years = fiscal_year - birth_date.year
+        return cls.from_years(max(years, 0))
+
 
 class Role(str, Enum):
     """職員の職種。基準ごとに換算の扱いが異なる。"""
@@ -336,6 +352,15 @@ class Contract:
                 "max_weekly_days と max_consecutive_days は 0 以上にしてください"
                 "（0 は上限なしを意味します）"
             )
+
+
+def daily_cap_minutes(contract: Contract) -> int:
+    """その職員が1日に置ける勤務分の上限（法定10時間を超えない）。36協定なしまたは残業不可は8時間で頭打ち。"""
+    base = int(round(contract.daily_hours * 60))
+    if not contract.overtime_allowed or not contract.has_36_agreement:
+        return int(min(base, config.STATUTORY_DAILY_WORK_HOURS * 60))
+    legal_cap = int(config.STATUTORY_MAX_DAILY_WORK_HOURS * 60)
+    return int(min(base * config.STATUTORY_OVERTIME_MULTIPLIER, legal_cap))
 
 
 @dataclass(frozen=True)

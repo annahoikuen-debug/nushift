@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shiftai"
-version = "0.1.0"
+version = "0.4.1"
 description = "配置基準連動型 シフト自動作成AI（保育所の職員配置基準に紐づくシフト自動作成）"
 readme = "README.md"
 requires-python = ">=3.11"
