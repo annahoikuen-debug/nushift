@@ -429,10 +429,14 @@ def _hard_ge(ctx: _ModelCtx, expr: object, rhs: float, name: str | None = None) 
 def _split_penalty(weights: ObjectiveWeights) -> float:
     """勤務/休憩ブロックが分かれたときの1ブロックあたりのペナルティ。
 
-    ObjectiveWeights に専用項目がないため、休憩競合の重みと超過配置の重みから
-    「超過配置1名分より重く、配置不足より安く」になる値として導出する。
+    中抜け勤務（スプリット勤務）を配置不足よりも重く罰し、
+    現場で運用不可能な「1日複数回出勤」を確実に抑止する。
     """
-    return max(weights.break_conflict_penalty, 10.0 * weights.overstaff_penalty)
+    return max(
+        weights.split_duty_penalty,
+        weights.break_conflict_penalty,
+        10.0 * weights.overstaff_penalty,
+    )
 
 
 def _add_block(

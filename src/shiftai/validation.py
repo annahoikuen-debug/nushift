@@ -767,6 +767,31 @@ def analyze_preferences(
                     "読み込み時に 23:59 へ書き換わり、当日一日が丸ごと不在になります。",
                 )
             )
+
+    # 日付ごとの希望休（出勤不可）重複・過密チェック（平準化支援）
+    unavail_by_day: dict[date, list[int]] = {}
+    for pos, (_, row) in enumerate(frame.iterrows()):
+        col = {name: row.get(name) for name in known}
+        target = parse_date(col.get("日付"))
+        raw_kind = _text(col.get("種別"))
+        norm_kind = PREFERENCE_TYPES.get(raw_kind, "希望休") if raw_kind else "希望休"
+        if target and norm_kind in ("出勤不可", "希望休"):
+            unavail_by_day.setdefault(target, []).append(pos)
+
+    threshold = max(4, int(len(known_ids) * 0.25)) if known_ids else 4
+    for target_day, pos_list in unavail_by_day.items():
+        if len(pos_list) >= threshold:
+            for p in pos_list:
+                out.append(
+                    ValidationIssue(
+                        WARNING,
+                        "preferences",
+                        p,
+                        "日付",
+                        f"{target_day.isoformat()} は希望休・出勤不可が {len(pos_list)} 名重複しています。"
+                        "特定日への集中のため、配置基準不足や法令違反を招く可能性があります（平準化を推奨）。",
+                    )
+                )
     return out
 
 

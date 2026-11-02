@@ -1169,13 +1169,13 @@ class ObjectiveWeights:
     実測: 通勤ペナルティ（``split_duty_penalty``）と区別されていないと、
     総休憩時間が 137.5h → 54.5h まで削られ ``BREAK_INSUFFICIENT`` が
     13 → 24 件に劣化した。"""
-    split_duty_penalty: float = 120.0
+    split_duty_penalty: float = 300.0
     """勤務ブロックを「下班（帰宅）を挟んで」再開する1セルあたりのペナルティ。
 
-    :func:`~shiftai.solver._add_commute_penalty` が使う。昼休みのような
-    短い穴はこの罰が効かない（下班の長さが閾値に満たないため）ので、
-    設定不足のときだけ効く。``break_conflict_penalty`` より大きく、
-    ``shortfall_penalty`` より小さくあることが運用上の狙い。"""
+    :func:`~shiftai.solver._add_commute_penalty` および
+    :func:`~shiftai.solver._add_block` の分割フォールバックで使う。
+    ``break_deficit_penalty``（600.0）未満、かつ ``break_conflict_penalty``（50.0）
+    より大きい値として、中抜け勤務（1日複数回出勤）を抑止する。"""
     consecutive_day_penalty: float = 8.0
     hours_imbalance_penalty: float = 4.0
     fairness_early_penalty: float = 4.0

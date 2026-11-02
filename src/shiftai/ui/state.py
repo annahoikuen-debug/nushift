@@ -202,6 +202,7 @@ def init_state() -> None:
         st.session_state[KEY_SOLVER_NAMES] = solver.available_solvers()
 
 
+
 def get(key: str, default: Any = None) -> Any:
     """session_state から値を返す。未設定なら既定値（コピー）を返す。"""
     value = st.session_state.get(key, None)
@@ -611,7 +612,14 @@ def current_patterns() -> tuple:
     """有効化されている勤務パターンを返す（無効なら空タプル）。"""
     if not get(KEY_PATTERNS_ENABLED):
         return ()
-    return tuple(get(KEY_PATTERNS) or ())
+    patterns = get(KEY_PATTERNS)
+    if not patterns:
+        from shiftai.shift_patterns import default_patterns
+
+        settings = current_settings()
+        patterns = default_patterns(settings.day_open, settings.day_close)
+        set(KEY_PATTERNS, tuple(patterns))
+    return tuple(patterns or ())
 
 
 def set_patterns(patterns: Sequence[ShiftPattern]) -> None:

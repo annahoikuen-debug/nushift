@@ -51,6 +51,11 @@ def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveRes
     weights = state.sync_weights()
     fixed = state.normalize_fixed(state.get(state.KEY_FIXED_ASSIGNMENTS))
     patterns = state.current_patterns()
+    if not patterns:
+        from shiftai.shift_patterns import default_patterns
+
+        settings = state.current_settings()
+        patterns = default_patterns(settings.day_open, settings.day_close)
     level = state.get(state.KEY_RELAXATION) if relaxation is None else relaxation
     if not children:
         raise ValueError("園児データが未投入です。")
@@ -265,6 +270,11 @@ def _run_ladder(table: Any) -> Any:
 def _render_pattern_panel(result: SolveResult | None) -> None:
     """勤務パターンの設定状況と整列結果を示す。"""
     patterns = state.current_patterns()
+    if not patterns:
+        from shiftai.shift_patterns import default_patterns
+
+        settings = state.current_settings()
+        patterns = default_patterns(settings.day_open, settings.day_close)
     with st.expander("⏰ 勤務パターンへの整列（早番・日勤・遅番）", expanded=False):
         if not patterns:
             st.info(

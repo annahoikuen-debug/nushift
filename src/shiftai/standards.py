@@ -165,7 +165,7 @@ def _required_qualified(standard: StaffingStandard, kind: SlotKind, needed_staff
     """必要人員のうち保育士でなければならない人数。"""
     if needed_staff <= 0:
         return 0
-    if standard.late_care_relaxed and kind is SlotKind.LATE:
+    if standard.late_care_relaxed and kind in (SlotKind.LATE, SlotKind.EARLY):
         halved = min(needed_staff, max(1, math.ceil(needed_staff / 2)))
         floor_q = min(standard.late_care_min_qualified, needed_staff)
         return max(halved, floor_q)
@@ -189,9 +189,9 @@ def _basis_text(
         f"{needed_staff}名（定員比{ratio.children_per_staff:g}:1、{rounding}）",
         slot_kind_label(kind),
     ]
-    if standard.late_care_relaxed and kind is SlotKind.LATE and needed_qualified < needed_staff:
+    if standard.late_care_relaxed and kind in (SlotKind.LATE, SlotKind.EARLY) and needed_qualified < needed_staff:
         parts.append(
-            f"延長保育の代替措置（保育士1名＋支援員）で必要保育士数を{needed_qualified}名に緩和"
+            f"{slot_kind_label(kind)}の代替措置（保育士1名＋支援員）で必要保育士数を{needed_qualified}名に緩和"
         )
     if not is_binding:
         parts.append(_HOLIDAY_TEXT)

@@ -111,12 +111,15 @@ def default_patterns(
     *,
     shift_hours: float = 9.0,
     gran_min: int = 15,
+    include_part_time: bool = False,
+    part_time_hours: float = 5.0,
 ) -> tuple[ShiftPattern, ...]:
     """園の開所・閉所時間に合わせた既定パターンを生成する。
 
     * 早番: 開所 〜 開所 + ``shift_hours``
     * 日勤: 開所 + 1時間 〜 開所 + 1時間 + ``shift_hours``
     * 遅番: 閉所 - ``shift_hours`` 〜 閉所
+    * （オプション）短時間パート枠: 午前パート（5h）、午後パート（5h）
 
     **枠の長さは園の営業時間で頭打ちにする。** 開所 9:00〜閉所 14:00 の園に
     9 時間枠を作ると、境界が営業時間の外にはみ出して**どの勤務とも一致しない**。
@@ -126,6 +129,8 @@ def default_patterns(
     :param day_close: 園の閉所時刻（省略時は 19:30）
     :param shift_hours: 1枠の長さ（時間）
     :param gran_min: 境界を丸める粒度（分）
+    :param include_part_time: 短時間パート枠（午前・午後）を含めるか
+    :param part_time_hours: 短時間パートの1枠の長さ（時間）
     :returns: 開始時刻順に並べたパターン
     """
     open_m = to_minutes(day_open) if day_open is not None else 7 * 60 + 30
@@ -151,6 +156,18 @@ def default_patterns(
         if end > start:
             patterns.append(
                 ShiftPattern(key, label, _clock(start), _clock(end), symbol=symbols.get(key, label[:2]))
+            )
+    if include_part_time:
+        pt_span = max(60, min(int(round(part_time_hours * 60)), window))
+        pt_m_end = min(day_start + pt_span, late_end)
+        if pt_m_end > day_start:
+            patterns.append(
+                ShiftPattern("part_am", "前パ", _clock(day_start), _clock(pt_m_end), symbol="前")
+            )
+        pt_a_start = max(early_start, late_end - pt_span)
+        if late_end > pt_a_start:
+            patterns.append(
+                ShiftPattern("part_pm", "後パ", _clock(pt_a_start), _clock(late_end), symbol="後")
             )
     return normalize_patterns(patterns)
 
