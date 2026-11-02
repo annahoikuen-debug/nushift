@@ -42,12 +42,12 @@ import pulp
 from shiftai import config
 from shiftai.config import STATUTORY_DAILY_WORK_HOURS, STATUTORY_WEEKLY_WORK_HOURS
 from shiftai.domain import (
-    daily_cap_minutes,
     CellState,
     ChildPlan,
     Contract,
     FacilitySettings,
     ObjectiveWeights,
+    PairingRule,
     RequirementTable,
     Role,
     ShiftAssignment,
@@ -61,6 +61,7 @@ from shiftai.domain import (
     StaffPreferences,
     Violation,
     ViolationSeverity,
+    daily_cap_minutes,
     japanese_weekday,
     qualified_count,
     to_minutes,
@@ -68,12 +69,20 @@ from shiftai.domain import (
     weekly_windows,
 )
 from shiftai.greedy import (
-    _consecutive_streak,
-    _slot_by_label,
+    _consecutive_streak as _consecutive_streak,
+)
+from shiftai.greedy import (
+    _slot_by_label as _slot_by_label,
+)
+from shiftai.greedy import (
     solve_shift_greedy,
-    staff_shift_count,
-    staff_work_hours,
-)  # noqa: F401
+)
+from shiftai.greedy import (
+    staff_shift_count as staff_shift_count,
+)
+from shiftai.greedy import (
+    staff_work_hours as staff_work_hours,
+)
 from shiftai.relaxation import (
     RELAX_LEVELS,
     RelaxLevel,
@@ -1514,6 +1523,66 @@ def _fairness_day_flag(
     return flag
 
 
+def _add_pairing_rules(
+    ctx: _ModelCtx,
+    staff: Sequence[StaffMember],
+    requirements: RequirementTable,
+    rules: Sequence[PairingRule],
+    obj: list[object],
+) -> None:
+    """職員ペアリング制約（相性・OJT指導）をMILPモデルに追加する。
+
+    - require_together: Aが出勤しているスロットはBも必ず出勤 (work_A <= work_B)
+    - avoid_together: AとBは同一スロットに同時出勤しない (work_A + work_B <= 1)
+    """
+    if not rules:
+        return
+
+    days = requirements.all_days()
+    slots = tuple(requirements.slots)
+    staff_ids = {st.staff_id for st in staff}
+
+    for r_idx, rule in enumerate(rules):
+        sid_a = rule.staff_a_id
+        sid_b = rule.staff_b_id
+        if sid_a not in staff_ids or sid_b not in staff_ids:
+            continue
+
+        for day in days:
+            tag = day.strftime("%m%d")
+            for s_idx, _slot in enumerate(slots):
+                # 在勤（勤務 + 休憩）ブロック全体を考慮
+                w_a = ctx.work.get((sid_a, day, s_idx), 0)
+                b_a = ctx.brk.get((sid_a, day, s_idx), 0)
+                w_b = ctx.work.get((sid_b, day, s_idx), 0)
+                b_b = ctx.brk.get((sid_b, day, s_idx), 0)
+
+                duty_a = w_a if _is_zero(b_a) else (b_a if _is_zero(w_a) else w_a + b_a)
+                duty_b = w_b if _is_zero(b_b) else (b_b if _is_zero(w_b) else w_b + b_b)
+
+                if _is_zero(duty_a) and _is_zero(duty_b):
+                    continue
+
+                c_name = f"pair_{r_idx}_{tag}_{s_idx}"
+                if rule.kind == "require_together":
+                    # staff_a が出勤なら staff_b も出勤 (在勤ブロックで一致): duty_a <= duty_b
+                    if rule.is_hard:
+                        ctx.prob += duty_a <= duty_b, c_name
+                    else:
+                        slack = pulp.LpVariable(f"slk_{c_name}", 0, 1)
+                        ctx.prob += duty_a <= duty_b + slack, c_name
+                        obj.append(rule.penalty * slack)
+
+                elif rule.kind == "avoid_together":
+                    # staff_a と staff_b は同一時間帯に同席不可 (在勤ブロック排他): duty_a + duty_b <= 1
+                    if rule.is_hard:
+                        ctx.prob += duty_a + duty_b <= 1, c_name
+                    else:
+                        slack = pulp.LpVariable(f"slk_{c_name}", 0, 1)
+                        ctx.prob += duty_a + duty_b <= 1 + slack, c_name
+                        obj.append(rule.penalty * slack)
+
+
 def _add_fairness(
     ctx: _ModelCtx,
     staff: Sequence[StaffMember],
@@ -1668,6 +1737,7 @@ def _build_problem(
     relaxation: int = int(RelaxLevel.STRICT),
     drop_groups: frozenset[str] = frozenset(),
     pattern_mode: bool = False,
+    pairing_rules: Sequence[PairingRule] | None = None,
 ) -> _ModelCtx:
     """MILP を構築する。
 
@@ -1733,6 +1803,8 @@ def _build_problem(
     _add_pattern_alignment(ctx, staff, requirements, obj, weights, patterns or (), pattern_mode=pattern_mode)
     if "fairness" not in drop_groups:
         _add_fairness(ctx, staff, requirements, obj, weights, standard, patterns or ())
+    if pairing_rules:
+        _add_pairing_rules(ctx, staff, requirements, pairing_rules, obj)
     if obj:
         ctx.prob += pulp.lpSum(obj)
     else:
@@ -1772,6 +1844,7 @@ class _SolveInput:
     warm_start: bool = True
     warm_start_assignments: Mapping[tuple[str, date, str], CellState] | None = None
     pattern_mode: bool = False
+    pairing_rules: tuple[PairingRule, ...] = ()
 
 
 def solve_shift(
@@ -1792,7 +1865,8 @@ def solve_shift(
     solver_name: str = config.DEFAULT_SOLVER,
     warm_start: bool = True,
     warm_start_assignments: Mapping[tuple[str, date, str], CellState] | None = None,
-    pattern_mode: bool = False,
+    pattern_mode: bool = True,
+    pairing_rules: Sequence[PairingRule] | None = None,
 ) -> SolveResult:
     """MILP でシフトを最適化する。配置基準を満たせない場合は自動で2パス目に退避する。
 
@@ -1837,6 +1911,7 @@ def solve_shift(
         warm_start=warm_start,
         warm_start_assignments=warm_start_assignments,
         pattern_mode=pattern_mode,
+        pairing_rules=tuple(pairing_rules or ()),
     )
     days = requirements.all_days()
     slots = tuple(requirements.slots)
@@ -1882,6 +1957,7 @@ def solve_shift(
             relaxation=payload.relaxation,
             drop_groups=drop_groups,
             pattern_mode=payload.pattern_mode,
+            pairing_rules=payload.pairing_rules,
         )
     except Exception as exc:
         stats["elapsed_sec"] = round(perf_counter() - started, 3)
@@ -2122,6 +2198,7 @@ def _best_effort(
             patterns=payload.patterns,
             relaxation=payload.relaxation,
             pattern_mode=payload.pattern_mode,
+            pairing_rules=payload.pairing_rules,
         )
     except Exception:
         return _greedy(payload, stats, started, _INFEASIBLE_FALLBACK_MESSAGE, diagnosis)
@@ -3022,3 +3099,61 @@ def describe_shift_pattern(
     if not duty:
         return "オフ"
     return describe_pattern(slots[duty[0]].start_minutes, slots[duty[-1]].end_minutes, pats)
+
+
+def repair_shift_absence(
+    existing_result: SolveResult,
+    absent_staff_id: str,
+    target_date: date,
+    children: Sequence[ChildPlan],
+    staff: Sequence[StaffMember],
+    requirements: RequirementTable,
+    preferences: Mapping[str, StaffPreferences] | None = None,
+    weights: ObjectiveWeights | None = None,
+    standard: StaffingStandard | None = None,
+    patterns: Sequence[ShiftPattern] | None = None,
+    pairing_rules: Sequence[PairingRule] | None = None,
+    time_limit_sec: int = 10,
+) -> SolveResult:
+    """当日の急な突発欠勤（発熱・忌引等）に対する最小変更リアルタイム穴埋め（動的リペア）。
+
+    確定済みシフト（``existing_result``）のうち、欠勤日以外のすべて、および
+    当日に出勤予定のない職員の勤務状態を手動固定（fixed_assignments）として維持し、
+    「欠勤者のみ OFF」に変更した上で、未勤務の職員または勤務時間の延長によって
+    配置基準の不足を最小の変更手番で埋める。
+    """
+    fixed: dict[tuple[str, date, str], CellState] = {}
+    
+    # 既存アサインから固定辞書を構築
+    for a in existing_result.assignments:
+        sid = a.staff_id
+        d = a.day
+        slot_label = a.slot.label
+        
+        if d != target_date:
+            # 別日のシフトは完全に維持固定
+            fixed[(sid, d, slot_label)] = a.state
+        else:
+            if sid == absent_staff_id:
+                # 欠勤者は公休(OFF)に固定
+                fixed[(sid, d, slot_label)] = CellState.OFF
+            else:
+                # 当日の他職員は、元々「勤務(WORK/BREAK)」していた場合は維持
+                if a.state in (CellState.WORK, CellState.BREAK):
+                    fixed[(sid, d, slot_label)] = a.state
+                # 元々 OFF だった職員のみ固定を外して、ヘルプ出勤・延長の調整弁としてソルバーに開放する
+
+    return solve_shift(
+        children=children,
+        staff=staff,
+        requirements=requirements,
+        preferences=preferences,
+        weights=weights,
+        fixed_assignments=fixed,
+        standard=standard,
+        patterns=patterns,
+        pattern_mode=True,
+        pairing_rules=pairing_rules,
+        time_limit_sec=time_limit_sec,
+    )
+

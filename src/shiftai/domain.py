@@ -522,6 +522,21 @@ class StaffPreferences:
         return self.preferred_slots.get(day, ())
 
 
+@dataclass(frozen=True)
+class PairingRule:
+    """職員ペアリング（相性・OJT指導）制約の定義。
+
+    - ``kind='require_together'``: staff_a が出勤している時間帯（スロット）には staff_b も必ず同席・出勤する（OJT・新人指導必須）
+    - ``kind='avoid_together'``: staff_a と staff_b を同じ時間帯（スロット）に同時配置しない（相性配慮・同一家族など）
+    """
+
+    staff_a_id: str
+    staff_b_id: str
+    kind: str = "require_together"  # "require_together" | "avoid_together"
+    is_hard: bool = True  # True: ハード制約, False: 違反ペナルティ
+    penalty: float = 300.0  # is_hard=False 時の目的関数ペナルティ
+
+
 # ---------------------------------------------------------------------------
 # 配置基準
 # ---------------------------------------------------------------------------
