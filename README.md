@@ -73,11 +73,12 @@ nushift/
 │   │   ├── tab_shift.py    # シフト表・セル編集・ピン留め
 │   │   └── tab_export.py   # Excel/CSV/PDF エクスポート
 │   ├── compliance.py       # 労働法規・36協定・変形労働制・割増賃金計算
-│   ├── domain.py           # ドメインモデル (AgeClass, ChildPlan, StaffMember, Slot, etc.)
+│   ├── domain.py           # ドメインモデル & 労基法上限統一 (daily_cap_minutes, AgeClass, StaffMember 等)
 │   ├── gap_analysis.py     # 配置割れギャップ分析・違反検知
 │   ├── local_rules.py      # 自治体別独自基準・全国基準プリセット
 │   ├── shift_patterns.py   # 勤務パターン枠・現場用記号マトリクス定義
-│   ├── solver.py           # MILP最適化モデル (HiGHS / CBC / ウォームスタート)
+│   ├── greedy.py           # 高速貪欲法ソルバー・初期解生成
+│   ├── solver.py           # MILP最適化モデル (HiGHS / CBC / ウォームスタート / 統一 daily_cap_minutes 準拠)
 │   └── standards.py        # 法定配置基準エンジン (認可保育所 / 企業主導型)
 ├── tests/                  # 単体・最適化性能・回帰テストスイート (53ファイル)
 ├── sample/                 # サンプルデータ (園児・職員・希望休 CSV)
