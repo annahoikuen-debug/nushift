@@ -488,9 +488,9 @@ def _render_gap_table() -> None:
     )
     # 情報過多を防ぐため、詳細データ表はアコーディオン式に格納（不足発生時のみ自動展開）
     exp_label = (
-        f"詳細な時間帯別データ表（⚠️ 不足 {report.total_shortfall_slots} 件あり）"
+        f"時間帯ごとの詳細な過不足データ（⚠️ 不足 {report.total_shortfall_slots} 件あり）"
         if has_shortfall
-        else "詳細な時間帯別データ表（クリックで展開）"
+        else "時間帯ごとの詳細な過不足データ（クリックで展開）"
     )
     with st.expander(exp_label, expanded=has_shortfall):
         st.dataframe(
@@ -524,7 +524,7 @@ def _render_staffing_curve(result: SolveResult) -> None:
     if table is None or not days:
         st.info("比較できるデータがありません。")
         return
-    with st.expander("グラフ・数値表・職員別勤務時間（クリックで展開）", expanded=False):
+    with st.expander("人員配置グラフ・詳細数値表・職員別勤務時間（クリックで展開）", expanded=False):
         day = st.selectbox(
             "表示する日",
             options=days,
