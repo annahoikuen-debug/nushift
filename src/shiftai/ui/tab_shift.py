@@ -113,9 +113,7 @@ def _render_editor(result: SolveResult, day: date, slots: Any, staff: list[Any])
     if slot_label:
         st.markdown(f"修正セル: **{slot_label}**")
     st.caption(
-        "「勤務」「休憩」「オフ」のいずれかを選びます。"
-        "変更はすぐには確定されません。下部の「変更を確定して再最適化する」を押すと "
-        f"{LOCK} 印とともに固定され、再最適化でもそのセルは動きません。"
+        f"💡 セルの状態を変更できます。変更後に「確定して再最適化」を押すと {LOCK} 印で固定されます。"
     )
     column_config = components.editable_column_config(slots)
     edited = st.data_editor(
@@ -130,8 +128,9 @@ def _render_editor(result: SolveResult, day: date, slots: Any, staff: list[Any])
     )
     fixed, changes = _apply_edits(edited, baseline, staff, slots, day)
     if not changes:
-        st.caption("変更はありません。")
-        _render_live_check(baseline, day, slots, staff, key="base")
+        st.caption("変更はありません。セルをクリックして「勤務」「休憩」「オフ」を切り替えます。")
+        with st.expander("🔎 現在のシフトの基準チェック結果（配置検証ビュー）", expanded=False):
+            _render_live_check(baseline, day, slots, staff, key="base")
         return
 
     labels = [components.row_label(m.staff_id, m.name) for m in staff]
@@ -312,8 +311,9 @@ def _render_weekday_pivot(result: SolveResult, slots: Any) -> None:
     if frame.empty:
         st.info("集計できるデータがありません。")
         return
-    st.dataframe(frame, width="stretch", key="weekday_pivot", height=400)
-    st.caption("各曜日の合計を、本アプリが使う週 44 時間の内部目安と照らし合わせてください。")
+    with st.expander("曜日別の集計ピボット表（クリックで展開）", expanded=False):
+        st.dataframe(frame, width="stretch", key="weekday_pivot", height=320)
+        st.caption("※ 各曜日の合計時間を、週あたりの法定勤務時間（目安40時間前後）と照らし合わせてご確認ください。")
 
 
 def _render_coverage_matrix(result: SolveResult) -> None:

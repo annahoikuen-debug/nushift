@@ -74,11 +74,11 @@ STATUS_TONE: dict[SolveStatus, str] = {
 }
 
 STATUS_HINT: dict[SolveStatus, str] = {
-    SolveStatus.OPTIMAL: "すべての重み付き目的関数を最小化する最適解が得られました。",
-    SolveStatus.FEASIBLE: "時間制限内で実行可能解が得られました。最適とは限りません。",
-    SolveStatus.PARTIAL: "解が完全には出ませんでした。貪欲法による暫定シフトを含む可能性があります。",
-    SolveStatus.INFEASIBLE: "制約が矛盾しており解がありません。職員数や基準を見直す必要があります。",
-    SolveStatus.ERROR: "ソルバ実行中にエラーが発生しました。",
+    SolveStatus.OPTIMAL: "配置基準と職員の希望を最もバランスよく満たす最適シフトが完成しました。",
+    SolveStatus.FEASIBLE: "配置基準を満たす実用的なシフトが完成しました。",
+    SolveStatus.PARTIAL: "一部の時間帯で人員が不足しています。下の過不足表をご確認ください。",
+    SolveStatus.INFEASIBLE: "職員数・希望休・配置基準の条件が衝突しています。「原因診断」をご確認ください。",
+    SolveStatus.ERROR: "シフト作成中にエラーが発生しました。",
 }
 
 

@@ -18,14 +18,14 @@ from shiftai.relaxation import (
 from shiftai.ui import components, state, theme
 
 PROGRESS_STEPS: tuple[tuple[float, str], ...] = (
-    (0.05, "設定を検証しています…"),
-    (0.15, "配置基準エンジンで必要人員を再計算しています…"),
-    (0.25, "最適化モデルを構築しています（変数・制約の生成）…"),
-    (0.35, "PuLP（CBC）で最適化しています。この処理は数十秒かかることがあります…"),
-    (0.80, "解をデコードしてシフト表にしています…"),
-    (0.88, "勤務パターンの境界へ整列しています…"),
-    (0.90, "過不足と法令違反を検証しています…"),
-    (1.00, "完了しました。"),
+    (0.05, "園の設定と条件を確認しています…"),
+    (0.15, "配置基準をもとに必要人数を計算しています…"),
+    (0.25, "シフトの条件（職員希望・勤務契約）を整理しています…"),
+    (0.35, "AIエンジンで最適シフトを計算しています（数十秒かかる場合があります）…"),
+    (0.80, "シフト表を組み立てています…"),
+    (0.88, "勤務パターン（早番・日勤・遅番）に整列しています…"),
+    (0.90, "配置基準や労働基準法の違反を点検しています…"),
+    (1.00, "シフトが完成しました。"),
 )
 
 
@@ -345,60 +345,66 @@ def _render_pattern_panel(result: SolveResult | None) -> None:
 
 
 def _render_precheck(table: Any) -> None:
-    """実行前の前提確認（必要人時と供給可能人時の比）。"""
+    """実行前の前提確認（必要人数と職員の契約時間のバランス）。"""
     required = standards.total_required_hours(table)
     supply = state.contract_hours()
     ratio = state.supply_demand_ratio(required)
     shown = theme.format_ratio(ratio)
-    with st.expander("✅ 最適化の前提を確認する", expanded=True):
+    
+    # 画面上部には1行の要約ステータスのみを表示して情報量をスリム化
+    if required <= 0:
+        st.info("登降園予定が登録されていません。")
+    elif supply <= 0 or ratio > 1.0:
+        st.warning(
+            f"⚠️ 職員の総契約時間（{supply:,.1f}h）が必要時間数（{required:,.1f}h）を下回っています（充足比: {shown}）。"
+            "人員の追加や勤務可能時間の調整が必要な可能性があります。"
+        )
+    else:
+        st.caption(
+            f"💡 人員バランス見通し: 充足可能（必要 {required:,.1f}h ／ 供給可能 {supply:,.1f}h ・ 比率 {shown}）"
+        )
+
+    # 詳細な数値や内訳はアコーディオンに格納
+    with st.expander(f"✅ 最適化の前提を確認する（充足比: {shown}）", expanded=False):
         components.metric_row(
             [
-                ("必要人時", f"{required:,.1f} h", "配置基準が必要とする総人時"),
+                ("必要時間数（総計）", f"{required:,.1f} h", "基準を満たす総人時"),
                 (
-                    "供給可能人時",
+                    "職員契約時間（総計）",
                     f"{supply:,.1f} h",
-                    f"{len(state.get(state.KEY_STAFF) or [])} 名 × 契約時間",
+                    f"{len(state.get(state.KEY_STAFF) or [])} 名の契約時間合計",
                 ),
                 (
-                    "必要／供給 比",
+                    "充足比率（必要/供給）",
                     ("!" if ratio > 1.0 else "~") + shown,
-                    "1.00 超で構造的な不足",
+                    "1.00超で全体不足",
                 ),
                 (
-                    "ピーク必要人員",
+                    "ピーク必要人数",
                     f"{standards.peak_requirement(table)} 人",
-                    "1 日で同時に必要な最大人数",
+                    "最も混雑する時間帯の人数",
                 ),
                 (
-                    "実行時間上限",
+                    "計算時間上限",
                     f"{int(state.get(state.KEY_TIME_LIMIT_SEC))} 秒",
-                    "PuLP（CBC）の時間制限",
+                    "最大計算時間",
                 ),
             ]
         )
-        if required <= 0:
-            st.info("必要人時が 0 h です。園児の登降園予定が登録されていません。")
-        elif supply <= 0:
+        if ratio > 1.0:
             st.error(
-                f"供給可能人時が {supply:,.1f} h です。必要人時 {required:,.1f} h を"
-                "満たす人員が 1 人も配置できません（比 = ∞）。"
-                "職員の契約時間帯や休園日の設定を確認してください。"
-            )
-        elif ratio > 1.0:
-            st.error(
-                f"必要人時 {required:,.1f} h ＞ 供給可能人時 {supply:,.1f} h（比 {shown}）。"
-                "**職員数・契約時間・園児数のいずれかを調整しないと"
-                "配置基準を満たすシフトは作成できません。**"
+                f"必要時間数 {required:,.1f} h ＞ 供給可能時間 {supply:,.1f} h（比率 {shown}）。"
+                "**職員数・契約時間・登園人数のいずれかを調整しないと、配置基準を満たすシフトは作成できません。**"
             )
         else:
             st.success(
-                f"必要／供給比は {shown} です。時間としては充足可能です。"
-                "ただし出勤日数・希望休の制約により時間帯単位で不足が出る場合があります。"
+                f"必要／供給比率は {shown} です。総時間としては足りています。"
+                "（※各時間帯の出勤希望や勤務帯によって一部で過不足が発生する場合があります）"
             )
         st.caption(
-            f"セル変数 {len(state.get(state.KEY_STAFF) or []) * len(table.slots) * len(table.all_days()):,} 個"
-            f" 程度。人数×日数×時間帯に比例するため、"
-            "職員数や日数を増やすと最適化時間が大きく伸びます。"
+            "※ 計算規模: 約 "
+            f"{len(state.get(state.KEY_STAFF) or []) * len(table.slots) * len(table.all_days()):,} コマ。"
+            "職員数や計画日数を増やすと計算時間が増加します。"
         )
 
 
@@ -425,17 +431,17 @@ def _render_kpis(result: SolveResult) -> None:
                 f"不足 {summary.get('不足時間', 0.0):,.1f} h",
             ),
             (
-                "法令違反（BLOCKER）",
+                "法令・基準抵触（要修正）",
                 ("!%d 件" if result.blockers() else "%d 件") % len(result.blockers()),
                 f"要調整 {summary.get('要調整件数', 0.0):.0f} 件",
             ),
             (
-                "人件費（実働基準）",
+                "概算人件費",
                 f"{cost:,.0f} 円",
                 f"実働 × 1時間 {settings.labor_cost_per_hour:,.0f} 円 × 雇用形態係数",
             ),
             (
-                "対象期間の総人時",
+                "総勤務時間",
                 f"{summary.get('総勤務時間', 0.0):,.1f} h",
                 f"平均 {summary.get('平均勤務時間', 0.0):.1f} h／人",
             ),
@@ -453,7 +459,7 @@ def _render_messages(result: SolveResult) -> None:
 
 
 def _render_gap_table() -> None:
-    """過不足テーブル。"""
+    """過不足テーブル（サマリー表示＋詳細アコーディオン）。"""
     report = state.get(state.KEY_GAP_REPORT)
     if report is None:
         return
@@ -462,47 +468,55 @@ def _render_gap_table() -> None:
     if frame.empty:
         st.info("比較する時間帯がありません。")
         return
+    has_shortfall = bool(report.total_shortfall_slots and report.total_shortfall_slots > 0)
     components.metric_row(
         [
-            ("不足時間帯", f"{report.total_shortfall_slots} 件", "必要人員に届かなかった時間帯"),
-            ("不足人時", f"{report.total_shortfall_hours:,.2f} h", "在勤中に足りない総時間"),
+            ("不足時間帯", f"{report.total_shortfall_slots} 件", "必要人員に届かなかった枠"),
+            ("不足時間数", f"{report.total_shortfall_hours:,.2f} h", "足りない総時間"),
             (
                 "保育士不足",
                 f"{report.total_qualified_shortfall_hours:,.2f} h",
-                "保育士数が基準を下回った時間",
+                "有資格者不足の時間数",
             ),
-            ("過剰人時", f"{report.total_overstaff_hours:,.2f} h", "基準より余分に配置した時間"),
+            ("余剰時間数", f"{report.total_overstaff_hours:,.2f} h", "基準より多く配置した時間"),
             (
                 "最大不足日",
                 theme.format_day(report.worst_day) if report.worst_day else "—",
-                "最も不足した日",
+                "最も不足が集中した日",
             ),
         ]
     )
-    st.dataframe(
-        components.style_gap_table(frame),
-        hide_index=True,
-        width="stretch",
-        height=360,
-        key="gap_table",
+    # 情報過多を防ぐため、詳細データ表はアコーディオン式に格納（不足発生時のみ自動展開）
+    exp_label = (
+        f"詳細な時間帯別データ表（⚠️ 不足 {report.total_shortfall_slots} 件あり）"
+        if has_shortfall
+        else "詳細な時間帯別データ表（クリックで展開）"
     )
-    heatmap_hint = ""
-    if not theme.simple_mode():
-        heatmap_hint = (
-            f" 行数が多い場合は{theme.tab_ref(1)}の過不足ヒートマップも参照してください。"
-        )
-    st.caption(f"不足（赤）／過剰（青）を色で示しています。{heatmap_hint}")
-    with st.expander("日別サマリー", expanded=False):
+    with st.expander(exp_label, expanded=has_shortfall):
         st.dataframe(
-            report.daily_dataframe(),
+            components.style_gap_table(frame),
             hide_index=True,
             width="stretch",
-            key="gap_daily",
+            height=320,
+            key="gap_table",
         )
+        heatmap_hint = ""
+        if not theme.simple_mode():
+            heatmap_hint = (
+                f" 行数が多い場合は{theme.tab_ref(1)}の過不足ヒートマップも参照してください。"
+            )
+        st.caption(f"不足（赤）／過剰（青）を色で示しています。{heatmap_hint}")
+        with st.expander("日別の人員サマリー", expanded=False):
+            st.dataframe(
+                report.daily_dataframe(),
+                hide_index=True,
+                width="stretch",
+                key="gap_daily",
+            )
 
 
 def _render_staffing_curve(result: SolveResult) -> None:
-    """必要人員と配置人員の重ね書き（人員配置曲線）。"""
+    """必要人員と配置人員の重ね書き（人員配置曲線）。グラフ・数値表はアコーディオンに格納。"""
     st.markdown("#### 📈 人員配置曲線（必要人員 vs 配置人員）")
     table = state.get(state.KEY_REQUIREMENTS)
     staff = state.get(state.KEY_STAFF) or []
@@ -510,56 +524,55 @@ def _render_staffing_curve(result: SolveResult) -> None:
     if table is None or not days:
         st.info("比較できるデータがありません。")
         return
-    day = st.selectbox(
-        "表示する日",
-        options=days,
-        format_func=theme.format_day,
-        key="curve_day",
-    )
-    frame = components.staffing_curve_frame(table, result, day, staff)
-    if frame.empty:
-        st.info("この日のデータがありません。")
-        return
-    chart = frame.set_index("時間帯")[["必要人員", "配置人員", "必要保育士数"]]
-    st.line_chart(chart, height=320, width="stretch")
-    st.caption("「必要人員」と「配置人員」が重なっていれば、基準を満たしています。")
-    with st.expander("数値表（背景色で過不足を表示）", expanded=False):
-        styled = frame.set_index("時間帯").style.map(
-            lambda v: (
-                f"background-color: {COLOR_SHORTFALL}33; color: {COLOR_SHORTFALL_INK}; font-weight:600;"
-                if str(v) and float(v) < 0
-                else ""
-            ),
-            subset=["過不足"],
+    with st.expander("グラフ・数値表・職員別勤務時間（クリックで展開）", expanded=False):
+        day = st.selectbox(
+            "表示する日",
+            options=days,
+            format_func=theme.format_day,
+            key="curve_day",
+            help="時間帯ごとの必要人数と実際の配置人数の推移を表示する日付を選びます。",
         )
-        st.dataframe(styled, width="stretch", key="curve_table")
-    with st.expander("職員別勤務時間", expanded=True):
-        hours = components.staff_hours_frame(result, staff)
-        if hours.empty:
-            st.info("勤務時間データがありません。")
-        else:
-            st.bar_chart(
-                hours.set_index("職員ID")[["勤務時間"]],
-                height=300,
-                width="stretch",
+        frame = components.staffing_curve_frame(table, result, day, staff)
+        if frame.empty:
+            st.info("この日のデータがありません。")
+            return
+        chart = frame.set_index("時間帯")[["必要人員", "配置人員", "必要保育士数"]]
+        st.line_chart(chart, height=280, width="stretch")
+        st.caption("「必要人員」と「配置人員」の線が重なっていれば、配置基準を満たしています。")
+        with st.expander("時間帯別の詳細数値表", expanded=False):
+            styled = frame.set_index("時間帯").style.map(
+                lambda v: (
+                    f"background-color: {COLOR_SHORTFALL}33; color: {COLOR_SHORTFALL_INK}; font-weight:600;"
+                    if str(v) and float(v) < 0
+                    else ""
+                ),
+                subset=["過不足"],
             )
-            st.dataframe(
-                hours,
-                hide_index=True,
-                width="stretch",
-                key="staff_hours_table",
-                column_config={
-                    "職員ID": st.column_config.TextColumn("職員ID", width="small"),
-                    "勤務時間": st.column_config.NumberColumn("勤務時間", format="%.2f"),
-                    "出勤日数": st.column_config.NumberColumn("出勤日数", format="%d"),
-                },
-            )
-            st.caption(
-                "週 44 時間は本アプリが使う内部の目安です（法定の枠組みは"
-                "月45時間・年360時間。旧来の週44時間は2019年の改正で"
-                "法定の上限ではなくなっています）。個人別に 40 時間前後に"
-                "収まっているかは必ず確認してください。"
-            )
+            st.dataframe(styled, width="stretch", key="curve_table")
+        with st.expander("職員別の勤務時間グラフ・内訳", expanded=False):
+            hours = components.staff_hours_frame(result, staff)
+            if hours.empty:
+                st.info("勤務時間データがありません。")
+            else:
+                st.bar_chart(
+                    hours.set_index("職員ID")[["勤務時間"]],
+                    height=240,
+                    width="stretch",
+                )
+                st.dataframe(
+                    hours,
+                    hide_index=True,
+                    width="stretch",
+                    key="staff_hours_table",
+                    column_config={
+                        "職員ID": st.column_config.TextColumn("職員ID", width="small"),
+                        "勤務時間": st.column_config.NumberColumn("勤務時間", format="%.2f"),
+                        "出勤日数": st.column_config.NumberColumn("出勤日数", format="%d"),
+                    },
+                )
+                st.caption(
+                    "※ 各職員の週あたり勤務時間が労働基準法の目安（40時間前後）に収まっているかご確認ください。"
+                )
 
 
 def _render_infeasible_hint(result: SolveResult) -> None:
@@ -682,12 +695,20 @@ def render_result_section(*, embed_shift: bool = False) -> None:
 
     st.divider()
     _render_gap_table()
-    st.divider()
+
     st.markdown("#### ⚠️ 違反一覧")
     violations = state.get(state.KEY_VIOLATIONS) or result.violations
-    components.render_violations(violations)
-    components.render_violation_actions(violations, key_prefix="solve")
-    st.divider()
+    blockers = result.blockers() if hasattr(result, "blockers") else []
+    has_blockers = len(blockers) > 0
+    v_title = (
+        f"法令・配置基準の抵触詳細（🚨 要修正 {len(blockers)} 件 / 全 {len(violations)} 件）"
+        if has_blockers
+        else (f"運用上の確認事項（{len(violations)} 件）" if violations else "法令・配置基準の違反なし（0 件）")
+    )
+    with st.expander(v_title, expanded=has_blockers):
+        components.render_violations(violations)
+        components.render_violation_actions(violations, key_prefix="solve")
+
     components.render_fairness_panel(
         result,
         state.get(state.KEY_STAFF) or [],
@@ -695,7 +716,6 @@ def render_result_section(*, embed_shift: bool = False) -> None:
         standard=state.current_standard(),
         patterns=state.current_patterns(),
     )
-    st.divider()
     _render_staffing_curve(result)
 
     with st.expander("🧾 最適化の詳細（変数・制約・目的関数）", expanded=False):

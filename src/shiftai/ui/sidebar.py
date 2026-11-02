@@ -140,12 +140,13 @@ def _render_facility(*, times: bool = True) -> None:
         ),
     )
     labor_cost = st.number_input(
-        "人件費目安（円／時間・パート係数）",
+        "人件費目安（円／時間）",
         min_value=500.0,
         max_value=10000.0,
         value=DEFAULT_SETTINGS.labor_cost_per_hour,
         step=100.0,
         key="labor_cost_per_hour",
+        help="実働時間から概算人件費を試算するための時給目安です（雇用形態ごとの係数が加味されます）。",
     )
     previous = state.get(state.KEY_SETTINGS)
     state.set(
@@ -318,8 +319,18 @@ def _render_period() -> None:
 
 
 def _render_weights() -> None:
-    """目的関数の重みとソルバの時間制限。"""
-    with st.expander("最適化オプション（目的関数の重み）", expanded=False):
+    """自動作成の優先度設定と計算時間制限（ツールチップ付きアコーディオン）。"""
+    tooltips: dict[str, str] = {
+        "shortfall_penalty": "配置基準の人員を下回る時間帯を出さないことを最優先します（通常は高い値のままにします）。",
+        "overstaff_penalty": "必要人数に対して余分な職員を配置することを抑え、人件費の無駄を防ぎます。",
+        "preference_miss_penalty": "職員が事前に提出した希望休や不在日を尊重し、意に沿わない勤務割当を避けます。",
+        "hours_imbalance_penalty": "特定職員への勤務時間の偏りを抑え、職員全体の勤務時間を平準化します。",
+        "consecutive_day_penalty": "連勤日数が長くなりすぎないように配慮し、職員の負担を軽減します。",
+        "fairness_early_penalty": "職員間での早番（開園帯）の担当回数の偏りを抑えて公平に割り当てます。",
+        "fairness_late_penalty": "職員間での遅番（閉園帯）の担当回数の偏りを抑えて公平に割り当てます。",
+        "fairness_saturday_penalty": "職員間での土曜出勤の回数の偏りを抑えて公平に割り当てます。",
+    }
+    with st.expander("⚙️ 最適化オプション（自動作成の重視ポイント・詳細設定）", expanded=False):
         defaults = state.get(state.KEY_WEIGHTS)
         for name, label, low, high, step in state.WEIGHT_WIDGETS:
             st.slider(
@@ -329,39 +340,24 @@ def _render_weights() -> None:
                 value=float(getattr(defaults, name)),
                 step=step,
                 key=f"weight_{name}",
-            )
-        st.caption(
-            "配置不足のペナルティが大きいほど「基準を割らない」ことを優先します。"
-            "過剰配置のペナルティが大きいほど「無駄な人件」を避けます。"
-        )
-        if all(
-            float(getattr(state.get(state.KEY_WEIGHTS), name, 0.0)) > 0
-            for name in state.FAIRNESS_WEIGHT_NAMES
-        ):
-            st.caption(
-                "公平性のペナルティは「職員ごとの早番・遅番・土曜出勤の回数の最大と最小の差」"
-                "を縮める方向に働きます。0 のまま無効にしておけば変数は作られません。"
-            )
-        else:
-            st.caption(
-                "早番・遅番・土曜出勤の公平配分は既定では無効です。"
-                "気になる場合は上のスライダーを上げます（0 なら変数は作られません）。"
+                help=tooltips.get(name),
             )
         state.sync_weights()
         limit = int(
             st.slider(
-                "PuLP の実行時間上限（秒）",
+                "自動作成の計算時間上限（秒）",
                 min_value=10,
                 max_value=300,
                 value=int(state.get(state.KEY_TIME_LIMIT_SEC)),
                 step=10,
                 key="ui_time_limit_sec",
+                help="AIエンジンがシフトを最適化計算する制限時間です。通常は30〜60秒で十分です。",
             )
         )
         state.set(state.KEY_TIME_LIMIT_SEC, limit)
         names = state.get(state.KEY_SOLVER_NAMES)
         st.caption(
-            f"利用可能なソルバ: {', '.join(names) if names else 'なし（PuLP の CBC が使えません）'}"
+            f"利用可能なソルバ（計算エンジン）: {', '.join(names) if names else 'なし（PuLP の CBC が使えません）'}"
         )
 
 
