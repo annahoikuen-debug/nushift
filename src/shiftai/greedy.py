@@ -12,7 +12,6 @@ from time import perf_counter
 
 from shiftai import config
 from shiftai.domain import (
-    daily_cap_minutes,
     CellState,
     ChildPlan,
     Contract,
@@ -28,6 +27,7 @@ from shiftai.domain import (
     StaffPreferences,
     Violation,
     ViolationSeverity,
+    daily_cap_minutes,
     qualified_count,
     to_minutes,
     weekly_windows,

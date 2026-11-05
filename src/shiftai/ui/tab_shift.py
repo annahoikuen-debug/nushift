@@ -38,12 +38,31 @@ def _render_grid(result: SolveResult, day: date, slots: Any, staff: list[Any]) -
     components.cell_legend()
     view = st.radio(
         "表示形式",
-        options=["マトリクス", "ガントチャート"],
+        options=["マトリクス", "ガントチャート", "月間記号マトリクス"],
         horizontal=True,
         key="shift_grid_view",
         help="「ガントチャート」は職員ごとに勤務・休憩の横棒を時間軸上に並べます。"
+        "「月間記号マトリクス」は全期間×全職員の早/日/遅/休を一覧表示します。"
         "時間帯ごとの有無を1セルずつ追うときは「マトリクス」が向いています。",
     )
+    if view == "月間記号マトリクス":
+        from shiftai.exporter import symbol_matrix_dataframe
+        patterns = state.current_patterns()
+        sym_df = symbol_matrix_dataframe(result, staff, slots=slots, patterns=patterns)
+        if sym_df.empty:
+            st.info("表示できる月間記号データがありません。")
+        else:
+            st.markdown("##### 📅 期間内シフト記号一覧（早/日/遅/休）")
+            st.dataframe(
+                sym_df,
+                hide_index=True,
+                width="stretch",
+                height=520,
+                key=f"symbol_matrix_view_{day.isoformat()}",
+            )
+            st.caption("※ 出勤日数・実働時間（時間換算）を右端に集計しています。")
+        return
+
     left, right = st.columns([3, 1])
     with left:
         if view == "ガントチャート":

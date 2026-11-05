@@ -36,7 +36,6 @@ import pandas as pd
 
 from shiftai import config
 from shiftai.domain import (
-    daily_cap_minutes,
     CellState,
     FacilitySettings,
     RequirementTable,
@@ -44,6 +43,7 @@ from shiftai.domain import (
     StaffingStandard,
     StaffMember,
     StaffPreferences,
+    daily_cap_minutes,
     qualified_count,
     to_minutes,
 )

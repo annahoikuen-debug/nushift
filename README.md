@@ -1,9 +1,9 @@
-# ⚡ NuShift (shiftai v0.4.1)
+# ⚡ NuShift (shiftai v0.5.0)
 
 > **保育のすべてをつなぎ、先生の時間をこどもたちへ**  
 > 職員配置基準連動型 数理最適化シフト自動作成エンジン（NuShift）と、直感的な Streamlit UI による保育園・こども園向け勤務シフト自動生成システム。
 
-[![Version](https://img.shields.io/badge/version-v0.4.1-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-v0.5.0-blue.svg)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](pyproject.toml)
@@ -53,7 +53,7 @@
 | :--- | :--- | :--- |
 | **形態** | 総合保育ICTプラットフォーム (FastAPI Webアプリ) | シフト自動作成エンジン (Streamlit デスクトップUI) |
 | **ライセンス** | 商用プロプライエタリ (全権利保持) | **MIT License (オープンソース)** |
-| **バージョン** | v0.4.0 | v0.4.1 |
+| **バージョン** | v0.4.0 | v0.5.0 |
 | **主な用途** | 園児台帳・登降園・連絡帳・請求・シフト・監査ログ | シフト自動作成・労基法チェック・給与シミュレーション |
 | **ブランド** | nusoft | nusoft (NuShift) |
 
@@ -293,6 +293,32 @@ for slot in table.slots:
 violations = check_violations(table, result, staff, prefs, standard=standard)
 blocking = [v for v in violations if v.severity.name == "BLOCKER"]
 print(f"\n違反: BLOCKER {len(blocking)} 件 / 全体 {len(violations)} 件")
+
+names = {s.staff_id: s.name for s in staff}
+for s in staff:
+    hours = sum(0.5 for slot in table.slots if shift_day.get(s.staff_id, slot).name == "WORK")
+    print(f"  {s.staff_id} {names[s.staff_id]}: {hours:.1f} 時間（{int(hours * 60)} 分）")
+```
+
+#### 実行出力例
+
+```text
+必要人員: 12 時間帯 / 12 要件行
+  09:00-09:30  必要 2 名（保育士 1 名）
+  09:30-10:00  必要 2 名（保育士 1 名）
+  10:00-10:30  必要 2 名（保育士 1 名）
+  根拠: 3歳児 5名 ÷ 8 = 1名（定員比8:1、切り上げ）／保育標準時間／2名ルールによる底上げ
+
+解の状態: 最適解  目的関数=16.0
+  09:00-09:30  必要 2 名 → 4 名  S01 S02 S03 S04
+  09:30-10:00  必要 2 名 → 4 名  S01 S02 S03 S04
+  10:00-10:30  必要 2 名 → 3 名  S01 S03 S04
+  ...
+違反: BLOCKER 0 件 / 全体 0 件
+  S01 井上: 5.0 時間（300 分）
+  S02 小林: 5.0 時間（300 分）
+  S03 斎藤: 5.0 時間（300 分）
+  S04 松本: 5.0 時間（300 分）
 ```
 
 ---
@@ -309,7 +335,7 @@ print(f"\n違反: BLOCKER {len(blocking)} 件 / 全体 {len(violations)} 件")
 
 ## 7. ドキュメント一覧
 
-- 📖 **[MANUAL.md (総合操作・運用マニュアル)](MANUAL.md)**: 園長・保育士・事務・管理者向けの実践的利用手順書
+- 📖 **[MANUAL.md (総合操作・運用マニュアル)](MANUAL.md)**: 園長・保育士・事務・管理者向けの実務的利用手順書
 - ❓ **[Q_AND_A.md (よくある質問と回答)](Q_AND_A.md)**: 現場の疑問、ソルバーの仕組み、トラブルシューティング集
 - 🎨 **[ランディングページ (landing_page/index.html)](landing_page/index.html)**: NuShift の魅力を伝える美麗なプロダクト紹介LP
 - 🛠️ **[docs/05_開発ガイド.md](docs/05_開発ガイド.md)**: アーキテクチャ設計・CLI仕様・開発者向けガイド

@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shiftai"
-version = "0.4.1"
+version = "0.5.0"
 description = "配置基準連動型 シフト自動作成AI（保育所の職員配置基準に紐づくシフト自動作成）"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "shiftai maintainers" }]
 keywords = ["保育", "シフト", "配置基準", "MILP", "PuLP", "Streamlit"]
 classifiers = [

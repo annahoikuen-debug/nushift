@@ -227,8 +227,12 @@ def symbol_matrix_dataframe(
         days = sorted({day for (_, day, _) in assign_map})
 
     actual_slots = list(slots) if slots else []
-    if not actual_slots and result.shift_days:
-        actual_slots = list(result.shift_days[0].slots)
+    if not actual_slots and result.assignments:
+        seen_slots = {}
+        for a in result.assignments:
+            if a.slot.label not in seen_slots:
+                seen_slots[a.slot.label] = a.slot
+        actual_slots = sorted(seen_slots.values(), key=lambda s: s.start_minutes)
 
     rows: list[dict[str, Any]] = []
     for st in staff:

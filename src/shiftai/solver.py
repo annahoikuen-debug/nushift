@@ -44,6 +44,7 @@ from shiftai.config import STATUTORY_DAILY_WORK_HOURS, STATUTORY_WEEKLY_WORK_HOU
 from shiftai.domain import (
     CellState,
     ChildPlan,
+    ClassRoom,
     Contract,
     FacilitySettings,
     ObjectiveWeights,
@@ -1742,6 +1743,9 @@ def _build_problem(
     drop_groups: frozenset[str] = frozenset(),
     pattern_mode: bool = False,
     pairing_rules: Sequence[PairingRule] | None = None,
+    classrooms: Sequence[ClassRoom] | None = None,
+    require_leader: bool = False,
+    require_opening_closing_skill: bool = False,
 ) -> _ModelCtx:
     """MILP を構築する。
 
@@ -1809,6 +1813,19 @@ def _build_problem(
         _add_fairness(ctx, staff, requirements, obj, weights, standard, patterns or ())
     if pairing_rules:
         _add_pairing_rules(ctx, staff, requirements, pairing_rules, obj)
+    if classrooms or require_leader or require_opening_closing_skill:
+        from shiftai.solver_core.constraints.classrooms import _add_classroom_and_skill_constraints
+        _add_classroom_and_skill_constraints(
+            ctx=ctx,
+            staff=staff,
+            requirements=requirements,
+            obj=obj,
+            weights=weights,
+            standard=standard,
+            classrooms=classrooms,
+            require_leader=require_leader,
+            require_opening_closing_skill=require_opening_closing_skill,
+        )
     if obj:
         ctx.prob += pulp.lpSum(obj)
     else:
@@ -1849,6 +1866,9 @@ class _SolveInput:
     warm_start_assignments: Mapping[tuple[str, date, str], CellState] | None = None
     pattern_mode: bool = False
     pairing_rules: tuple[PairingRule, ...] = ()
+    classrooms: tuple[ClassRoom, ...] = ()
+    require_leader: bool = False
+    require_opening_closing_skill: bool = False
 
 
 def solve_shift(
@@ -1871,6 +1891,9 @@ def solve_shift(
     warm_start_assignments: Mapping[tuple[str, date, str], CellState] | None = None,
     pattern_mode: bool = True,
     pairing_rules: Sequence[PairingRule] | None = None,
+    classrooms: Sequence[ClassRoom] | None = None,
+    require_leader: bool = False,
+    require_opening_closing_skill: bool = False,
 ) -> SolveResult:
     """MILP でシフトを最適化する。配置基準を満たせない場合は自動で2パス目に退避する。
 
@@ -1916,6 +1939,9 @@ def solve_shift(
         warm_start_assignments=warm_start_assignments,
         pattern_mode=pattern_mode,
         pairing_rules=tuple(pairing_rules or ()),
+        classrooms=tuple(classrooms or ()),
+        require_leader=require_leader,
+        require_opening_closing_skill=require_opening_closing_skill,
     )
     days = requirements.all_days()
     slots = tuple(requirements.slots)
@@ -1962,6 +1988,9 @@ def solve_shift(
             drop_groups=drop_groups,
             pattern_mode=payload.pattern_mode,
             pairing_rules=payload.pairing_rules,
+            classrooms=payload.classrooms,
+            require_leader=payload.require_leader,
+            require_opening_closing_skill=payload.require_opening_closing_skill,
         )
     except Exception as exc:
         stats["elapsed_sec"] = round(perf_counter() - started, 3)
@@ -2203,6 +2232,9 @@ def _best_effort(
             relaxation=payload.relaxation,
             pattern_mode=payload.pattern_mode,
             pairing_rules=payload.pairing_rules,
+            classrooms=payload.classrooms,
+            require_leader=payload.require_leader,
+            require_opening_closing_skill=payload.require_opening_closing_skill,
         )
     except Exception:
         return _greedy(payload, stats, started, _INFEASIBLE_FALLBACK_MESSAGE, diagnosis)
@@ -3114,50 +3146,35 @@ def repair_shift_absence(
     requirements: RequirementTable,
     preferences: Mapping[str, StaffPreferences] | None = None,
     weights: ObjectiveWeights | None = None,
+    settings: FacilitySettings | None = None,
     standard: StaffingStandard | None = None,
     patterns: Sequence[ShiftPattern] | None = None,
     pairing_rules: Sequence[PairingRule] | None = None,
+    classrooms: Sequence[ClassRoom] | None = None,
+    require_leader: bool = False,
+    require_opening_closing_skill: bool = False,
     time_limit_sec: int = 10,
+    prefer_on_duty_extension: bool = True,
 ) -> SolveResult:
-    """当日の急な突発欠勤（発熱・忌引等）に対する最小変更リアルタイム穴埋め（動的リペア）。
-
-    確定済みシフト（``existing_result``）のうち、欠勤日以外のすべて、および
-    当日に出勤予定のない職員の勤務状態を手動固定（fixed_assignments）として維持し、
-    「欠勤者のみ OFF」に変更した上で、未勤務の職員または勤務時間の延長によって
-    配置基準の不足を最小の変更手番で埋める。
-    """
-    fixed: dict[tuple[str, date, str], CellState] = {}
-    
-    # 既存アサインから固定辞書を構築
-    for a in existing_result.assignments:
-        sid = a.staff_id
-        d = a.day
-        slot_label = a.slot.label
-        
-        if d != target_date:
-            # 別日のシフトは完全に維持固定
-            fixed[(sid, d, slot_label)] = a.state
-        else:
-            if sid == absent_staff_id:
-                # 欠勤者は公休(OFF)に固定
-                fixed[(sid, d, slot_label)] = CellState.OFF
-            else:
-                # 当日の他職員は、元々「勤務(WORK/BREAK)」していた場合は維持
-                if a.state in (CellState.WORK, CellState.BREAK):
-                    fixed[(sid, d, slot_label)] = a.state
-                # 元々 OFF だった職員のみ固定を外して、ヘルプ出勤・延長の調整弁としてソルバーに開放する
-
-    return solve_shift(
+    """当日の急な突発欠勤に対する局所安定リアルタイム穴埋め（動的リペア）。"""
+    from shiftai.solver_core.repair import repair_shift_absence as _repair
+    return _repair(
+        existing_result=existing_result,
+        absent_staff_id=absent_staff_id,
+        target_date=target_date,
         children=children,
         staff=staff,
         requirements=requirements,
         preferences=preferences,
         weights=weights,
-        fixed_assignments=fixed,
+        settings=settings,
         standard=standard,
         patterns=patterns,
-        pattern_mode=True,
         pairing_rules=pairing_rules,
+        classrooms=classrooms,
+        require_leader=require_leader,
+        require_opening_closing_skill=require_opening_closing_skill,
         time_limit_sec=time_limit_sec,
+        prefer_on_duty_extension=prefer_on_duty_extension,
     )
 

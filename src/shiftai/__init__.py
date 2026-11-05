@@ -38,14 +38,14 @@ def _resolve_version() -> str:
 
 __version__ = _resolve_version()
 
-__all__ = ["__version__", "compliance", "domain", "local_rules", "standards"]
+__all__ = ["__version__", "compliance", "demand", "domain", "local_rules", "standards"]
 
 #: ``__all__`` に挙げたサブモジュール。``import shiftai`` の時点では読み込まず、
 #: 属性として参照されたときに初めて import する（PEP 562）。
 #: 以前は ``__all__`` に名前だけがあり、他のコードが先に
 #: ``import shiftai.compliance`` していない限り ``shiftai.compliance`` が
 #: 存在せず、``from shiftai import *`` も ``AttributeError`` で落ちていた。
-_LAZY_SUBMODULES = frozenset({"compliance", "domain", "local_rules", "standards"})
+_LAZY_SUBMODULES = frozenset({"compliance", "demand", "domain", "local_rules", "standards"})
 
 
 def __getattr__(name: str):
