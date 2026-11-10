@@ -1,24 +1,12 @@
 {
   "status": "実行可能解",
   "is_feasible": true,
-  "objective_value": 19868.09,
+  "objective_value": 137592.96,
   "total_assignments": 1400,
-  "work_count": 344,
-  "break_count": 72,
-  "off_count": 984,
+  "work_count": 345,
+  "break_count": 111,
+  "off_count": 944,
   "violations": [
-    {
-      "code": "BREAK_INSUFFICIENT",
-      "severity": "法令違反",
-      "staff_id": "S04",
-      "day": "2026-10-02"
-    },
-    {
-      "code": "BREAK_INSUFFICIENT",
-      "severity": "法令違反",
-      "staff_id": "S15",
-      "day": "2026-10-03"
-    },
     {
       "code": "BREAK_FRAGMENTED",
       "severity": "要調整",
@@ -28,13 +16,25 @@
     {
       "code": "BREAK_FRAGMENTED",
       "severity": "要調整",
-      "staff_id": "S25",
+      "staff_id": "S05",
+      "day": "2026-10-02"
+    },
+    {
+      "code": "BREAK_FRAGMENTED",
+      "severity": "要調整",
+      "staff_id": "S06",
+      "day": "2026-10-02"
+    },
+    {
+      "code": "BREAK_FRAGMENTED",
+      "severity": "要調整",
+      "staff_id": "S10",
       "day": "2026-10-02"
     },
     {
       "code": "SPLIT_SHIFT",
       "severity": "要調整",
-      "staff_id": "S04",
+      "staff_id": "S08",
       "day": "2026-10-02"
     },
     {
@@ -46,13 +46,19 @@
     {
       "code": "SPLIT_SHIFT",
       "severity": "要調整",
-      "staff_id": "S18",
+      "staff_id": "S17",
       "day": "2026-10-02"
     },
     {
       "code": "BREAK_FRAGMENTED",
       "severity": "要調整",
-      "staff_id": "S11",
+      "staff_id": "S01",
+      "day": "2026-10-03"
+    },
+    {
+      "code": "BREAK_FRAGMENTED",
+      "severity": "要調整",
+      "staff_id": "S03",
       "day": "2026-10-03"
     },
     {
@@ -62,9 +68,27 @@
       "day": "2026-10-03"
     },
     {
+      "code": "BREAK_FRAGMENTED",
+      "severity": "要調整",
+      "staff_id": "S15",
+      "day": "2026-10-03"
+    },
+    {
+      "code": "BREAK_FRAGMENTED",
+      "severity": "要調整",
+      "staff_id": "S21",
+      "day": "2026-10-03"
+    },
+    {
       "code": "SPLIT_SHIFT",
       "severity": "要調整",
-      "staff_id": "S02",
+      "staff_id": "S03",
+      "day": "2026-10-03"
+    },
+    {
+      "code": "SPLIT_SHIFT",
+      "severity": "要調整",
+      "staff_id": "S09",
       "day": "2026-10-03"
     },
     {
@@ -82,13 +106,13 @@
     {
       "code": "SPLIT_SHIFT",
       "severity": "要調整",
-      "staff_id": "S13",
+      "staff_id": "S16",
       "day": "2026-10-03"
     },
     {
       "code": "SPLIT_SHIFT",
       "severity": "要調整",
-      "staff_id": "S15",
+      "staff_id": "S21",
       "day": "2026-10-03"
     },
     {
@@ -100,7 +124,13 @@
     {
       "code": "MONTHLY_HOURS_EXCEEDED",
       "severity": "参考",
-      "staff_id": "S05",
+      "staff_id": "S01",
+      "day": null
+    },
+    {
+      "code": "MONTHLY_HOURS_EXCEEDED",
+      "severity": "参考",
+      "staff_id": "S03",
       "day": null
     },
     {

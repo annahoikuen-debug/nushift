@@ -376,8 +376,10 @@ def test_閾値の設定が整合している() -> None:
 
 
 def test_目的関数の重み是对立しない順序にある() -> None:
-    """現場運用上の優先順位が重みに反映されていること。"""
+    """法定序列（休憩6000＞分断3000＞端置き2500＞不足1000）を不変条件化。"""
     w = ObjectiveWeights()
-    assert w.break_deficit_penalty > w.split_duty_penalty, "休憩不足は通勤より重い"
-    assert w.split_duty_penalty > w.break_conflict_penalty, "通勤は休憩競合より重い"
-    assert w.break_edge_penalty >= w.break_conflict_penalty, "休息の端置きは更强的 deterrent"
+    assert w.break_deficit_penalty > w.shortfall_penalty * 5  # 法定休憩(6000)は配置不足(1000)より十分重い
+    assert w.break_deficit_penalty > w.split_duty_penalty     # 休憩不足(6000) > 勤務分断(3000)
+    assert w.split_duty_penalty > w.break_edge_penalty       # 勤務分断(3000) > 休息端置き(2500)
+    assert w.break_edge_penalty > w.shortfall_penalty        # 休息端置き(2500) > 配置不足(1000)
+    assert w.shortfall_penalty > w.break_conflict_penalty    # 配置不足(1000) > 休憩競合(50)

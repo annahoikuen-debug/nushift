@@ -1224,22 +1224,19 @@ class ObjectiveWeights:
     early_shift_penalty: float = 2.0
     late_shift_penalty: float = 2.0
     break_conflict_penalty: float = 50.0
-    break_deficit_penalty: float = 600.0
+    break_deficit_penalty: float = 6000.0
     """休憩が法定量に満たないときの不足1時間帯あたりのペナルティ。
 
     :func:`~shiftai.solver._add_breaks` の ``brkdef`` に使う。労働基準法第34条の
-    休憩義務に対応するので、他のどの目的項より大きい値にして
+    休憩義務に対応するので、他のどの目的項（shortfall_penalty=1000等）より大きい値にして
     「配置基準を満たす代わりに休憩を削る」ことが起きないようにしている。
-    実測: 通勤ペナルティ（``split_duty_penalty``）と区別されていないと、
-    総休憩時間が 137.5h → 54.5h まで削られ ``BREAK_INSUFFICIENT`` が
-    13 → 24 件に劣化した。"""
-    split_duty_penalty: float = 300.0
+    休憩不足(6000) ＞ 勤務分断(3000) ＞ 休息の端置き(2500) ＞ 配置不足(1000)。"""
+    split_duty_penalty: float = 3000.0
     """勤務ブロックを「下班（帰宅）を挟んで」再開する1セルあたりのペナルティ。
 
     :func:`~shiftai.solver._add_commute_penalty` および
     :func:`~shiftai.solver._add_block` の分割フォールバックで使う。
-    ``break_deficit_penalty``（600.0）未満、かつ ``break_conflict_penalty``（50.0）
-    より大きい値として、中抜け勤務（1日複数回出勤）を抑止する。"""
+    配置不足(1000)より重くし、中抜け勤務（1日複数回出勤）を強く抑止する。"""
     consecutive_day_penalty: float = 8.0
     hours_imbalance_penalty: float = 4.0
     fairness_early_penalty: float = 4.0
@@ -1248,7 +1245,7 @@ class ObjectiveWeights:
     """遅番回数の上限と最小の差（週レンジ）を縮めるペナルティ。"""
     fairness_saturday_penalty: float = 4.0
     """土曜出勤日数の上限と最小の差（週レンジ）を縮めるペナルティ。"""
-    break_edge_penalty: float = 800.0
+    break_edge_penalty: float = 2500.0
     """休息の前後に在勤がないときの不足1セルあたりのペナルティ（D3）。
 
     ハード制約にすると 2〜3 時間帯だけの短勤務には休息を一切入れられなくなる
