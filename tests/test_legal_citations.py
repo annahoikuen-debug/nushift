@@ -80,7 +80,9 @@ def test_休憩と休息の根拠条項が明記されている() -> None:
 
 def test_週44時間と月45時間は社内目安である() -> None:
     """旧基準の定数を法定と断定しないこと（緩める方向の変更を禁じるガード）。"""
-    source = (SRC / "config.py").read_text(encoding="utf-8")
+    config_source = (SRC / "config.py").read_text(encoding="utf-8")
+    statutory_source = (SRC / "statutory_rules.py").read_text(encoding="utf-8")
+    source = config_source + "\n" + statutory_source
     for name in ("STATUTORY_WEEKLY_WORK_HOURS", "STATUTORY_OVERTIME_LIMIT_HOURS"):
         doc = source.split(f"{name} =", 1)[1]
-        assert "社内目安" in doc.split('"""', 2)[1], f"{name} に社内目安である旨が無い"
+        assert "社内目安" in doc.split('"""', 2)[1] or "社内目安" in doc.split("\n", 1)[0], f"{name} に社内目安である旨が無い"

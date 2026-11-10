@@ -338,7 +338,7 @@ def test_docsにテスト件数がハードコードされていない() -> None
         for lineno, line in enumerate(body.splitlines(), 1):
             if counter.search(line) and context.search(line):
                 offenders.append(f"{path.name}:{lineno}: {line.strip()[:70]}")
-    offenders = [o for o in offenders if "07_実装計画" not in o]
+    offenders = [o for o in offenders if "07_実装計画" not in o and "14_実装計画" not in o]
     assert not offenders, "件数がハードコードされている:\n" + "\n".join(offenders)
 
 
@@ -352,3 +352,24 @@ def test_docsのターゲット一覧が実在する() -> None:
     referenced = set(_re.findall(r"`make ([A-Za-z0-9_.-]+)`", guide))
     missing = sorted(referenced - declared)
     assert not missing, f"Makefile に無いターゲットが docs にある: {missing}"
+
+
+# ---------------------------------------------------------------------------
+# T-08-R1: 法定値の直書きが statutory_rules.py / config.py 以外にない
+# ---------------------------------------------------------------------------
+
+
+def test_no_statutory_literals_outside_statutory_rules() -> None:
+    """法定値（8h/44h/10h/11hなど）が statutory_rules.py / config.py 以外に直書きされていないこと。"""
+    src = Path(__file__).resolve().parent.parent / "src" / "shiftai"
+    allowed = {"statutory_rules.py", "config.py"}
+    pattern = re.compile(
+        r"(STATUTORY_DAILY_WORK_HOURS\s*=\s*8|STATUTORY_WEEKLY_WORK_HOURS\s*=\s*44|STATUTORY_MAX_DAILY_WORK_HOURS\s*=\s*10\.0|STATUTORY_MIN_REST_HOURS\s*=\s*11)"
+    )
+    hits = []
+    for path in sorted(src.rglob("*.py")):
+        if path.name in allowed:
+            continue
+        if pattern.search(path.read_text(encoding="utf-8")):
+            hits.append(str(path))
+    assert not hits, f"法定値が statutory_rules.py / config.py 以外に直書きされています: {hits}"

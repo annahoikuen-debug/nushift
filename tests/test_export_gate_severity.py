@@ -270,7 +270,7 @@ def test_配置対象外職種には理由が参考として出る() -> None:
     notes = [v for v in violations if v.code == "NOT_PLACED_ROLE"]
     assert len(notes) == 1
     assert notes[0].severity is ViolationSeverity.INFO
-    assert notes[0].staff_id == "S27"
+    assert notes[0].staff_id is None
 
 
 def test_保育士には契約時間の警告が従来通り出る() -> None:

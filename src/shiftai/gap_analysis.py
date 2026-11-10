@@ -16,12 +16,6 @@ from statistics import fmean, pvariance
 import pandas as pd
 
 from shiftai import config
-from shiftai.config import (
-    STATUTORY_BREAK_MINUTES,
-    STATUTORY_BREAK_THRESHOLDS,
-    STATUTORY_MIN_REST_HOURS,
-    STATUTORY_WEEKLY_WORK_HOURS,
-)
 from shiftai.domain import (
     CellState,
     Contract,
@@ -41,6 +35,14 @@ from shiftai.domain import (
     weekly_periods,
 )
 from shiftai.solver import staff_work_hours
+from shiftai.statutory_rules import (
+    BAND_TOLERANCE_HOURS,
+    STATUTORY_BREAK_MINUTES,
+    STATUTORY_BREAK_THRESHOLDS,  # noqa: F401  (re-exported for test monkeypatch target)
+    STATUTORY_MIN_REST_HOURS,
+    STATUTORY_WEEKLY_WORK_HOURS,
+    required_break_minutes,
+)
 
 _BREAK_CONCURRENT_SHARE = config.BREAK_CONCURRENT_SHARE
 _STATUS_CODE: dict[SolveStatus, float] = {
@@ -360,13 +362,7 @@ def gap_matrix(requirements: RequirementTable, result: SolveResult) -> pd.DataFr
 
 def _required_break_minutes(work_minutes: int) -> int:
     """労働基準法上の休憩時間（第34条：6時間超45分、8時間超60分）。"""
-    required = 0
-    for threshold, minutes in STATUTORY_BREAK_THRESHOLDS:
-        if work_minutes > threshold:
-            # STATUTORY_BREAK_THRESHOLDS は閾値の降順で並ぶため、上書きすると
-            # 常に下限側の 45 分が勝つ。厳格な方（60 分）を採る。
-            required = max(required, minutes)
-    return required
+    return required_break_minutes(work_minutes)
 
 
 def _day_cells(
@@ -468,6 +464,7 @@ def check_violations(
         if st_val is CellState.WORK:
             worked_days.setdefault(sid, set()).add(d)
 
+    not_placeable_staff: list[tuple[str, tuple[str, ...]]] = []
     for s in staff:
         sid = s.staff_id
         if not s.is_placeable:
@@ -476,18 +473,7 @@ def check_violations(
             # シフトには 1 セルも立たない。そこに契約時間の未達を警告すると
             # 「調理員にシフト組めろ」という現実でない指摘になり、
             # 本来の警告を埋もれさせる。参考（INFO）で理由を明示する。
-            out.append(
-                Violation(
-                    severity=ViolationSeverity.INFO,
-                    code="NOT_PLACED_ROLE",
-                    message=(
-                        f"{s.name} は保育基準の配置対象ではない職種（"
-                        f"{'・'.join(r.value for r in s.roles)}）のため、"
-                        "シフト・休憩・労働時間の判定対象外です"
-                    ),
-                    staff_id=sid,
-                )
-            )
+            not_placeable_staff.append((sid, tuple(r.value for r in s.roles)))
             continue
         p = prefs.get(sid)
         c: Contract = s.contract
@@ -549,7 +535,7 @@ def check_violations(
                 else:
                     out.append(
                         Violation(
-                            severity=ViolationSeverity.WARNING,
+                            severity=ViolationSeverity.INFO,
                             code="OVERTIME_REQUIRES_36AGREEMENT",
                             message=(
                                 f"{sid} は {day.isoformat()} に {work_minutes / 60.0:.2f} 時間勤務しています（法定労働時間は8時間）。"
@@ -684,7 +670,7 @@ def check_violations(
             if band["days"] >= _MONTHLY_WARNING_MIN_DAYS
             else ViolationSeverity.INFO
         )
-        if band["max"] is not None and total_hours > band["max"] + config.FLOAT_TOLERANCE:
+        if band["max"] is not None and total_hours > band["max"] + BAND_TOLERANCE_HOURS:
             out.append(
                 Violation(
                     severity=severity,
@@ -704,7 +690,7 @@ def check_violations(
                     },
                 )
             )
-        if band["min"] is not None and total_hours < band["min"] - config.FLOAT_TOLERANCE:
+        if band["min"] is not None and total_hours < band["min"] - BAND_TOLERANCE_HOURS:
             out.append(
                 Violation(
                     severity=severity,
@@ -758,22 +744,7 @@ def check_violations(
                         )
                     )
             else:
-                for window in weekly_periods(days):
-                    w_hours = sum(daily_hours.get(d, 0.0) for d in window)
-                    if w_hours > STATUTORY_WEEKLY_WORK_HOURS + config.FLOAT_TOLERANCE:
-                        out.append(
-                            Violation(
-                                severity=ViolationSeverity.INFO,
-                                code="VARIABLE_HOURS_ADAPTED",
-                                message=(
-                                    f"{sid} は {window[0].isoformat()}〜{window[-1].isoformat()} の週に "
-                                    f"{w_hours:.2f} 時間勤務していますが、変形労働時間制の総枠内のため適法です。"
-                                ),
-                                day=window[0],
-                                staff_id=sid,
-                                detail={"week_hours": round(w_hours, 2)},
-                            )
-                        )
+                pass
         else:
             for window in weekly_periods(days):
                 window_hours = sum(daily_hours.get(d, 0.0) for d in window)
@@ -1016,7 +987,25 @@ def check_violations(
             v.code,
         )
     )
-    return out
+    if not_placeable_staff:
+        roles_seen: set[str] = set()
+        for _sid, _roles in not_placeable_staff:
+            roles_seen.update(_roles)
+        role_label = '・'.join(sorted(roles_seen))
+        out.append(
+            Violation(
+                severity=ViolationSeverity.INFO,
+                code="NOT_PLACED_ROLE",
+                message=(
+                    f"{len(not_placeable_staff)} 名の配置対象外職種（"
+                    f"{role_label}）のため、"
+                    "シフト・休憩・労働時間の判定対象外です"
+                ),
+                staff_id=None,
+            )
+        )
+
+    return aggregate_violations(out)
 
 
 _DAILY_LEGAL_CAP_HOURS = config.STATUTORY_MAX_DAILY_WORK_HOURS
@@ -1037,14 +1026,13 @@ VIOLATION_CODE_LABELS: dict[str, str] = {
     "WORK_ON_CLOSED_DAY": "休園日に勤務しています。",
     "DAILY_HOURS_EXCEEDED": "1日の勤務時間が契約上限を超えています。",
     "OVERTIME_NOT_ALLOWED": "時間外労働の契約がないため8時間を超えて勤務しています（法令違反）。",
-    "OVERTIME_REQUIRES_36AGREEMENT": "時間外労働として扱われるため、36協定の締結と割増賃金の支払いが必要です（要調整）。",
+    "OVERTIME_REQUIRES_36AGREEMENT": "時間外労働として扱われるため、36協定の締結と割増賃金の確認が必要です（法令違反ではありません・参考）。",
     "OUTSIDE_CONTRACT_HOURS": "契約の勤務時間帯外で勤務しています。",
     "MONTHLY_HOURS_EXCEEDED": "対象期間の勤務時間が契約基準の上限を超えています。",
     "MONTHLY_HOURS_SHORT": "対象期間の勤務時間が契約基準の下限に届いていません。",
     "WEEKLY_HOURS_EXCEEDED": "週の勤務が44時間を超えている週があります。",
     "VARIABLE_HOURS_EXCEEDED_NO_36": "変形労働時間制の期間総労働時間が法定総枠を超過していますが、36協定が未締結のため違法となります（法令違反）。",
     "VARIABLE_HOURS_EXCEEDED": "変形労働時間制の期間総労働時間が法定総枠を超過しています。36協定に基づく割増賃金が必要です（要調整）。",
-    "VARIABLE_HOURS_ADAPTED": "変形労働時間制が適用されているため、特定週の40時間超過は適法として許容されています（参考）。",
     "WEEKLY_DAYS_EXCEEDED": "週の勤務日数が契約の週最大出勤日数を超えている週があります。",
     "CONSECUTIVE_DAYS": "連続勤務日数が契約上限を超えています。",
     "REST_HOURS_SHORT": "勤務間の休息時間が11時間を下回っています。",
@@ -1064,6 +1052,51 @@ VIOLATION_CODE_LABELS: dict[str, str] = {
 }
 
 
+def aggregate_violations(violations: list[Violation]) -> list[Violation]:
+    """(code, staff_id, day) が同じ違反を 1 件に集約して返す。
+
+    時間帯ごとに 1 行ずつ出ていた違反を「1 人・1 日・1 コード = 1 行」にまとめる。
+    集約時は detail["slots"] に対象時間帯ラベル、detail["count"] に件数を入れる。
+    深刻度・日付ソート順（既存の sort キー）は維持する。
+    """
+    order: list[tuple[str, str | None, object]] = []
+    groups: dict[tuple[str, str | None, object], list[Violation]] = {}
+    for v in violations:
+        key = (v.code, v.staff_id, v.day)
+        if key not in groups:
+            order.append(key)
+            groups[key] = []
+        groups[key].append(v)
+    out: list[Violation] = []
+    for key in order:
+        items = groups[key]
+        if len(items) == 1:
+            out.append(items[0])
+            continue
+        first = items[0]
+        slots = [(getattr(i.slot, "label", None)) for i in items]
+        slots = [s for s in slots if s]
+        merged_detail = dict(first.detail or {})
+        merged_detail["count"] = len(items)
+        if slots:
+            merged_detail["slots"] = slots
+        merged_message = (
+            first.message + f"（他 {len(items) - 1} 箇所）" if slots else first.message
+        )
+        out.append(
+            Violation(
+                severity=first.severity,
+                code=first.code,
+                message=merged_message,
+                day=first.day,
+                slot=None,
+                staff_id=first.staff_id,
+                detail=merged_detail,
+            )
+        )
+    return out
+
+
 def _minutes(t) -> int:
     return t.hour * 60 + t.minute
 
@@ -1079,19 +1112,20 @@ def _contract_hours_band(contract: Contract, period_days: int) -> dict:
     2. 期待値の上下15%を緩衝幅とし、月契約（1か月=4.345週換算）から求めた
        幅と合わせ、緩衝幅のほうを採用する（緩衝幅があれば十分広い）
     3. ``min_monthly_hours`` が 0 の職員は下限判定しない
+    4. 期間が 7 日未満のときは月間下限（min）は判定しない（期間短すぎて月換算に意味がないため）
     """
     days = max(1, int(period_days))
     expected = contract.weekly_hours * days / 7.0
-    lo = expected * 0.85
+    lo = None if days < 7 else expected * 0.85
     hi = expected * 1.15
-    if contract.min_monthly_hours > 0:
+    if lo is not None and contract.min_monthly_hours > 0:
         lo = min(lo, contract.min_monthly_hours / 4.345 * days / 7.0)
     if contract.max_monthly_hours > 0:
         hi = max(hi, contract.max_monthly_hours / 4.345 * days / 7.0)
     return {
         "days": days,
         "expected": round(expected, 2),
-        "min": round(lo, 2),
+        "min": round(lo, 2) if lo is not None else None,
         "max": round(hi, 2),
     }
 
