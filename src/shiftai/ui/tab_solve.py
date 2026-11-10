@@ -36,6 +36,17 @@ def build_requirements() -> Any:
     return tab_requirements.build_requirements()
 
 
+def shortfall_gate(
+    table: Any,
+    staff: Any,
+    preferences: Any,
+    settings: Any,
+    standard: Any,
+) -> list:
+    """需要>供給の (日,時間帯) を不足量順に返す（求解ゲート用）。"""
+    return list(solver.shortfall_rows(staff, table, preferences, settings, standard))
+
+
 def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveResult | None:
     """最適化を実行して結果を session_state に保存する。
 
@@ -62,6 +73,22 @@ def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveRes
     if not staff:
         raise ValueError("職員データが未投入です。")
 
+    table = build_requirements()
+    gaps = shortfall_gate(table, staff, preferences, settings, standard)
+    ack_key = "shortfall_ack"
+    if gaps and not state.get(ack_key):
+        st.warning(
+            f"⚠️ 需要が供給を上回る時間帯が {len(gaps)} 件あります。"
+            "このまま求解すると不足は BLOCKER として報告されます。"
+        )
+        for g in gaps[:5]:
+            st.caption(f"- {g.describe()}")
+        agreed = st.checkbox("不足を理解したうえで求解を続行する", key="shortfall_ack_box")
+        if not agreed:
+            st.info("チェックを入れると求解を実行できます。")
+            return None
+        state.set(ack_key, True)
+
     limit = int(state.get(state.KEY_TIME_LIMIT_SEC))
     # 求解に失敗しても**前回の結果がそのまま出力可能なまま残らない**ようにする。
     # 失敗時に古い結果を残すと、エラーの出ている新しい計算と、
@@ -72,7 +99,6 @@ def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveRes
     progress = st.progress(0.0, text=PROGRESS_STEPS[0][1])
     try:
         progress.progress(PROGRESS_STEPS[0][0], text=PROGRESS_STEPS[0][1])
-        table = build_requirements()
         state.set(state.KEY_REQUIREMENTS, table)
         progress.progress(PROGRESS_STEPS[1][0], text=PROGRESS_STEPS[1][1])
         progress.progress(PROGRESS_STEPS[2][0], text=PROGRESS_STEPS[2][1])

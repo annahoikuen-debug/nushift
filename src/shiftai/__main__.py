@@ -79,7 +79,7 @@ from shiftai.exporter import (
 from shiftai.gap_analysis import analyze_gap, check_violations
 from shiftai.relaxation import MAX_RELAX_LEVEL, RELAX_LEVELS, normalize_level
 from shiftai.shift_patterns import default_patterns, normalize_patterns, parse_pattern_spec
-from shiftai.solver import snap_to_patterns, solve_shift
+from shiftai.solver import shortfall_rows, snap_to_patterns, solve_shift
 from shiftai.standards import build_requirements, peak_requirement, total_required_hours
 
 APP_FILE_NAME = "streamlit_app.py"
@@ -540,6 +540,12 @@ def cmd_solve(args: argparse.Namespace) -> int:
         _echo("勤務パターン: " + " / ".join(f"{p.label} {p.span()}" for p in patterns))
     if relaxation:
         _echo(f"緩和モード: L{relaxation} {RELAX_LEVELS[relaxation].label}")
+
+    gaps = shortfall_rows(loaded.staff, table, loaded.preferences, settings, standard)
+    if gaps:
+        _echo(f"⚠ 需要>供給の時間帯が {len(gaps)} 件あります。結果には不足（BLOCKER）が含まれます。")
+        for g in gaps[:5]:
+            _echo(f"  - {g.describe()}")
 
     result = solve_shift(
         loaded.children,
