@@ -115,7 +115,6 @@ _DEFAULT_BREAK_MINUTES = config.DEFAULT_BREAK_MINUTES
 #: 時間帯数 n に対して候補は O(n²) なので、n を大きくするとこの上限に
 #: 先に当たり、:func:`_add_interval_block` は ``False`` を返して
 #: ソフトペナルティにフォールバックする。
-_MAX_INTERVAL_CANDIDATES = 150
 _DEFAULT_STAGGER_SLOTS = 1
 _EPS = config.FLOAT_TOLERANCE
 _INFEASIBLE_FALLBACK_MESSAGE = "PuLP では解なし。貪欲法による暫定シフトを生成しました"
@@ -501,6 +500,7 @@ def _interval_candidates(
     seq: Mapping[int, object],
     n: int,
     host: Mapping[int, object] | None = None,
+    fixed_length: int | None = None,
 ) -> tuple[list[tuple[int, int]], list[int]]:
     """在勤が取り得る連続区間の候補と、固定1セルの添字列を返す。
 
@@ -535,15 +535,31 @@ def _interval_candidates(
         if fixed_ones and not all(lo <= i <= hi for i in fixed_ones):
             # 固定セルが別のランにある。連続1区間に収まらないので候補なし。
             continue
-        for start_i in range(lo, (fix_first if fixed_ones else hi) + 1):
-            for end_i in range((fix_last if fixed_ones else start_i), hi + 1):
+        if fixed_length is not None:
+            flen = fixed_length
+            if flen <= 0 or (hi - lo + 1) < flen:
+                continue
+            max_start = hi - flen + 1
+            for start_i in range(lo, max_start + 1):
+                end_i = start_i + flen - 1
+                if fixed_ones and not (start_i <= fix_first and end_i >= fix_last):
+                    continue
                 if host is not None:
-                    # 前後に在勤できるセルがなければ休息区間として成立しない。
                     if not any(i < start_i for i in host_idx):
                         continue
                     if not any(i > end_i for i in host_idx):
                         continue
                 candidates.append((start_i, end_i))
+        else:
+            for start_i in range(lo, (fix_first if fixed_ones else hi) + 1):
+                for end_i in range((fix_last if fixed_ones else start_i), hi + 1):
+                    if host is not None:
+                        # 前後に在勤できるセルがなければ休息区間として成立しない。
+                        if not any(i < start_i for i in host_idx):
+                            continue
+                        if not any(i > end_i for i in host_idx):
+                            continue
+                    candidates.append((start_i, end_i))
     return candidates, fixed_ones
 
 
@@ -553,6 +569,7 @@ def _add_interval_block(
     tag: str,
     n: int,
     host: Mapping[int, object] | None = None,
+    fixed_length: int | None = None,
 ) -> bool:
     """「在勤は高々1つの連続区間」を**区間列挙**でハード制約化する。
 
@@ -565,12 +582,12 @@ def _add_interval_block(
 
     :returns: 制約を張れたら ``True``、候補が膨大すぎて諦めたら ``False``。
     """
-    candidates, fixed_ones = _interval_candidates(seq, n, host)
+    candidates, fixed_ones = _interval_candidates(seq, n, host, fixed_length)
     if not candidates:
         if fixed_ones:
             ctx.conflicts.append(f"{tag}: 固定セルを含む在勤区間がありません")
         return True
-    if len(candidates) > _MAX_INTERVAL_CANDIDATES:
+    if len(candidates) > config.MAX_INTERVAL_CANDIDATES:
         return False
     z_vars: list[tuple[tuple[int, int], object]] = []
     for start_i, end_i in candidates:
@@ -654,6 +671,7 @@ def _add_duty_block(
     commute_reach: int = 0,
     obj: list[object] | None = None,
     weights: ObjectiveWeights | None = None,
+    break_slots: int | None = None,
 ) -> None:
     """1職員1日の勤務を運用可能な形に制約する（案1の中核）。
 
@@ -702,7 +720,7 @@ def _add_duty_block(
     # 「休息区間の前後に在勤可能なセルがある」こと（D3）を課す。
     if allow_split:
         _add_block(ctx, brk, f"brk_{tag}", n, soft_obj, soft_weights)
-    elif not _add_interval_block(ctx, brk, f"brk_{tag}", n, host=duty):
+    elif not _add_interval_block(ctx, brk, f"brk_{tag}", n, host=duty, fixed_length=break_slots):
         _add_block(ctx, brk, f"brk_{tag}", n, obj, weights)
     # D3: 休息の前後に在勤があること（**ソフト**）。
     # ハードにすると 2〜3 時間帯しか働かない短勤務には「休息を入れても
@@ -741,6 +759,7 @@ def _build_cells(
     ignore_unavailable: bool = False,
     drop_groups: frozenset[str] = frozenset(),
     allow_split: bool = False,
+    break_minutes: int = _DEFAULT_BREAK_MINUTES,
 ) -> None:
     """セル変数の生成と、セル単位のハード制約（排他・在勤/休憩ブロック・1日上限）。
 
@@ -841,6 +860,8 @@ def _build_cells(
             if "duty_block" not in drop_groups:
                 # 案1: 1職員1日の在勤は1連続ブロック・休息は1回だけにする。
                 # allow_split=True（緩和 L3 ``RELAX_HOURS``）ならソフトに戻る。
+                _gran = max(1, int(requirements.granularity_min or slots[0].minutes))
+                _brk_slots = _break_slots(cap_min, break_minutes, _gran)
                 _add_duty_block(
                     ctx,
                     duty,
@@ -852,6 +873,7 @@ def _build_cells(
                     commute_reach=_commute_reach_slots(n),
                     obj=obj,
                     weights=weights,
+                    break_slots=_brk_slots,
                 )
 
             if "daily_cap" not in drop_groups:
@@ -1033,6 +1055,11 @@ def _add_workload(
             obj.append(weights.break_conflict_penalty * excess)
 
 
+def _break_slots(cap_min: int, break_minutes: int, gran: int) -> int:
+    """必要休憩スロット数を算出する（0 以上、日上限スロット数以下）。"""
+    return min(max(1, -(-break_minutes // gran)), max(0, cap_min // gran))
+
+
 def _add_breaks(
     ctx: _ModelCtx,
     staff: Sequence[StaffMember],
@@ -1047,7 +1074,7 @@ def _add_breaks(
     for st in staff:
         sid = st.staff_id
         cap_min = _daily_cap_minutes(st.contract)
-        need_slots = min(max(1, -(-break_minutes // gran)), max(0, cap_min // gran))
+        need_slots = _break_slots(cap_min, break_minutes, gran)
         if need_slots <= 0:
             continue
         for day in requirements.all_days():
@@ -1798,6 +1825,7 @@ def _build_problem(
         ignore_unavailable=ignore_unavailable,
         drop_groups=drop_groups,
         allow_split=level >= int(RelaxLevel.RELAX_HOURS),
+        break_minutes=break_minutes,
     )
     if "coverage" not in drop_groups:
         if soft_coverage or level >= int(RelaxLevel.SOFT_COVERAGE):

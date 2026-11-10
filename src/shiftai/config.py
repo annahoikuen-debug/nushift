@@ -34,7 +34,16 @@ DEFAULT_RANGE_DAYS = 7
 # 休憩の既定（statutory_rules から再エクスポート）
 DEFAULT_BREAK_STAGGER_MINUTES = 30
 
-# 法定定数は statutory_rules.py で単一管理し、ここで再エクスポートする（import 参照）。
+# ---------------------------------------------------------------------------
+# 区間列挙・区間制約
+# ---------------------------------------------------------------------------
+
+MAX_INTERVAL_CANDIDATES = 100
+"""在勤/休憩区間列挙の候補上限（この値を超えた場合はソフトペナルティへフォールバック）。
+
+CBC の既知挙動: 300 で 7日28人は1パス目解なし、150 なら概ね動く。
+"""
+
 STATUTORY_DAILY_LIMIT_HOURS = STATUTORY_DAILY_WORK_HOURS + 0.75
 
 STATUTORY_OVERTIME_LIMIT_HOURS = 45

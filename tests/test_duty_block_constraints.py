@@ -240,12 +240,12 @@ def test_候補数が上限を超える場合はFalseを返す() -> None:
     ctx = solver_mod._ModelCtx(prob=pulp.LpProblem("t", pulp.LpMinimize))
     seq = {i: pulp.LpVariable(f"w{i}", 0, 1) for i in range(30)}
 
-    original = solver_mod._MAX_INTERVAL_CANDIDATES
-    solver_mod._MAX_INTERVAL_CANDIDATES = 10
+    original = config.MAX_INTERVAL_CANDIDATES
+    config.MAX_INTERVAL_CANDIDATES = 10
     try:
         assert solver_mod._add_interval_block(ctx, seq, "duty_T", len(slots)) is False
     finally:
-        solver_mod._MAX_INTERVAL_CANDIDATES = original
+        config.MAX_INTERVAL_CANDIDATES = original
 
 
 # ---------------------------------------------------------------------------
@@ -383,3 +383,16 @@ def test_目的関数の重み是对立しない順序にある() -> None:
     assert w.split_duty_penalty > w.break_edge_penalty       # 勤務分断(3000) > 休息端置き(2500)
     assert w.break_edge_penalty > w.shortfall_penalty        # 休息端置き(2500) > 配置不足(1000)
     assert w.shortfall_penalty > w.break_conflict_penalty    # 配置不足(1000) > 休憩競合(50)
+
+
+def test_fixed_length_interval_candidates() -> None:
+    """fixed_length を指定すると候補数が O(n) に制限されること。"""
+    # 決定変数（定数1ではなく未確定の変数）で25スロット
+    seq = {i: pulp.LpVariable(f"cell_{i}", 0, 1, pulp.LpBinary) for i in range(25)}
+    candidates_all, _ = solver_mod._interval_candidates(seq, 25, fixed_length=None)
+    assert len(candidates_all) > 100  # 25*26/2 = 325
+
+    candidates_fixed, _ = solver_mod._interval_candidates(seq, 25, fixed_length=2)
+    assert len(candidates_fixed) <= 25
+    assert len(candidates_fixed) == 24
+    assert all(end - start + 1 == 2 for start, end in candidates_fixed)
