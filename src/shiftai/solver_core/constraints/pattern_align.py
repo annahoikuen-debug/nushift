@@ -75,7 +75,12 @@ def _add_pattern_alignment(
             tag = day.strftime("%m%d")
             matched: list[object] = []
             for k, indices in enumerate(ranges):
-                var = pulp.LpVariable(f"pat_{sid}_{tag}_{k}", lowBound=0, upBound=1)
+                var = pulp.LpVariable(
+                    f"pat_{sid}_{tag}_{k}",
+                    0,
+                    1,
+                    pulp.LpBinary if pattern_mode else pulp.LpContinuous,
+                )
                 terms: list[object] = []
                 for i in indices:
                     cell = duty.get(i, 0)

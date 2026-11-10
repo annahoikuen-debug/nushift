@@ -1,13 +1,19 @@
 <!DOCTYPE html>
 <html lang="ja" data-theme="dark">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>nusoft (NuShift) — 保育のすべてをつなぎ、先生の時間をこどもたちへ | 次世代保育ICT</title>
-  <meta name="description" content="厚労省配置基準連動型 数理最適化シフト自動作成エンジン「NuShift」と、園児台帳・登降園・連絡帳・全銀Zengin請求・MFAセキュリティを完全統合したオープンソース保育ICTプラットフォーム。">
+  <meta name="description"
+    content="厚労省配置基準連動型 数理最適化シフト自動作成エンジン「NuShift」と、園児台帳・登降園・連絡帳・全銀Zengin請求・MFAセキュリティを完全統合したオープンソース保育ICTプラットフォーム。">
   <meta name="keywords" content="保育ICT, シフト自動作成, 配置基準, NuShift, nusoft, open-hoikuict, 保育園システム, 全銀フォーマット">
+  <meta name="theme-color" content="#4338ca">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png" type="image/png">
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
 
   <!-- Ambient Glow Background Orbs -->
@@ -99,7 +105,8 @@
                   <div>・週契約違反 / 労基法第32条違反: <strong style="color: var(--accent-emerald);">0件 (パス)</strong></div>
                 </div>
 
-                <div style="margin-top: 10px; padding: 12px; background: rgba(99, 102, 241, 0.08); border-radius: 8px; border: 1px solid var(--border-glass-hover);">
+                <div
+                  style="margin-top: 10px; padding: 12px; background: rgba(99, 102, 241, 0.08); border-radius: 8px; border: 1px solid var(--border-glass-hover);">
                   <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
                     <span>📌 ピン留めセル保護:</span>
                     <strong style="color: var(--accent-primary);">12コマ固定中</strong>
@@ -141,9 +148,13 @@
                 </div>
 
                 <div style="display: flex; gap: 8px; margin-top: 6px;">
-                  <span style="font-size: 0.72rem; padding: 4px 8px; background: rgba(16,185,129,0.1); border-radius: 4px; color: var(--accent-emerald);">Excel出力可</span>
-                  <span style="font-size: 0.72rem; padding: 4px 8px; background: rgba(99,102,241,0.1); border-radius: 4px; color: var(--accent-primary);">全銀口座振替連携</span>
-                  <span style="font-size: 0.72rem; padding: 4px 8px; background: rgba(6,182,212,0.1); border-radius: 4px; color: var(--accent-cyan);">Web Push通知</span>
+                  <span
+                    style="font-size: 0.72rem; padding: 4px 8px; background: rgba(16,185,129,0.1); border-radius: 4px; color: var(--accent-emerald);">Excel出力可</span>
+                  <span
+                    style="font-size: 0.72rem; padding: 4px 8px; background: rgba(99,102,241,0.1); border-radius: 4px; color: var(--accent-primary);">全銀口座振替連携</span>
+                  <span
+                    style="font-size: 0.72rem; padding: 4px 8px; background: rgba(6,182,212,0.1); border-radius: 4px; color: var(--accent-cyan);">Web
+                    Push通知</span>
                 </div>
               </div>
             </div>
@@ -242,7 +253,8 @@
                 </div>
                 <div style="text-align: right;">
                   <div class="sim-big-label">在籍園児合計</div>
-                  <div style="font-size: 2.2rem; font-weight: 800; color: var(--text-primary);" id="simTotalChildren">80</div>
+                  <div style="font-size: 2.2rem; font-weight: 800; color: var(--text-primary);" id="simTotalChildren">80
+                  </div>
                 </div>
               </div>
 
@@ -319,12 +331,14 @@
             </ul>
           </div>
           <div class="tab-visual">
-            <div style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass);">
+            <div
+              style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass);">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                 <span style="font-weight: 700;">🧩 NuShift 最適化アルゴリズム</span>
                 <span class="status-pill success">MILP / CBC</span>
               </div>
-              <div style="font-family: monospace; font-size: 0.85rem; color: var(--accent-cyan); background: rgba(0,0,0,0.3); padding: 14px; border-radius: 8px; line-height: 1.6;">
+              <div
+                style="font-family: monospace; font-size: 0.85rem; color: var(--accent-cyan); background: rgba(0,0,0,0.3); padding: 14px; border-radius: 8px; line-height: 1.6;">
                 minimize: TotalLaborCost + Penalty<br>
                 subject to:<br>
                 &nbsp;&nbsp;Coverage[t] &gt;= RequiredStaff[t]<br>
@@ -362,7 +376,8 @@
             </ul>
           </div>
           <div class="tab-visual">
-            <div style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass); text-align: center;">
+            <div
+              style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass); text-align: center;">
               <div style="font-size: 3rem; margin-bottom: 10px;">📱</div>
               <h4 style="font-size: 1.2rem; margin-bottom: 8px;">保護者ポータル & Web Push</h4>
               <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 16px;">
@@ -396,9 +411,11 @@
             </ul>
           </div>
           <div class="tab-visual">
-            <div style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass);">
+            <div
+              style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass);">
               <h4 style="font-size: 1.1rem; margin-bottom: 12px;">📊 身体測定 & 発育曲線自動プロット</h4>
-              <div style="height: 120px; background: rgba(255,255,255,0.03); border-radius: 8px; display: flex; align-items: flex-end; justify-content: space-around; padding: 10px;">
+              <div
+                style="height: 120px; background: rgba(255,255,255,0.03); border-radius: 8px; display: flex; align-items: flex-end; justify-content: space-around; padding: 10px;">
                 <div style="width: 20px; height: 35%; background: var(--accent-primary); border-radius: 4px;"></div>
                 <div style="width: 20px; height: 50%; background: var(--accent-primary); border-radius: 4px;"></div>
                 <div style="width: 20px; height: 65%; background: var(--accent-primary); border-radius: 4px;"></div>
@@ -435,9 +452,11 @@
             </ul>
           </div>
           <div class="tab-visual">
-            <div style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass);">
+            <div
+              style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass);">
               <h4 style="font-size: 1.1rem; margin-bottom: 12px;">🏦 全銀協フォーマット データ連携</h4>
-              <div style="font-family: monospace; font-size: 0.8rem; background: rgba(0,0,0,0.4); padding: 12px; border-radius: 6px; color: var(--accent-emerald); line-height: 1.5; overflow-x: auto;">
+              <div
+                style="font-family: monospace; font-size: 0.8rem; background: rgba(0,0,0,0.4); padding: 12px; border-radius: 6px; color: var(--accent-emerald); line-height: 1.5; overflow-x: auto;">
                 1910000000000あさひ保育園1010<br>
                 20001001みずほ銀行001本店1234567ヤマダタロウ000150000<br>
                 80000010000150000000000000000<br>
@@ -473,13 +492,18 @@
             </ul>
           </div>
           <div class="tab-visual">
-            <div style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass); text-align: left;">
+            <div
+              style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass); text-align: left;">
               <h4 style="font-size: 1.1rem; margin-bottom: 12px;">🛡️ ゼロトラスト・アーキテクチャ</h4>
               <div style="display: flex; flex-direction: column; gap: 8px; font-size: 0.85rem;">
-                <div style="padding: 8px 12px; background: rgba(99,102,241,0.1); border-radius: 6px;">・Argon2id ハッシュ化パスワード</div>
-                <div style="padding: 8px 12px; background: rgba(16,185,129,0.1); border-radius: 6px;">・6桁メールワンタイムパスワード (MFA)</div>
-                <div style="padding: 8px 12px; background: rgba(6,182,212,0.1); border-radius: 6px;">・IP偽装対策付きレートリミッター</div>
-                <div style="padding: 8px 12px; background: rgba(245,158,11,0.1); border-radius: 6px;">・CSP / HSTS / CSRF 完全保護</div>
+                <div style="padding: 8px 12px; background: rgba(99,102,241,0.1); border-radius: 6px;">・Argon2id
+                  ハッシュ化パスワード</div>
+                <div style="padding: 8px 12px; background: rgba(16,185,129,0.1); border-radius: 6px;">・6桁メールワンタイムパスワード
+                  (MFA)</div>
+                <div style="padding: 8px 12px; background: rgba(6,182,212,0.1); border-radius: 6px;">・IP偽装対策付きレートリミッター
+                </div>
+                <div style="padding: 8px 12px; background: rgba(245,158,11,0.1); border-radius: 6px;">・CSP / HSTS / CSRF
+                  完全保護</div>
               </div>
             </div>
           </div>
@@ -567,7 +591,8 @@
                 <li><span class="bullet-icon">✓</span><span>TrueNAS / Ubuntu / Windows 対応</span></li>
               </ul>
             </div>
-            <a href="https://github.com/hoikuict/open-hoikuict" class="btn btn-secondary" style="margin-top: 32px;" target="_blank">
+            <a href="https://github.com/hoikuict/open-hoikuict" class="btn btn-secondary" style="margin-top: 32px;"
+              target="_blank">
               GitHub でコードを見る
             </a>
           </div>
@@ -630,7 +655,8 @@
             <span class="faq-icon">+</span>
           </div>
           <div class="faq-answer" style="max-height: 200px;">
-            はい、完全に対応しています。厚生労働省の全国標準告示基準に加え、東京都基準、福岡市基準などのプリセットを用意しています。また、園独自の手厚い比率（例: 0歳児2:1、4歳児15:1など）も画面から自由にカスタマイズ可能です。
+            はい、完全に対応しています。厚生労働省の全国標準告示基準に加え、東京都基準、福岡市基準などのプリセットを用意しています。また、園独自の手厚い比率（例:
+            0歳児2:1、4歳児15:1など）も画面から自由にカスタマイズ可能です。
           </div>
         </div>
 
@@ -773,7 +799,8 @@
         </div>
 
         <div>
-          <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-bottom: 14px;">オープンソース</h4>
+          <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-bottom: 14px;">オープンソース
+          </h4>
           <ul class="footer-links">
             <li><a href="https://github.com/hoikuict/open-hoikuict" target="_blank">GitHub リポジトリ</a></li>
             <li><a href="../LICENSE">MIT ライセンス</a></li>
@@ -790,5 +817,13 @@
   </footer>
 
   <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js', { scope: './' })
+        .then(reg => console.log('NuShift SW registered:', reg.scope))
+        .catch(err => console.error('NuShift SW registration failed:', err));
+    }
+  </script>
 </body>
+
 </html>
