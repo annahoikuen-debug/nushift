@@ -1377,32 +1377,19 @@ def _add_hours_objective(
         unused = pulp.LpVariable(f"unused_{sid}", lowBound=0)
         ctx.prob += hvar + unused >= _UNUSED_HOURS_EPS
         obj.append(weights.unused_staff_penalty * unused)
-        # 「週 44 時間」は **週ごと** に判定する。
-        #
-        # 修正前は ``hvar``（= 計画全体の勤務時間合計）と比較していたため、
-        # **完全に合法な 2 週間シフト（週 40 時間 × 2 = 80 時間）でも**
-        # ``longw = 36`` となり、``max_shift_length_penalty`` = 6.0 で
-        # **216** の目的関数ペナルティが発生していた。
-        # 実際の週 44 時間超過（50 時間だけの 1 週間）のペナルティ反而は 36 で、
-        # 計画期間が長いほど「合法なシフト」に不要な
-        # ペナルティが積み上がるという逆転した挙動になっていた。
-        #
-        # ``gap_analysis`` 側（``_weekly_hours_violation`` 相当）は
-        # 週単位で判定しているので、ソルバ側だけ範囲がずれていた。
-        # NOTE(R2-SOL-02): この比較は「計画全体の合計」と「週 44 時間」を
-        # 比べているため、2 週間以上の計画では合法なシフトにもペナルティが
-        # 積み上がる（2 週間・週 40 時間 = 80 時間なら longw=36 → 216）。
-        #
-        # 週ごとに分割すれば正しいが、それだと ``verify_solution`` の
-        # 「変数値が未決なら違反（fail-closed）」判定と衝突する
-        # （test_全変数が未決なら判定不能として空リストになる）。
-        # 根治には未決変数を制約側から除外する仕組み
-        # （``capture_specs`` の設計変更）が必要なため、意図的に据え置く。
-        # 影響は目的関数の重み付けのみで、出力される制約違反ではない
-        # （``gap_analysis`` は週単位で正しく検出する）。
-        long_week = pulp.LpVariable(f"longw_{sid}", lowBound=0)
-        ctx.prob += hvar - STATUTORY_WEEKLY_WORK_HOURS <= long_week
-        obj.append(weights.max_shift_length_penalty * long_week)
+        # 週44時間目安は週ごとの窓で判定する（R2-SOL-02 修正済み）。
+        for wi, window in enumerate(weekly_windows(days, config.WEEKLY_WINDOW_DAYS)):
+            week_items = [
+                (ctx.day_work[(sid, d)], 1)
+                for d in window
+                if isinstance(ctx.day_work.get((sid, d)), pulp.LpAffineExpression)
+            ]
+            if not week_items:
+                continue
+            week_hours = _linear(week_items) * (1.0 / 60.0)  # day_work は「分」単位
+            slack = pulp.LpVariable(f"longw_{sid}_{wi}", lowBound=0)
+            ctx.prob += week_hours - STATUTORY_WEEKLY_WORK_HOURS <= slack
+            obj.append(weights.max_shift_length_penalty * slack)
     for sid, day in ctx.day_work:
         expr = ctx.day_work[(sid, day)]
         if isinstance(expr, int | float):
