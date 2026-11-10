@@ -68,6 +68,16 @@ Streamlit アプリの認証状態遷移、アクセス制御、入力サニタ�
 | `tests/test_regression_export.py` | エクスポート | Excel, CSV, PDF, iCal 出力 |
 | `tests/test_regression_ui.py` | UI | Streamlit コンポーネント、タブ遷移 |
 
+### 3.3 違反根本改善テスト（Plan 14）
+
+- `tests/test_violation_baseline.py` — 違反件数ベースラインスナップショット検証
+- `tests/test_violation_aggregation.py` — (コード, 職員, 日) 違反集約純関数
+- `tests/test_statutory_rules.py` — 法定閾値・休憩計算・1日上限計算純関数の境界値
+- `tests/test_contract_band.py` — 7日未満の月間下限スキップと 0.25h バンド許容差
+- `tests/test_static_guards.py` — 法定値直書き検出・ドキュメントハードコード防止
+- `tests/test_weekly_hours_objective.py` — 週44時間目安の週ごとの窓判定（R2-SOL-02 修正）
+- `tests/test_shortfall_gate.py` — 求解前ショートフォールゲート（需要>供給の事前検出）
+
 ---
 
 ## 4. CI/CD 統合
