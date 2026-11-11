@@ -26,7 +26,7 @@
     <div class="container nav-container">
       <a href="#hero" class="logo-wrap" id="brandLogo">
         <span>🧸 nusoft</span>
-        <span class="logo-badge">v0.4.1</span>
+        <span class="logo-badge">v0.5.0 (v0.6.0)</span>
       </a>
 
       <ul class="nav-links" id="navLinks">
@@ -307,26 +307,30 @@
         <!-- Tab Content 1: Shift -->
         <div class="tab-content active" id="tab-shift">
           <div class="tab-text">
-            <h3>数理最適化ソルバーで、複雑なシフトを瞬時に作成</h3>
+            <h3>違反激減・数理最適化ソルバーで、安心のシフトを瞬時に作成</h3>
             <p>
-              厚生労働省の配置基準や職員の契約時間、希望休、有給休暇を満たすシフト表を CBC ソルバーが自動計算。現場に合わせたセル微調整やピン留め固定、労基法違反の承認ブロックまで完璧にサポートします。
+              厚生労働省の配置基準や職員の契約時間、希望休、有給休暇を満たすシフト表を HiGHS / CBC ソルバーが自動計算。法定休憩を最優先する新ペナルティ序列、求解前ショートフォールゲート、当日突発欠勤リペア、新人とベテランのペアリング制約まで完璧にサポートします。
             </p>
             <ul class="feature-bullet-list">
               <li>
                 <span class="bullet-icon">✓</span>
-                <span>厚労省基準・東京都独自基準など多彩なプリセット</span>
+                <span><strong>法定休憩最優先 ＆ 違反激減:</strong> 配置を埋めるために休憩を削る本末転倒な挙動を撲滅</span>
               </li>
               <li>
                 <span class="bullet-icon">✓</span>
-                <span>セル手動修正後の「ピン留め保護」再計算機能</span>
+                <span><strong>求解前ショートフォールゲート:</strong> 需要過多で解けない場合に無駄な求解を止め処方箋を提示</span>
               </li>
               <li>
                 <span class="bullet-icon">✓</span>
-                <span>労働基準法第32条違反 (1日10h超) を防ぐ承認ゲート</span>
+                <span><strong>当日突発欠勤リペア:</strong> 朝の急な体調不良・忌引に対し既存シフトを崩さず最短修復</span>
               </li>
               <li>
                 <span class="bullet-icon">✓</span>
-                <span>急なお迎え時間変更に連動するリアルタイムギャップ検知</span>
+                <span><strong>職員ペアリング制約:</strong> 新人とベテランの同一時間帯配置を数理モデルで強制担保</span>
+              </li>
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span><strong>違反集約アコーディオン:</strong> 現場目線の平易な用語で重複警告を1行にスッキリ集約</span>
               </li>
             </ul>
           </div>
@@ -356,22 +360,26 @@
         <!-- Tab Content 2: Attendance -->
         <div class="tab-content" id="tab-attendance">
           <div class="tab-text">
-            <h3>タッチだけの玄関キオスク & スムーズな保護者連絡</h3>
+            <h3>スマホQRかざし打刻 & きょうだい一括入力で玄関渋滞ゼロへ</h3>
             <p>
-              玄関のタブレットやChromebookで直感的に打刻。保護者は専用アプリのインストール不要で、スマホのブラウザから出欠連絡、お迎え変更、連絡帳のやりとりが行えます。
+              スマホのQRコードをかざすだけで兄弟全員の登園・降園を1秒で同時打刻。複数園児の連絡帳も1画面でまとめて送信可能。タッチキオスク、誤打刻の即時取り消し（Undo）、国の標準PIMS連携まで現場の声を凝縮しました。
             </p>
             <ul class="feature-bullet-list">
               <li>
                 <span class="bullet-icon">✓</span>
-                <span>Chromebook / iPad 対応のタッチキオスク打刻</span>
+                <span><strong>スマホQRかざし打刻:</strong> 玄関カメラにかざすだけで兄弟全員を1秒で同時打刻</span>
               </li>
               <li>
                 <span class="bullet-icon">✓</span>
-                <span>アプリ不要！スマホブラウザから届くリアルタイム Web Push 通知</span>
+                <span><strong>きょうだい一括連絡入力:</strong> お迎え予定や朝食内容を1度入力するだけで全員に反映</span>
               </li>
               <li>
                 <span class="bullet-icon">✓</span>
-                <span>お迎え時間変更や代理お迎えのリアルタイム共有</span>
+                <span><strong>前回の内容をコピー:</strong> 直近の連絡内容をワンタップで複写し、朝の入力を大幅時短</span>
+              </li>
+              <li>
+                <span class="bullet-icon">✓</span>
+                <span><strong>誤打刻の即時Undo & ガード:</strong> 押し間違いを即座に取り消し、二重打刻も自動防止</span>
               </li>
             </ul>
           </div>
