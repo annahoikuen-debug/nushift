@@ -378,10 +378,16 @@ def solve_shift_greedy(
                 if not cands:
                     break
                 cands.sort(key=lambda sid: (worked_minutes[sid], sid))
-                chosen = cands[0]
-                if _put_block(chosen, day, idx) == 0:
+                placed: str | None = None
+                for chosen in cands:
+                    if _put_block(chosen, day, idx) > 0:
+                        placed = chosen
+                        break
+                    # 最小負荷の候補が契約上限等で置けなくても、
+                    # 空きのある他候補を試す（最初の失敗で打ち切らない）。
+                if placed is None:
                     break
-                _put_break(chosen, day)
+                _put_break(placed, day)
 
     shift_days: list[ShiftDay] = []
     assignments: list[ShiftAssignment] = []

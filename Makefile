@@ -115,6 +115,10 @@ cov: ## カバレッジ付きで全テストを走らせる
 lint: ## ruff で静的検査する
 	$(PY) -m ruff check .
 
+.PHONY: format-check
+format-check: ## ruff format の適用結果と差分がないかだけ確認する（CI と同じ）
+	$(PY) -m ruff format --check .
+
 .PHONY: format
 format: ## ruff で整形し、import 順など自動修正可能な指摘も直す
 	$(PY) -m ruff format .

@@ -7,7 +7,7 @@
 「その時間帯の在園人数」から導けない。
 
 * 月極めの基礎乳幼児数 + 日極めの平均加算
-* 短時間勤務者の**常勤換算**（週契約時間 ÷ 8 時間）
+* 短時間勤務者の**常勤換算**（週契約時間 ÷ 40 時間。基準の「勤務延べ時間÷8」は日単位の式）
 * 保育従事者の**半分以上**（保育事業者型は4分の3以上）が保育士であること
 * **みなし保育士（看護師）は1人に限り**
 * **嘱託医・調理員の必置**（調理委託・食事搬入で調理員を免除できる）
@@ -68,6 +68,7 @@ def spec(**overrides) -> FacilitySpec:
             StaffRecord("H2", "B", (Role.HOIKUSHI,), 40.0),
             StaffRecord("H3", "C", (Role.HOIKUSHI,), 40.0),
             StaffRecord("H4", "D", (Role.HOIKUSHI,), 40.0),
+            StaffRecord("H5", "H", (Role.HOIKUSHI,), 30.0),
             StaffRecord("N1", "E", (Role.KANGSHI,), 40.0),
             StaffRecord("S1", "F", (Role.SHIENSHIIN,), 30.0, True),
             StaffRecord("K1", "G", (Role.CHUUBOU,), 40.0),
@@ -147,18 +148,46 @@ def test_常勤換算で足りなければ不適合になる() -> None:
 
 
 def test_短時間勤務者は8時間換算される() -> None:
-    """週20時間の支援員は 2.5 人と数える（1人とは数えない）。"""
+    """日あたり8時間の職員は1人と数える（1日あたりの式）。"""
     record = StaffRecord("S1", "F", (Role.SHIENSHIIN,), 20.0, True)
-    assert record.full_time_equivalent() == 2.5
-    assert StaffRecord("H1", "A", (Role.HOIKUSHI,), 40.0).full_time_equivalent() == 5.0
+    assert record.daily_full_time_equivalent() == 0.5
+    assert StaffRecord("H1", "A", (Role.HOIKUSHI,), 40.0).daily_full_time_equivalent() == 1.0
+    assert StaffRecord("X", "Y", (), 0.0).daily_full_time_equivalent() == 0.0
+    assert StaffRecord("X", "Y", (), -10.0).daily_full_time_equivalent() == 0.0
+
+
+def test_常勤換算は週40時間を1人と数える() -> None:
+    """週契約時間ベースの常勤換算は 1 週 40 時間で 1 人。
+
+    旧実装（週契約時間÷8）では週40時間の常勤 1 名が 5.0 人と数わり、
+    2 名で「6 名以上」の人数要件を満たしてしまう。人数と比較する以上、
+    分母は 1 週あたりの常勤時間でなければならない。
+    """
+    assert StaffRecord("H1", "A", (Role.HOIKUSHI,), 40.0).full_time_equivalent() == 1.0
+    assert StaffRecord("S1", "F", (Role.SHIENSHIIN,), 20.0, True).full_time_equivalent() == 0.5
+    assert StaffRecord("S2", "G", (Role.SHIENSHIIN,), 30.0, True).full_time_equivalent() == 0.75
     assert StaffRecord("X", "Y", (), 0.0).full_time_equivalent() == 0.0
     assert StaffRecord("X", "Y", (), -10.0).full_time_equivalent() == 0.0
+
+
+def test_2名の常勤では6名要件を満たさない() -> None:
+    """常勤 2 名（FTE 2.0）で「6 名以上」が OK にならないこと。"""
+    thin = spec(
+        capacity=20,
+        monthly_children={AgeClass.INFANT: 12, AgeClass.AGE_1: 10, AgeClass.AGE_2: 10},
+        staff=(
+            StaffRecord("H1", "A", (Role.HOIKUSHI,), 40.0),
+            StaffRecord("H2", "B", (Role.HOIKUSHI,), 40.0),
+        ),
+    )
+    result = check(audit_facility(thin), "headcount")
+    assert result.status == NG
 
 
 def test_調理員は保育従事者数に含めない() -> None:
     report = audit_facility(spec())
     result = check(report, "headcount")
-    assert "保育士 20.00 人" in result.actual
+    assert "保育士 4.75 人" in result.actual
     assert "調理員" not in result.actual
 
 
@@ -254,8 +283,8 @@ def test_看護師は1人にしか数えない() -> None:
     )
     result = check(audit_facility(two_nurses), "qualified_count")
     assert "みなし保育士として看護師は最大 1 人を計上" in result.actual
-    # 保育士 1 人（5.0）＋看護師 1 人分（5.0）＝6.0。看護師2人目は数えない。
-    assert "保育士 6.00 人" in result.actual
+    # 保育士 1 人（1.0）＋看護師 1 人分（1.0）＝2.0。看護師2人目は数えない。
+    assert "保育士 2.00 人" in result.actual
 
 
 def test_指導監督基準では看護師に上限がない() -> None:
@@ -272,12 +301,12 @@ def test_指導監督基準では看護師に上限がない() -> None:
     )
     result = check(audit_facility(many_nurses), "qualified_count")
     assert "看護師・准看護師は比率の分子にそのまま計上" in result.actual
-    # 看護師 2 名（週40時間×2 → 10.0）。支援員は数えない。
-    assert "保育士 10.00 人" in result.actual
+    # 看護師 2 名（週40時間×2 → 2.0）。支援員は数えない。
+    assert "保育士 2.00 人" in result.actual
 
 
 def test_みなし保育士の上限は別制度で効く() -> None:
-    """同じ看護師2名でも、企業主導型（みなし1人）では10.0→6.0 になる。"""
+    """同じ看護師2名でも、企業主導型（みなし1人）では3.0→2.0 になる。"""
     base = local_rules.get_standard("認可外保育施設（指導監督基準）")
     staff = (
         StaffRecord("H1", "A", (Role.HOIKUSHI,), 40.0),
@@ -286,8 +315,8 @@ def test_みなし保育士の上限は別制度で効く() -> None:
     )
     capped = replace(base, qualified_extra_roles=frozenset(), nurse_as_qualified_cap=1)
     for standard, expected, note in (
-        (base, "保育士 15.00 人", "比率の分子にそのまま計上"),
-        (capped, "保育士 6.00 人", "みなし保育士として看護師は最大 1 人を計上"),
+        (base, "保育士 3.00 人", "比率の分子にそのまま計上"),
+        (capped, "保育士 2.00 人", "みなし保育士として看護師は最大 1 人を計上"),
     ):
         result = check(
             audit_facility(

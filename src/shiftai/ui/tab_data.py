@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 from datetime import date
 from html import escape
@@ -274,6 +275,15 @@ def read_uploads(kind: str, files: Sequence[Any]) -> list[pd.DataFrame]:
     return frames
 
 
+def frame_fingerprint_upload(file: Any) -> str:
+    """アップロードファイルの中身の短いハッシュ（再読込ガード用）。"""
+    try:
+        raw = file.getvalue() if hasattr(file, "getvalue") else b""
+    except Exception:  # noqa: BLE001 - 取れない場合はサイズだけ頼る
+        return "unreadable"
+    return hashlib.sha1(raw).hexdigest()[:12]
+
+
 def _history_label(kind: str, title: str) -> str:
     """履歴へ記録するときの表示名（例: 「園児 42 行」）。"""
     frame = st.session_state.get(f"frame_{kind}", None)
@@ -409,15 +419,26 @@ def _preview_table(kind: str, title: str, label: str, detail: str) -> None:
         key=f"upload_{kind}",
     )
     if uploads:
-        try:
-            frames = read_uploads(kind, uploads)
-            merged = pd.concat(frames, ignore_index=True)
-            st.session_state[f"frame_{kind}"] = merged
-            st.session_state.pop(f"editor_{kind}", None)
-            _record_edit(kind, merged)
-            st.success(f"{len(merged)} 行を読み込みました。")
-        except Exception as exc:  # noqa: BLE001 - 取り込み失敗で画面を落とさない
-            st.error(f"ファイルを読み込めませんでした: {exc}")
+        # Streamlit はwidget操作のたびにスクリプト全体を再実行するため、
+        # ガードが無いとファイルがuploaderに残っている間は毎リランで
+        # frame_<kind> を上書きし、data_editor の手動編集が消える。
+        # ファイル名・サイズ・内容が前回の取込みから変わったときだけ読み直す。
+        signature = "|".join(
+            f"{getattr(f, 'name', '?')}:{getattr(f, 'size', -1)}:{frame_fingerprint_upload(f)}"
+            for f in uploads
+        )
+        if signature != st.session_state.get(f"upload_signature_{kind}"):
+            try:
+                frames = read_uploads(kind, uploads)
+                merged = pd.concat(frames, ignore_index=True)
+                st.session_state[f"upload_signature_{kind}"] = signature
+                if not merged.empty or f"frame_{kind}" in st.session_state:
+                    st.session_state[f"frame_{kind}"] = merged
+                    st.session_state.pop(f"editor_{kind}", None)
+                    _record_edit(kind, merged)
+                st.success(f"{len(merged)} 行を読み込みました。")
+            except Exception as exc:  # noqa: BLE001 - 取り込み失敗で画面を落とさない
+                st.error(f"ファイルを読み込めませんでした: {exc}")
 
     if kind == "children":
         render_importer()

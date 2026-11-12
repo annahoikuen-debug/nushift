@@ -8,7 +8,8 @@
 比率上限が加わる。シフト作成の機能では表せない次の要件がある。
 
 * 月極めの基礎乳幼児数と、日極め等の平均加算（指導監督基準 第1(1)）
-* 短時間勤務職員の**常勤換算**（有資格者・その他別に勤務延べ時間÷8時間）
+* 短時間勤務職員の**常勤換算**（週契約時間÷40時間。基準の「勤務延べ時間÷8」は日単位の式で、
+  日あたり判定には :meth:`StaffRecord.daily_full_time_equivalent` を使う）
 * 保育従事者の**半分以上**（保育事業者型は4分の3以上）が保育士であること
 * 保健師・看護師・准看護師の**みなし保育士は1人に限り**
 * **嘱託医・調理員の必置**（調理業務の全部委託または食事の搬入で調理員を免除できる）
@@ -124,7 +125,13 @@ STATUS_LABELS: dict[str, str] = {
 #: 短時間勤務者を常勤換算するときの1人あたりの時間（時間）。
 #: 認可外保育施設指導監督基準 第1(1) は有資格者・その他別に
 #: 勤務延べ時間数の合計を 8 時間で除して常勤職員数とみなすとする。
+#: 「勤務延べ時間数」は 1 日あたりの延べ時間であるため、週契約時間を
+#: 常勤換算するときは 1 日あたり時間（週契約時間 ÷ 勤務日数）で比較する。
 FULL_TIME_HOURS = 8.0
+
+#: 週あたりの常勤換算基準時間（時間）。
+#: 週契約時間をこの値で割ると常勤換算人数になる（1 週 40 時間が常勤 1 人）。
+FULL_TIME_WEEKLY_HOURS = 40.0
 
 #: 認可外保育施設の主たる開所時間（時間）。
 MAIN_OPENING_HOURS = 11
@@ -164,8 +171,22 @@ class StaffRecord:
         return self.staff_id.strip() in {"嘱託医", "嘱託医師", "joi"}
 
     def full_time_equivalent(self) -> float:
-        """常勤換算人数（有資格者・その他別はこのメソッドを分けて使う）。"""
-        return max(0.0, self.weekly_hours) / FULL_TIME_HOURS
+        """常勤換算人数（有資格者・その他別はこのメソッドを分けて使う）。
+
+        週契約時間を 1 週 40 時間の常勤で割る。指導監督基準 第1(1) の
+        「勤務延べ時間数÷8」は 1 日あたりの式なので、日単位の値で判定する場合は
+        :meth:`daily_full_time_equivalent` を使う。
+        """
+        return max(0.0, self.weekly_hours) / FULL_TIME_WEEKLY_HOURS
+
+    def daily_full_time_equivalent(self, workdays: int = 5) -> float:
+        """1 日あたりの勤務時間を「勤務延べ時間数÷8」で常勤換算する。
+
+        指導監督基準 第1(1) の原文どおりの式。``workdays`` は週の勤務日数
+        （既定 5 日）で、週契約時間を日あたり時間に換算してから 8 で割る。
+        """
+        daily = self.weekly_hours / workdays if workdays > 0 else 0.0
+        return max(0.0, daily) / FULL_TIME_HOURS
 
 
 @dataclass(frozen=True)
@@ -430,7 +451,7 @@ def _staff_checks(spec: FacilitySpec, standard: StaffingStandard) -> list[Compli
                     ""
                     if total_fte >= needed
                     else f"常勤換算で {needed - total_fte:.2f} 人不足しています。"
-                    "短時間勤務者は週契約時間を 8 時間で割って常勤換算します。"
+                    "短時間勤務者は週契約時間を 40 時間（常勤 1 週分）で割って常勤換算します。"
                 ),
             )
         )

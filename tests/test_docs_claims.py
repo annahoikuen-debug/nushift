@@ -693,7 +693,7 @@ def _verified_env_date_and_python(text: str) -> tuple[str, str]:
 def test_検証環境の記載が陳腐化していない() -> None:
     """``requirements.txt`` の「検証環境の実測」がwell-formed であること。
 
-    日付（YYYY-MM-DD）・Python 版を持ち、未来の日和对 ``requires-python``
+    日付（YYYY-MM-DD）・Python 版を持ち、未来の日付で ``requires-python``
     の下限を満たすこと。3 つ揃っていないと、検証環境がいつ・どれだったか
     追えなくなる。
 

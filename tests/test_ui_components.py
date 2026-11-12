@@ -500,7 +500,7 @@ def test_weekday_pivot_frameは解が無いとき空を返す(slots_list):
 
 
 def test_staff_hours_frameは職員別の勤務時間を返す(solved_day, small_staff):
-    """bar_chart 用の 4 列が，并能で 0 埋めされていること。"""
+    """bar_chart 用の 4 列が職員ごとに 0 埋めされていること。"""
     frame = components.staff_hours_frame(solved_day, small_staff)
     assert list(frame.columns) == ["職員ID", "氏名", "勤務時間", "出勤日数"]
     assert len(frame) == len(small_staff)

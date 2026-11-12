@@ -41,6 +41,7 @@ from shiftai.statutory_rules import (
     STATUTORY_BREAK_THRESHOLDS,  # noqa: F401  (re-exported for test monkeypatch target)
     STATUTORY_MIN_REST_HOURS,
     STATUTORY_WEEKLY_WORK_HOURS,
+    daily_cap_minutes,
     required_break_minutes,
 )
 
@@ -66,6 +67,12 @@ class SlotGap:
     actual_staff: int
     actual_qualified: int
     overstaff: int
+    is_binding: bool = True
+    """この時間帯の必要人員が必須要件（``is_binding=True``）かどうか。
+
+    祝日・行事日は超過配置のみ許容（``is_binding=False``）なので、
+    不足は法令違反（BLOCKER）ではなく参考情報になる。
+    """
 
     @property
     def is_shortfall(self) -> bool:
@@ -76,6 +83,20 @@ class SlotGap:
     def is_qualified_shortfall(self) -> bool:
         """必要保育士数に足りないか。"""
         return self.actual_qualified < self.needed_qualified
+
+    @property
+    def is_shortfall_critical(self) -> bool:
+        """法令違反として報告すべき不足か。
+
+        必須要件（``is_binding=True``）の不足だけが法令違反になる。
+        祝日など超過配置のみ許容する行は、不足でも BLOCKER にしない。
+        """
+        return self.is_binding and self.is_shortfall
+
+    @property
+    def is_qualified_shortfall_critical(self) -> bool:
+        """法令違反として報告すべき保育士不足か。"""
+        return self.is_binding and self.is_qualified_shortfall
 
     @property
     def shortfall_staff(self) -> int:
@@ -101,6 +122,7 @@ class SlotGap:
             "不足": self.shortfall_staff,
             "不足保育士数": self.shortfall_qualified,
             "過剰": self.overstaff,
+            "必須": self.is_binding,
         }
 
 
@@ -248,6 +270,7 @@ def analyze_gap(
             rows = _binding_rows(requirements, day, slot)
             if not rows:
                 rows = [r for r in rows_all if r.slot == slot]
+            is_binding = bool(_binding_rows(requirements, day, slot))
             need_all = sum(r.needed_staff for r in rows)
             need_q = sum(r.needed_qualified for r in rows)
             actual = 0
@@ -271,6 +294,7 @@ def analyze_gap(
                 actual_staff=actual,
                 actual_qualified=actual_q,
                 overstaff=over,
+                is_binding=is_binding,
             )
             gaps.append(gap)
             hours = slot.hours
@@ -421,7 +445,7 @@ def check_violations(
     n = len(slots)
 
     for gap in report.gaps:
-        if gap.is_shortfall:
+        if gap.is_shortfall_critical:
             out.append(
                 Violation(
                     severity=ViolationSeverity.BLOCKER,
@@ -439,7 +463,7 @@ def check_violations(
                     },
                 )
             )
-        if gap.is_qualified_shortfall:
+        if gap.is_qualified_shortfall_critical:
             out.append(
                 Violation(
                     severity=ViolationSeverity.BLOCKER,
@@ -490,13 +514,9 @@ def check_violations(
             # 拘束時間（勤務＋休憩）。休憩が分断されていると休憩が労働時間として
             # 扱われるため、週の上限判定は本能にこの側を見る。
             bound_hours[day] = (work_minutes + break_minutes) / 60.0
-            cap = (
-                c.daily_hours
-                if not c.overtime_allowed
-                else min(
-                    c.daily_hours * config.STATUTORY_OVERTIME_MULTIPLIER, _DAILY_LEGAL_CAP_HOURS
-                )
-            )
+            # 1日の上限は statutory_rules.daily_cap_minutes（単一ソース）から取る。
+            # ここで式を再実装すると 36 協定の扱いがソルバー側とズレる。
+            cap = daily_cap_minutes(c) / 60.0
             if work_minutes / 60.0 > cap + config.FLOAT_TOLERANCE:
                 out.append(
                     Violation(
@@ -1008,8 +1028,7 @@ def check_violations(
     return aggregate_violations(out)
 
 
-_DAILY_LEGAL_CAP_HOURS = config.STATUTORY_MAX_DAILY_WORK_HOURS
-_STATUTORY_DAILY_LIMIT_HOURS = config.STATUTORY_DAILY_LIMIT_HOURS
+_STATUTORY_DAILY_LIMIT_HOURS = config.STATUTORY_DAILY_LIMIT_HOURS  # noqa: F401 (下位互換の別名)
 _MONTHLY_WARNING_MIN_DAYS = 5
 """契約勤務時間の警告を WARNING として出すのに必要な最小日数。"""
 

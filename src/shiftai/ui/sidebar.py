@@ -442,6 +442,12 @@ def _render_patterns() -> None:
                 "揃う職員がいても解が消えることはありません。"
             ),
         )
+    elif state.get(state.KEY_PATTERNS):
+        # 有効時にだけ「無効にする」を出す（有効化されたら戻せるようにする）。
+        if st.button("勤務パターンを無効にする", key="pattern_disable"):
+            state.set_patterns(())
+            st.session_state.pop(state.KEY_PATTERNS_ENABLED, None)
+            st.rerun()
     if not state.get(state.KEY_PATTERNS_ENABLED):
         return
 
@@ -459,13 +465,12 @@ def _render_patterns() -> None:
         st.rerun()
 
     current = state.current_patterns()
-    defaults = presets[chosen] if chosen in presets else presets[preset_keys[0]]
-    if not current:
-        state.set_patterns(defaults)
-        current = defaults
-
-    rows: list[ShiftPattern] = []
-    for i, base in enumerate(defaults):
+    # 追加ボタンで増えた枠は KEY_PATTERNS にしか存在しないため、
+    # ウィジェットの起点は「現在保存されているパターン」にする。
+    # プリセットから毎回組み直すと、追加ボタンが自分で起す rerun の直後に
+    # 追加枠が消え、「パターンを削除」も既定値の再生成ですぐ戻ってしまう。
+    rows: list[ShiftPattern] = list(current)
+    for i, base in enumerate(rows):
         label = st.text_input(f"枠{i + 1} の名前", value=base.label, key=f"pattern_name_{i}")
         cols = st.columns(2)
         with cols[0]:
@@ -483,9 +488,7 @@ def _render_patterns() -> None:
                 key=f"pattern_end_{i}",
             )
         if end > start:
-            rows.append(
-                ShiftPattern(key=f"p{i}", label=label or f"枠{i + 1}", start=start, end=end)
-            )
+            rows[i] = ShiftPattern(key=f"p{i}", label=label or f"枠{i + 1}", start=start, end=end)
         else:
             st.warning(f"枠{i + 1} は終了が始業と同じか後のため無視されます。")
 
@@ -509,7 +512,7 @@ def _render_patterns() -> None:
         state.set_patterns(rows)
         st.rerun()
 
-    state.set_patterns(rows)
+    state.set_patterns(tuple(rows))
     if rows:
         st.caption(" / ".join(f"{p.label} {p.span()}" for p in rows))
         st.checkbox(

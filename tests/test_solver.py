@@ -133,7 +133,9 @@ def test_結果に統計が入っている(solved_day):
     assert stats["num_slots"] == 10
     assert stats["num_variables"] > 0
     assert stats["num_constraints"] > 0
-    assert stats["solver"] == "PULP_CBC_CMD"
+    # 正常系の solved_day は貪欲フォールバックに落ちないため実ソルバ名が入る
+    assert stats["solver"] != "greedy"
+    assert stats["fallback"] != "greedy"
 
 
 def test_結果は日ごとのシフト表を持つ(solved_day, small_staff, small_requirements):

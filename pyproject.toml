@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -15,6 +15,7 @@ classifiers = [
     "Private :: Do Not Upload",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
     "streamlit>=1.63,<2",
@@ -26,6 +27,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# HiGHS は README/MANUAL が推奨する主力ソルバー（無いと CBC だけになる）。
+# 既定依存には入れず、推奨 extra として宣言する。
+highs = [
+    "highspy>=1.7",
+]
 dev = [
     "pytest>=9,<10",
     "pytest-cov>=4,<8",
@@ -38,7 +44,7 @@ dev = [
 shiftai = "shiftai.__main__:main"
 
 [project.urls]
-Homepage = "https://example.invalid/shiftai"
+Homepage = "https://github.com/hoikuict/nushift"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
@@ -52,9 +58,12 @@ testpaths = ["tests"]
 # サマリ行を常に出し、`-q` を重ねても `-qq` になって消えないようにする。
 # （`-q` を addopts に入れていると、利用側が `-q` を付けた瞬間に
 #   サマリが出力されず、テスト結果の最終行が見えなくなる。）
-addopts = "--timeout=600"
+# --strict-markers: 未登録マーカー（例: 誤って残った @pytest.mark.benchmark）を
+#   沈黙の警告ではなくエラーにする。
+addopts = "--timeout=600 --strict-markers"
 markers = [
     "slow: 時間が長い統合テスト（-m 'not slow' で除外）",
+    "benchmark: ソルバ性能測定（通常のテスト実行には含めない）",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

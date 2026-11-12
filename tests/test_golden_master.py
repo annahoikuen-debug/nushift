@@ -75,19 +75,27 @@ def _serialize_result(res: SolveResult) -> dict:
 
 
 def test_generate_or_verify_golden_master():
-    """Verify that solver output matches the frozen golden master snapshot."""
-    FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
+    """Verify that solver output matches the frozen golden master snapshot.
+
+    スナップショットが無いときに **現在値で再生成して pass してはならない**
+    （初回実行が常に緑になり、壊れた変更を見逃す）。
+    再生成は明示的に ``python -m pytest --regenerate-snapshots`` で行う。
+    """
+    if not SNAPSHOT_FILE.exists():
+        pytest.fail(
+            f"スナップショット {SNAPSHOT_FILE} がありません。"
+            "再生成するときは `python -m pytest tests/test_golden_master.py --regenerate-snapshots` を実行してください。"
+        )
     res = _solve_sample()
     current_data = _serialize_result(res)
 
-    if not SNAPSHOT_FILE.exists():
-        with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
-            json.dump(current_data, f, ensure_ascii=False, indent=2)
-        assert current_data["total_assignments"] > 0
-        return
-
     with open(SNAPSHOT_FILE, encoding="utf-8") as f:
         expected_data = json.load(f)
+
+    if pytest.config.getoption("--regenerate-snapshots", default=False):  # type: ignore[attr-defined]
+        with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+            json.dump(current_data, f, ensure_ascii=False, indent=2)
+        return
 
     assert current_data["status"] == expected_data["status"]
     assert current_data["is_feasible"] == expected_data["is_feasible"]

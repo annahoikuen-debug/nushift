@@ -165,7 +165,11 @@ def _required_qualified(standard: StaffingStandard, kind: SlotKind, needed_staff
     """必要人員のうち保育士でなければならない人数。"""
     if needed_staff <= 0:
         return 0
-    if standard.late_care_relaxed and kind in (SlotKind.LATE, SlotKind.EARLY):
+    # 「延長時に代替措置を許容する」緩和は延長保育（LATE）にだけ効く。
+    # 早朝保育（EARLY）は備考・基準文が延長時のみの適用を明示しており、
+    # 早朝にも半減を適用すると relaxed プリセットで朝の必要保育士数が
+    # 不当に少なく数えられていた。
+    if standard.late_care_relaxed and kind is SlotKind.LATE:
         halved = min(needed_staff, max(1, math.ceil(needed_staff / 2)))
         floor_q = min(standard.late_care_min_qualified, needed_staff)
         return max(halved, floor_q)
@@ -189,7 +193,7 @@ def _basis_text(
         f"{needed_staff}名（定員比{ratio.children_per_staff:g}:1、{rounding}）",
         slot_kind_label(kind),
     ]
-    if standard.late_care_relaxed and kind in (SlotKind.LATE, SlotKind.EARLY) and needed_qualified < needed_staff:
+    if standard.late_care_relaxed and kind is SlotKind.LATE and needed_qualified < needed_staff:
         parts.append(
             f"{slot_kind_label(kind)}の代替措置（保育士1名＋支援員）で必要保育士数を{needed_qualified}名に緩和"
         )

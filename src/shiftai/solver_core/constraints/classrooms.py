@@ -1,4 +1,9 @@
-"""Skills, leadership, and classroom-specific staffing constraints."""
+"""Skills, leadership, and classroom-specific staffing constraints.
+
+``shiftai.solver`` から遅延 import される専用モジュール。
+solver.py は 3,200 行を超えているため、クラス配置・開所/閉所スキルの
+制約だけここに分離している（``solver._build_problem`` から呼ばれる）。
+"""
 
 from __future__ import annotations
 
@@ -12,12 +17,7 @@ from shiftai.domain import (
     StaffingStandard,
     StaffMember,
 )
-from shiftai.solver_core.context import (
-    _hard_ge,
-    _is_zero,
-    _linear,
-    _ModelCtx,
-)
+from shiftai.solver_core.constraints_util import _ModelCtx, _hard_ge, _is_zero, _linear
 
 
 def _add_classroom_and_skill_constraints(
@@ -61,6 +61,12 @@ def _add_classroom_and_skill_constraints(
                     ]
                     if openers:
                         _hard_ge(ctx, _linear([(v, 1) for v in openers]), 1.0, f"skill_open_{tag}_{idx}")
+                    else:
+                        # 候補変数が無い（全員確定OFF等）でも要件は破られているので
+                        # 無警告で無視せず conflicts に記録する。
+                        ctx.conflicts.append(
+                            f"{day.isoformat()} {slots[idx].label} の開所スキル（can_open）職員を配置できません"
+                        )
                 elif kind in (SlotKind.LATE, SlotKind.LATE_STRICT):
                     closers = [
                         ctx.work[(s.staff_id, day, idx)]
@@ -71,6 +77,10 @@ def _add_classroom_and_skill_constraints(
                     ]
                     if closers:
                         _hard_ge(ctx, _linear([(v, 1) for v in closers]), 1.0, f"skill_close_{tag}_{idx}")
+                    else:
+                        ctx.conflicts.append(
+                            f"{day.isoformat()} {slots[idx].label} の閉所スキル（can_close）職員を配置できません"
+                        )
 
         # 2. 日次リーダー要件
         if require_leader:
@@ -83,6 +93,10 @@ def _add_classroom_and_skill_constraints(
                     leader_day_vars.append(dvar)
             if leader_day_vars:
                 _hard_ge(ctx, _linear([(v, 1) for v in leader_day_vars]), 1.0, f"leader_present_{tag}")
+            else:
+                ctx.conflicts.append(
+                    f"{day.isoformat()} にリーダー適格者（can_lead）を配置できません"
+                )
 
         # 3. クラス別担任・最低常駐要件
         if classrooms:
@@ -91,6 +105,9 @@ def _add_classroom_and_skill_constraints(
                     continue
                 class_staff = [s for s in staff if s.assigned_class_id == room.class_id]
                 if not class_staff:
+                    ctx.conflicts.append(
+                        f"{room.class_id} に配置できる職員がいないため {room.min_staff} 名の常駐要件を満たせません"
+                    )
                     continue
                 for idx, _slot in enumerate(slots):
                     if kinds[idx] in (SlotKind.STANDARD_TIME, SlotKind.NORMAL):
@@ -106,4 +123,9 @@ def _add_classroom_and_skill_constraints(
                                 _linear([(v, 1) for v in c_workers]),
                                 float(room.min_staff),
                                 f"room_{room.class_id}_{tag}_{idx}",
+                            )
+                        else:
+                            ctx.conflicts.append(
+                                f"{day.isoformat()} {slots[idx].label} に {room.class_id} の職員を"
+                                f"{room.min_staff} 名配置できません"
                             )

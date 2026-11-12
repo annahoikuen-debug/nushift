@@ -52,6 +52,32 @@ DAY_CLOSE = time(14, 0)
 STANDARD_KEY = "全国基準（厚労省）"
 FQ_KEY = "福岡市"
 
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+SAMPLE_DIR = REPO_ROOT / "sample"
+"""サンプル CSV 出力先（``make sample`` で生成・``.gitignore`` 対象）。
+
+``sample/`` が無いクリーンチェックアウトでは、依存するテストを
+:data:`requires_sample` で自動 skip する（FileNotFoundError で落とさない）。
+"""
+
+
+def requires_sample() -> bool:
+    """``sample/`` CSV が揃っているか（無ければ依存テストを skip する）。"""
+    return all(
+        (SAMPLE_DIR / name).exists()
+        for name in ("children.csv", "staff.csv", "preferences.csv")
+    )
+
+
+_SAMPLE_DEPENDENT_MODULES = frozenset(
+    {
+        "test_golden_master.py",
+        "test_violation_baseline.py",
+        "test_snap_invariants.py",
+        "test_solver_bench.py",
+    }
+)
+
 
 def sei_contract(**overrides) -> Contract:
     """週40h/日8h・8:30〜20:00 が出せる正職員契約。"""
@@ -528,6 +554,16 @@ def _module_name_of(item: pytest.Item) -> str | None:
     return name.rpartition(".")[2] if name else None
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """スナップショット再生成などの独自オプション。"""
+    parser.addoption(
+        "--regenerate-snapshots",
+        action="store_true",
+        default=False,
+        help="ゴールデンマスター / 違反ベースラインのスナップショットを現在値で再生成する。",
+    )
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """CBC を起動するテストに ``slow`` を自動的に付ける。
 
@@ -540,6 +576,14 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             continue
         if _item_uses_cbc(item):
             item.add_marker(pytest.mark.slow)
+    # ``sample/`` が無いクリーンチェックアウトで依存テストを skip する
+    if not requires_sample():
+        skip_sample = pytest.mark.skip(reason="sample/ が無いため skip（make sample で生成）")
+        for item in items:
+            module = getattr(item, "module", None)
+            path = getattr(module, "__file__", None)
+            if path and pathlib.Path(path).name in _SAMPLE_DEPENDENT_MODULES:
+                item.add_marker(skip_sample)
 
 
 __all__ = [
@@ -547,11 +591,13 @@ __all__ = [
     "DAY_CLOSE",
     "DAY_OPEN",
     "FQ_KEY",
+    "SAMPLE_DIR",
     "STANDARD_KEY",
     "WEEK_END",
     "WEEK_START",
     "CellState",
     "SolveResult",
     "part_contract",
+    "requires_sample",
     "sei_contract",
 ]

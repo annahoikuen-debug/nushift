@@ -2,7 +2,7 @@
 
 サンプル7日を解き、違反コード×深刻度の件数スナップショットを
 tests/fixtures/violation_baseline.json に保存・検証する。
-初回実行時は JSON を生成して pass し、2回目以降は既存 JSON と比較する。
+JSON が無い場合は fail。再生成は ``--regenerate-snapshots`` で明示的に行う。
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from collections import Counter
 from pathlib import Path
+
+import pytest
 
 from shiftai.data_loader import load_children, load_preferences, load_staff, read_table
 from shiftai.domain import FacilitySettings
@@ -71,20 +73,24 @@ def violation_code_counts(result) -> dict[str, int]:
 def test_violation_baseline():
     """ゴールデンマスター方式のベースラインテスト。
 
-    JSON が無ければ生成して pass（初回）、あれば件数が一致することを検証する。
+    JSON が無い場合は fail（初回実行が常に緑になる自己生成を廃止）。
+    再生成は明示的に ``python -m pytest --regenerate-snapshots`` で行う。
     """
-    FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
+    if not BASELINE_FILE.exists():
+        pytest.fail(
+            f"ベースライン {BASELINE_FILE} がありません。"
+            "再生成するときは `python -m pytest tests/test_violation_baseline.py --regenerate-snapshots` を実行してください。"
+        )
     res = _solve_sample()
     current_counts = violation_code_counts(res)
 
-    if not BASELINE_FILE.exists():
-        with open(BASELINE_FILE, "w", encoding="utf-8") as f:
-            json.dump(current_counts, f, ensure_ascii=False, indent=2, sort_keys=True)
-        assert len(res.assignments) > 0
-        return
-
     with open(BASELINE_FILE, encoding="utf-8") as f:
         expected_counts = json.load(f)
+
+    if pytest.config.getoption("--regenerate-snapshots", default=False):  # type: ignore[attr-defined]
+        with open(BASELINE_FILE, "w", encoding="utf-8") as f:
+            json.dump(current_counts, f, ensure_ascii=False, indent=2, sort_keys=True)
+        return
 
     assert current_counts == expected_counts, (
         f"違反件数のベースラインが変わりました。\n"

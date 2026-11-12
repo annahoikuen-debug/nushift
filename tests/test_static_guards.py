@@ -221,6 +221,9 @@ SIMPLIFIED_ONLY = set(
     "邓郑邻酝酱酿释里鉴钓钙钝钞钧钩钳钻铁铃铅铆铜铝铠铡铭铲银铸铺链销锁锄锅错锦键锯锻镀镇镜闪闭闯闲间闷"
     "闹闻阁阅队阳阴阵阶际陆陇陕险随隐隶难雏雾韩顶顷项顺须顾顿颁颂预领颇颈频颗题颜额飘饥饭饮饲饱饼饿馄馅馆"
     "馈馒驰驱驳驻驼驾验骂骄骗骤骨鲁鲜鸟鸡鸣鸿鹅鹉鹏鹤麦黄齐齿龈龉龊龙龟"
+    # 実際の混入が起きた字（tests/test_docs_claims.py「和对」、test_portability.py「庆幸」、
+    # test_ui_components.py「并能」、test_duty_block_constraints.py「是对立」）
+    "对并庆幸"
 )
 
 

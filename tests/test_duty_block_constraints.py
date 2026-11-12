@@ -375,7 +375,7 @@ def test_閾値の設定が整合している() -> None:
     assert solver_mod._commute_reach_slots(1) == 0
 
 
-def test_目的関数の重み是对立しない順序にある() -> None:
+def test_目的関数の重みが対立しない順序にある() -> None:
     """法定序列（休憩6000＞分断3000＞端置き2500＞不足1000）を不変条件化。"""
     w = ObjectiveWeights()
     assert w.break_deficit_penalty > w.shortfall_penalty * 5  # 法定休憩(6000)は配置不足(1000)より十分重い

@@ -39,16 +39,26 @@ def clean_session_state():
 
 
 def test_app_state_init_creates_default_state():
-    """state.init_state() がエラーなく実行できること。"""
+    """state.init_state() が既定キーを全部埋めること（assert True ではない実検証）。"""
     state.init_state()
-    assert True
+    for key in state.DEFAULT_KEYS:
+        assert key in st.session_state, f"既定キー {key} が初期化されていない"
+    # None を許すキーと、値を持つキーを区別して検査する
+    assert st.session_state[state.KEY_STANDARD_KEY] == state.DEFAULT_KEYS[state.KEY_STANDARD_KEY]
+    assert st.session_state[state.KEY_DAYS] == []
+    assert st.session_state[state.KEY_TIME_LIMIT_SEC] == state.DEFAULT_KEYS[state.KEY_TIME_LIMIT_SEC]
 
 
 def test_state_init_function_runs():
-    """state.init_state() が再実行してもエラーにならないこと。"""
+    """state.init_state() が再実行しても既定値を壊さないこと。"""
     state.init_state()
+    first = st.session_state[state.KEY_STANDARD_KEY]
     state.init_state()
-    assert True
+    assert st.session_state[state.KEY_STANDARD_KEY] == first
+    # 既に設定済みのキーを上書きしない（init は「未初期化だけ埋める」）
+    st.session_state[state.KEY_DAYS] = [DAY]
+    state.init_state()
+    assert st.session_state[state.KEY_DAYS] == [DAY]
 
 
 # ---------------------------------------------------------------------------
@@ -57,8 +67,9 @@ def test_state_init_function_runs():
 
 
 def test_components_importable():
-    """shiftai.ui.components がインポートできること。"""
-    assert components is not None
+    """shiftai.ui.components が主要な公開関数を提供していること。"""
+    for name in ("metric_html", "render_violations", "violation_title"):
+        assert hasattr(components, name), f"components.{name} が無い"
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +81,7 @@ def test_streamlit_app_importable():
     """streamlit_app モジュールがインポートできること。"""
     import streamlit_app
 
-    assert streamlit_app is not None
+    assert hasattr(streamlit_app, "__file__")
 
 
 def test_streamlit_app_has_render_function():

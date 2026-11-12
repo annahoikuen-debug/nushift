@@ -96,9 +96,24 @@ def test_SlotGapのto_dict():
         "不足",
         "不足保育士数",
         "過剰",
+        "必須",
     ]
     assert data["時間帯"] == "09:00-09:30"
     assert data["時間帯区分"] == "延長保育"
+
+
+def test_SlotGapのcritical判定はbindingに従う():
+    """祝日（is_binding=False）の不足は法令違反として報告しないこと。"""
+    slot = Slot(time(9, 0), time(9, 30))
+    binding = SlotGap(DAY, slot, SlotKind.NORMAL, 3, 2, 1, 0, 0)
+    non_binding = SlotGap(DAY, slot, SlotKind.NORMAL, 3, 2, 1, 0, 0, is_binding=False)
+    assert binding.is_shortfall_critical is True
+    assert binding.is_qualified_shortfall_critical is True
+    assert non_binding.is_shortfall_critical is False
+    assert non_binding.is_qualified_shortfall_critical is False
+    # 不足そのもの（参考情報）は変わって見える
+    assert non_binding.is_shortfall is True
+    assert non_binding.shortfall_staff == 2
 
 
 def test_analyze_gapが日付と時間帯のGapを作る(day_report, small_requirements):
@@ -228,6 +243,11 @@ def pool_staff(staff_id: str) -> StaffMember:
     return StaffMember(staff_id, f"職員{staff_id}", (Role.HOIKUSHI,), sei_contract())
 
 
+def replace_child_day(child: ChildPlan, day: date) -> ChildPlan:
+    """園児予定を指定した日付けに付け替える（祝日混在テスト用）。"""
+    return ChildPlan(child.child_id, child.name, day, child.age_class, child.arrive, child.depart)
+
+
 # ---------------------------------------------------------------------------
 # check_violations
 # ---------------------------------------------------------------------------
@@ -243,20 +263,20 @@ def test_check_violationsはViolationのみを返す(small_requirements, solved_
 
 
 def test_check_violationsは_blockersと_warningsが機能する(
-    small_requirements, solved_day, small_staff
+    small_children, small_requirements, small_staff
 ):
     """``blockers()``/``warnings()`` が深刻度で正しく振り分けられること。
 
-    修正前: ``len(blockers) + len(warnings) <= len(found)`` のみで、
-    ``blockers`` と ``warnings`` は ``found`` の互いに素な部分リストなので
-    **常に真**（何も主張しない）。違反が 1 件も出ないデータセットでも
-    「振り分けが動作した」と誤認していた。
-
     ``ViolationSeverity`` には ``INFO`` もあるため、
     3 つのバケット（BLOCKER / WARNING / INFO）で**過不足なく**分かれることを主張する。
+
+    ``solved_day`` fixture はサンプル要件に対し違反ゼロの解を返すようになったため、
+    不足が確実に発生する 1 名プールの解でバケット分けを検証する。
     """
-    found = check_violations(small_requirements, solved_day, small_staff)
-    assert found, "検証前提: この解には違反があること"
+    pool = [pool_staff("T001")]
+    result = _greedy(small_children, pool, small_requirements)
+    found = check_violations(small_requirements, result, pool)
+    assert found, "検証前提: 1 名プールの解には違反があること"
     buckets = {sev: [v for v in found if v.severity is sev] for sev in ViolationSeverity}
     # 全ての違反がいずれかの深刻度にちょうど 1 回だけ分類される
     assert sum(len(vs) for vs in buckets.values()) == len(found), (
@@ -288,6 +308,54 @@ def test_人員不足はBLOCKERになる(small_children, small_requirements):
     assert all(
         v.severity is ViolationSeverity.BLOCKER for v in found if v.code == "SHORTFALL_STAFF"
     )
+
+
+def test_祝日の不足は法令違反にしない(small_children, one_day, standard):
+    """祝日は必須要件でないため、不足が ``SHORTFALL_STAFF`` BLOCKER にならないこと。
+
+    祝日（``is_binding=False``）の需要でソルバーが誰も配置しなくても、
+    不足は「超過配置のみ許容の行」に対する参考情報であって法令違反ではない。
+    修正前: ``check_violations`` が ``is_binding`` を見ずに BLOCKER を出し、
+    「祝日に園児がいると必ず法令違反」という誤ったレポートになっていた。
+    """
+    pool = [pool_staff("T001")]
+    holiday_reqs = build_requirements(
+        small_children,
+        one_day,
+        standard,
+        day_open=DAY_OPEN,
+        day_close=DAY_CLOSE,
+        granularity_min=30,
+        holiday_dates=one_day,
+    )
+    rows = holiday_reqs.for_day(DAY)
+    assert rows, "検証前提: 祝日でも在園児がいれば行は作られる"
+    assert {r.is_binding for r in rows} == {False}
+    result = _greedy(small_children, pool, holiday_reqs)
+    found = check_violations(holiday_reqs, result, pool)
+    codes = {v.code for v in found}
+    assert "SHORTFALL_STAFF" not in codes, sorted(codes)
+    assert "SHORTFALL_QUALIFIED" not in codes, sorted(codes)
+
+
+def test_祝日と平日が混在する週では平日だけBLOCKER(small_children, week_days, standard):
+    """平日の不足は BLOCKER、祝日の不足は出ないこと（1 週間の混在ケース）。"""
+    pool = [pool_staff("T001")]
+    holiday = week_days[3]
+    reqs = build_requirements(
+        [replace_child_day(c, day) for c in small_children for day in week_days],
+        week_days,
+        standard,
+        day_open=DAY_OPEN,
+        day_close=DAY_CLOSE,
+        granularity_min=30,
+        holiday_dates=[holiday],
+    )
+    result = _greedy([replace_child_day(c, day) for c in small_children for day in week_days], pool, reqs)
+    found = check_violations(reqs, result, pool)
+    shortfall_days = {v.day for v in found if v.code == "SHORTFALL_STAFF"}
+    assert shortfall_days
+    assert holiday not in shortfall_days
 
 
 def test_希望休に出勤するとBLOCKER(small_children, small_staff, small_requirements):

@@ -4,12 +4,11 @@
 > 職員配置基準連動型 数理最適化シフト自動作成エンジン（NuShift）と、直感的な Streamlit UI による保育園・こども園向け勤務シフト自動生成システム。
 
 [![Version](https://img.shields.io/badge/version-v0.5.0-blue.svg)](pyproject.toml)
-[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.13-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](pyproject.toml)
 [![Solver: HiGHS & CBC](https://img.shields.io/badge/Solver-HiGHS%20%7C%20CBC-orange.svg)](src/shiftai/solver.py)
-[![CI](https://img.shields.io/badge/CI-Tests%20%7C%20Lint-blueviolet.svg)](.github/)
-[![Support](https://img.shields.io/badge/Support-Email%20%7C%20Issues-7b1fa2.svg)](SUPPORT.md)
+[![CI](https://img.shields.io/badge/CI-Tests%20%7C%20Lint-blueviolet.svg)](.github/workflows/tests.yml)
 [![Community](https://img.shields.io/badge/Community-Discussions-9cf.svg)](https://github.com/hoikuict/nushift/discussions)
 
 **[操作マニュアル](MANUAL.md) | [Q&A (よくある質問)](Q_AND_A.md) | [ランディングページ](landing_page/index.html) | [開発ガイド](docs/05_開発ガイド.md) | [データ仕様](docs/04_データ仕様.md)**
@@ -96,7 +95,7 @@ nushift/
 │   ├── solver.py           # MILP最適化モデル (HiGHS / CBC / ウォームスタート / 突発欠勤リペア)
 │   ├── standards.py        # 法定配置基準エンジン (認可保育所 / 企業主導型)
 │   └── statutory_rules.py  # 法定閾値・休憩計算の単一ソース定義
-├── tests/                  # 単体・最適化性能・回帰テストスイート (53ファイル)
+├── tests/                  # 単体・最適化性能・回帰テストスイート (70ファイル)
 ├── sample/                 # サンプルデータ (園児・職員・希望休 CSV)
 ├── template/               # エクセル・CSV 入力テンプレート
 ├── docs/                   # 仕様書・開発ガイド・データ仕様・改善計画書
@@ -139,6 +138,9 @@ python -m venv .venv
 # 3. 依存パッケージのインストール
 pip install --upgrade pip
 pip install -r requirements.txt -r requirements-dev.txt
+
+# 4. 本パッケージのインストール（python -m shiftai / サブプロセステストに必要）
+pip install -e .
 ```
 
 #### Linux / macOS
@@ -155,6 +157,9 @@ source .venv/bin/activate
 # 3. 依存パッケージのインストール
 pip install --upgrade pip
 pip install -r requirements.txt -r requirements-dev.txt
+
+# 4. 本パッケージのインストール（python -m shiftai / サブプロセステストに必要）
+pip install -e .
 ```
 
 ### 4.3 アプリケーションの起動 (Streamlit UI)
@@ -189,12 +194,15 @@ python -m shiftai solve --sample --solver highs --pattern-mode --out out
 # コード規約・Lint チェック
 ruff check .
 
+# フォーマット検査（CI で実行される）
+ruff format --check .
+
 # 全テストスイートの実行 (回帰テスト含む)
 python -m pytest tests/ -x -q
-
-# ドキュメントのビルド検証
-python -m mkdocs build --strict
 ```
+
+CI（`.github/workflows/tests.yml`）は PR で `ruff check` / `ruff format --check` /
+`pytest -m "not slow"` を実行し、main push 時に slow（CBC 統合）テストも走らせます。
 
 すべてのテストがパスし、Ruff のチェックでエラーがゼロであることを確認してからコミットされています。
 

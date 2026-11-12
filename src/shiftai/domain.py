@@ -520,17 +520,12 @@ def qualified_count(members: Sequence[StaffMember], standard: StaffingStandard |
       看護師・准看護師を**上限まで**保育士とみなす（みなし保育士）。
     * ``qualified_extra_roles`` に看護師を含む（認可外保育施設指導監督基準）:
       看護師・准看護師を人数の上限なく数える（第1(2) の3分の1以上）。
+
+    保育士と看護師を兼任する職員は **1 人**と数える。
+    :func:`qualified_ids`（集合）と同じ結果になるようにする。
     """
-    hoikushi = sum(1 for m in members if m.has_role(Role.HOIKUSHI))
-    if standard is None:
-        return hoikushi
-    extra = sum(1 for m in members if set(m.roles) & standard.qualified_extra_roles)
-    if extra:
-        return hoikushi + extra
-    if standard.nurse_as_qualified_cap <= 0:
-        return hoikushi
-    nurses = sum(1 for m in members if m.is_nurse)
-    return hoikushi + min(nurses, standard.nurse_as_qualified_cap)
+    qualified = qualified_ids(members, standard)
+    return len(qualified)
 
 
 def qualified_ids(members: Sequence[StaffMember], standard: StaffingStandard | None) -> set[str]:
@@ -1199,6 +1194,15 @@ class SolveResult:
     @property
     def ok(self) -> bool:
         return self.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE, SolveStatus.PARTIAL)
+
+    @property
+    def has_shortfall(self) -> bool:
+        """配置基準の不足（ショートフォール）が 1 件でもあるか。
+
+        ``ok`` は PARTIAL（不足が残る暫定解）も真なので、
+        「完全解かどうか」の判定にはこのプロパティを使う。
+        """
+        return any(v.code.startswith("SHORTFALL") for v in self.violations)
 
     def day(self, day: date) -> ShiftDay | None:
         for sd in self.shift_days:

@@ -307,12 +307,21 @@ def render_table_step(kind: str, *, seed: int = 42, required: bool = True) -> No
             help="1 つ以上のファイルを選べます。列名は自動で読み替えます。",
         )
         if uploads:
-            try:
-                merged = pd.concat(tab_data.read_uploads(kind, uploads), ignore_index=True)
-                tab_data.store_frame(kind, merged)
-                st.success(f"{len(merged)} 行を読み込みました。")
-            except Exception as exc:  # noqa: BLE001 - 取り込み失敗で画面を落とさない
-                st.error(f"ファイルを読み込めませんでした: {exc}")
+            # uploader にファイルが残っている間、毎リランで再読込すると
+            # data_editor の手動編集が消えるため、内容が変わったときだけ読む。
+            signature = "|".join(
+                f"{getattr(f, 'name', '?')}:{getattr(f, 'size', -1)}:"
+                f"{tab_data.frame_fingerprint_upload(f)}"
+                for f in uploads
+            )
+            if signature != st.session_state.get(f"upload_signature_{kind}"):
+                try:
+                    merged = pd.concat(tab_data.read_uploads(kind, uploads), ignore_index=True)
+                    st.session_state[f"upload_signature_{kind}"] = signature
+                    tab_data.store_frame(kind, merged)
+                    st.success(f"{len(merged)} 行を読み込みました。")
+                except Exception as exc:  # noqa: BLE001 - 取り込み失敗で画面を落とさない
+                    st.error(f"ファイルを読み込めませんでした: {exc}")
         if kind == "children":
             # 園の基幹システム（CoDMON / キッズリーなど）由来の CSV は、
             # 専用の取り込み口を通したほうが短時間保育の扱いも正しい。
