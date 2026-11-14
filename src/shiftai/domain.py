@@ -1448,3 +1448,27 @@ def format_jp_date(day: date) -> str:
 
 def format_jp_date_full(day: date) -> str:
     return f"{day.year}年{day.month}月{day.day}日({japanese_weekday(day)})"
+
+
+class CancellationToken:
+    """求解タスクの協調的キャンセルトークン。
+
+    スレッドセーフにキャンセルフラグを管理し、ソルバーのループ境界で中断判定を行える。
+    """
+
+    def __init__(self) -> None:
+        import threading
+        self._event = threading.Event()
+
+    def cancel(self) -> None:
+        """キャンセルフラグをセットする。"""
+        self._event.set()
+
+    def is_cancelled(self) -> bool:
+        """キャンセルが要求されたか判定する。"""
+        return self._event.is_set()
+
+    def reset(self) -> None:
+        """フラグをリセットする。"""
+        self._event.clear()
+

@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import datetime as dt
 import os
-from collections.abc import Sequence
+import threading
+from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 
 import pulp
@@ -133,8 +135,55 @@ def solve_monthly_hierarchical(
     context: MonthlySolveContext,
     time_limit_sec: int = 120,
     solver_name: str | None = None,
+    progress_callback: Callable[[dict], None] | None = None,
+    cancellation_token: object | None = None,
+    parallel_workers: int = 1,
 ) -> SolveResult:
-    """2段階階層的アプローチにより月次一括シフトを求解する。"""
+    """2段階階層的アプローチにより月次一括シフトを求解する。
+
+    Timefold 思想に基づく拡張:
+      - progress_callback: 求解フェーズ・進捗率（0-100%）・暫定スコアのリアルタイム通知
+      - cancellation_token: 協調的キャンセル機構（中断時も直前までの暫定最良解を保持）
+      - parallel_workers: Stage 2 日スライスのマルチコア並列探索 (Partitioned Search)
+    """
+    def _is_cancelled() -> bool:
+        if cancellation_token is None:
+            return False
+        if hasattr(cancellation_token, "is_cancelled"):
+            return cancellation_token.is_cancelled()
+        if hasattr(cancellation_token, "is_set"):
+            return cancellation_token.is_set()
+        if callable(cancellation_token):
+            return bool(cancellation_token())
+        return False
+
+    def _notify(stage: str, progress: int, day: str | None = None, extra: dict | None = None) -> None:
+        if progress_callback is None:
+            return
+        payload = {
+            "stage": stage,
+            "progress_percent": progress,
+            "current_day": day,
+            "total_days": len(context.all_days),
+        }
+        if extra:
+            payload.update(extra)
+        try:
+            progress_callback(payload)
+        except Exception:
+            pass
+
+    _notify("STAGE_1_PATTERNS", 5)
+
+    if _is_cancelled():
+        return SolveResult(
+            status=SolveStatus.PARTIAL,
+            shift_days=[],
+            violations=[],
+            messages=["Cancelled before Stage 1"],
+            stats={"cancelled": True},
+        )
+
     # 開所・閉所スロットおよびパート枠に即した実務パターン群を自動拡充
     effective_patterns = _ensure_effective_patterns(context)
     if len(effective_patterns) != len(context.patterns):
@@ -154,6 +203,17 @@ def solve_monthly_hierarchical(
         time_limit_sec=stage1_time,
         solver_name=effective_solver,
     )
+
+    _notify("STAGE_1_DONE", 20, extra={"stage1_patterns": len(stage1_res)})
+
+    if _is_cancelled():
+        return SolveResult(
+            status=SolveStatus.PARTIAL,
+            shift_days=[],
+            violations=[],
+            messages=["Cancelled after Stage 1"],
+            stats={"cancelled": True, "stage1_patterns": len(stage1_res)},
+        )
 
     combined_fixed = dict(context.fixed_assignments)
     warm_starts: dict[tuple[str, dt.date, str], CellState] = {}
@@ -192,7 +252,6 @@ def solve_monthly_hierarchical(
     # ---------------------------------------------------------
     # Stage 2: 日スライス単位の 30分スロット詳細配置 & 休憩スタッガー最適化
     # ---------------------------------------------------------
-    # 日単位スライス (chunk_size=1) により探索空間を最小化し、各日を高速 (0.5〜1秒) かつ確実に求解
     chunk_size = 1
     day_chunks = [
         context.all_days[i : i + chunk_size]
@@ -209,7 +268,14 @@ def solve_monthly_hierarchical(
     remaining_budget = max(time_limit_sec - stage1_time, 30)
     per_chunk_time = max(remaining_budget // max(len(day_chunks), 1), 10)
 
-    for week_days in day_chunks:
+    total_chunks = len(day_chunks)
+    completed_chunks = 0
+    progress_lock = threading.Lock()
+
+    def _solve_chunk_task(week_days: list[dt.date]) -> tuple[list[ShiftDay], list[Violation], list[str], SolveStatus] | None:
+        if _is_cancelled():
+            return None
+
         week_days_set = set(week_days)
         week_children = [c for c in context.children if c.day in week_days_set]
 
@@ -263,19 +329,85 @@ def solve_monthly_hierarchical(
                 settings=context.facility_settings,
             )
 
-        if sub_res.status == SolveStatus.OPTIMAL:
-            is_any_feasible = True
-        elif sub_res.status == SolveStatus.FEASIBLE:
-            is_all_optimal = False
-            is_any_feasible = True
-        else:
-            is_all_optimal = False
+        return (sub_res.shift_days, sub_res.violations, sub_res.messages, sub_res.status)
 
-        all_shift_days.extend(sub_res.shift_days)
-        all_violations.extend(sub_res.violations)
-        all_messages.extend(sub_res.messages)
+    was_cancelled = False
 
-    if is_all_optimal and len(all_shift_days) == len(context.all_days):
+    if parallel_workers > 1 and len(day_chunks) > 1:
+        # Partitioned Search: 日スライスを並列求解
+        chunk_results: dict[int, tuple[list[ShiftDay], list[Violation], list[str], SolveStatus]] = {}
+        with ThreadPoolExecutor(max_workers=min(parallel_workers, len(day_chunks))) as executor:
+            future_to_idx = {
+                executor.submit(_solve_chunk_task, chunk): idx
+                for idx, chunk in enumerate(day_chunks)
+            }
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                if _is_cancelled():
+                    was_cancelled = True
+                    break
+                try:
+                    res_tuple = future.result()
+                    if res_tuple is not None:
+                        chunk_results[idx] = res_tuple
+                except Exception as e:
+                    all_messages.append(f"Chunk {idx} error: {e}")
+
+                with progress_lock:
+                    completed_chunks += 1
+                    pct = 20 + int(75 * completed_chunks / total_chunks)
+                    day_str = day_chunks[idx][0].isoformat() if day_chunks[idx] else None
+                    _notify("STAGE_2_SLOTS", min(pct, 95), day=day_str, extra={"completed_days": completed_chunks})
+
+        for idx in range(total_chunks):
+            if idx in chunk_results:
+                sd_list, v_list, m_list, status = chunk_results[idx]
+                all_shift_days.extend(sd_list)
+                all_violations.extend(v_list)
+                all_messages.extend(m_list)
+                if status == SolveStatus.OPTIMAL:
+                    is_any_feasible = True
+                elif status == SolveStatus.FEASIBLE:
+                    is_all_optimal = False
+                    is_any_feasible = True
+                else:
+                    is_all_optimal = False
+    else:
+        # 直列求解
+        for idx, week_days in enumerate(day_chunks):
+            if _is_cancelled():
+                was_cancelled = True
+                break
+            res_tuple = _solve_chunk_task(week_days)
+            if res_tuple is None:
+                was_cancelled = True
+                break
+
+            sd_list, v_list, m_list, status = res_tuple
+            all_shift_days.extend(sd_list)
+            all_violations.extend(v_list)
+            all_messages.extend(m_list)
+
+            if status == SolveStatus.OPTIMAL:
+                is_any_feasible = True
+            elif status == SolveStatus.FEASIBLE:
+                is_all_optimal = False
+                is_any_feasible = True
+            else:
+                is_all_optimal = False
+
+            completed_chunks += 1
+            pct = 20 + int(75 * completed_chunks / total_chunks)
+            day_str = week_days[0].isoformat() if week_days else None
+            _notify("STAGE_2_SLOTS", min(pct, 95), day=day_str, extra={"completed_days": completed_chunks})
+
+    # 解けた日をソート
+    all_shift_days.sort(key=lambda x: x.day)
+
+    if was_cancelled:
+        overall_status = SolveStatus.PARTIAL
+        all_messages.append("Solve cancelled by user request; partial checkpoint solution returned")
+    elif is_all_optimal and len(all_shift_days) == len(context.all_days):
         overall_status = SolveStatus.OPTIMAL
     elif is_any_feasible and len(all_shift_days) == len(context.all_days):
         overall_status = SolveStatus.FEASIBLE
@@ -292,7 +424,10 @@ def solve_monthly_hierarchical(
             "backend_solver": effective_solver,
             "num_days": len(context.all_days),
             "num_chunks": len(day_chunks),
+            "completed_chunks": completed_chunks,
             "stage1_patterns": len(stage1_res),
+            "parallel_workers": parallel_workers,
+            "cancelled": was_cancelled,
         },
     )
     try:
@@ -308,6 +443,13 @@ def solve_monthly_hierarchical(
         )
     except Exception:
         pass
+
+    _notify("DONE", 100, extra={
+        "status": res.status.value,
+        "days": len(res.shift_days),
+        "hard_score": res.score.hard_score if res.score else 0,
+        "soft_score": res.score.soft_score if res.score else 0.0,
+    })
 
     return res
 
