@@ -554,7 +554,7 @@ def _solve_stage1_daily_patterns(
     for (fsid, fday), fstates in fixed_by_staff_day.items():
         if CellState.WORK in fstates:
             prob += duty_vars[(fsid, fday)] == 1
-        elif any(st in (CellState.LEAVE, CellState.PAID_LEAVE) for st in fstates) or fstates == {CellState.OFF}:
+        elif CellState.OFF in fstates or fstates == {CellState.OFF}:
             prob += duty_vars[(fsid, fday)] == 0
 
     # 制約1-3: 希望休（pref.unavailable）の反映
