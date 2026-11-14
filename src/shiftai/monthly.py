@@ -61,6 +61,7 @@ class MonthlySolveContext:
     monthly_holiday_target: int
     children: Sequence[ChildPlan] = field(default_factory=tuple)
     standard: StaffingStandard | None = None
+    weights: ObjectiveWeights | None = None
 
 
 def _ensure_effective_patterns(context: MonthlySolveContext) -> list[ShiftPattern]:
@@ -138,6 +139,7 @@ def solve_monthly_hierarchical(
     progress_callback: Callable[[dict], None] | None = None,
     cancellation_token: object | None = None,
     parallel_workers: int = 1,
+    weights: ObjectiveWeights | None = None,
 ) -> SolveResult:
     """2段階階層的アプローチにより月次一括シフトを求解する。
 
@@ -145,6 +147,8 @@ def solve_monthly_hierarchical(
       - progress_callback: 求解フェーズ・進捗率（0-100%）・暫定スコアのリアルタイム通知
       - cancellation_token: 協調的キャンセル機構（中断時も直前までの暫定最良解を保持）
       - parallel_workers: Stage 2 日スライスのマルチコア並列探索 (Partitioned Search)
+      - weights: 園別・実行時制約重みの注入（未指定時は context.weights または規定値）
+      - ruin_and_recreate: Stage 2 で解なし・タイムアウト時の局所探索自動フォールバック
     """
     def _is_cancelled() -> bool:
         if cancellation_token is None:
@@ -194,6 +198,13 @@ def solve_monthly_hierarchical(
     if not effective_solver:
         effective_solver = "HiGHS" if is_highs_available() else "PULP_CBC_CMD"
 
+    # 有効な制約重み（DB または呼び出し元から注入）
+    effective_weights = (
+        weights
+        or getattr(context, "weights", None)
+        or ObjectiveWeights(split_duty_penalty=5000.0)
+    )
+
     # ---------------------------------------------------------
     # Stage 1: 月間日次パターンの割り当て (MILP)
     # ---------------------------------------------------------
@@ -202,6 +213,7 @@ def solve_monthly_hierarchical(
         context=context,
         time_limit_sec=stage1_time,
         solver_name=effective_solver,
+        weights=effective_weights,
     )
 
     _notify("STAGE_1_DONE", 20, extra={"stage1_patterns": len(stage1_res)})
@@ -264,7 +276,7 @@ def solve_monthly_hierarchical(
     is_all_optimal = True
     is_any_feasible = False
 
-    weights = ObjectiveWeights(split_duty_penalty=5000.0)
+    weights = effective_weights
     remaining_budget = max(time_limit_sec - stage1_time, 30)
     per_chunk_time = max(remaining_budget // max(len(day_chunks), 1), 10)
 
@@ -328,6 +340,27 @@ def solve_monthly_hierarchical(
                 staff=context.staff,
                 settings=context.facility_settings,
             )
+
+        # Timefold 思想: MILP が解なしまたはタイムアウトで実行不可能解となった場合、
+        # 自動的に Ruin & Recreate 局所探索フォールバックを起動して修復する
+        if sub_res.status not in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE) or not sub_res.shift_days:
+            try:
+                from shiftai.local_search import ruin_and_recreate
+                ls_res = ruin_and_recreate(
+                    initial_result=sub_res,
+                    requirements=week_requirements,
+                    staff=context.staff,
+                    preferences=context.preferences,
+                    standard=context.standard,
+                    settings=context.facility_settings,
+                    fixed_assignments=week_fixed,
+                    patterns=context.patterns,
+                    weights=weights,
+                )
+                if ls_res.shift_days:
+                    sub_res = ls_res
+            except Exception as e:
+                sub_res.messages.append(f"Local search fallback error: {e}")
 
         return (sub_res.shift_days, sub_res.violations, sub_res.messages, sub_res.status)
 
@@ -458,6 +491,7 @@ def _solve_stage1_daily_patterns(
     context: MonthlySolveContext,
     time_limit_sec: int = 30,
     solver_name: str | None = None,
+    weights: ObjectiveWeights | None = None,
 ) -> dict[tuple[str, dt.date], str]:
     """Stage 1: 日単位のパターン割り当てモデルを PuLP で定式化・求解する。"""
     prob = pulp.LpProblem("Monthly_Stage1_Pattern_Assignment", pulp.LpMinimize)

@@ -39,6 +39,7 @@ def ruin_and_recreate(
     settings: FacilitySettings | None = None,
     fixed_assignments: Mapping[tuple[str, date, str], CellState] | None = None,
     patterns: Sequence[ShiftPattern] | None = None,
+    weights: Any | None = None,
     max_iterations: int = 50,
 ) -> SolveResult:
     """パターンベースの Ruin & Recreate 局所探索により、暫定解の制約違反を順次解消・改善する。"""
@@ -49,11 +50,25 @@ def ruin_and_recreate(
     placeable_staff = [s for s in staff if s.is_placeable]
 
     current_shift_days = [copy.deepcopy(sd) for sd in initial_result.shift_days]
+    existing_days = {sd.day for sd in current_shift_days}
+
+    # 初期解に欠けている日があれば全職員 OFF (fixed は反映) で補完
+    req_days = list(requirements.rows.keys()) if hasattr(requirements, "rows") else []
+    for d in req_days:
+        if d not in existing_days:
+            day_assign: dict[str, dict[str, CellState]] = {}
+            for s in staff:
+                s_map: dict[str, CellState] = {}
+                for sl in slots:
+                    fixed_val = fixed.get((s.staff_id, d, sl.label))
+                    s_map[sl.label] = fixed_val if fixed_val is not None else CellState.OFF
+                day_assign[s.staff_id] = s_map
+            current_shift_days.append(ShiftDay(day=d, assignments=day_assign))
 
     # 現在のスコアを算出
     current_violations = check_violations(
         requirements,
-        initial_result,
+        SolveResult(status=initial_result.status, shift_days=current_shift_days, violations=[]),
         staff,
         prefs,
         standard=standard,
@@ -65,6 +80,7 @@ def ruin_and_recreate(
         requirements=requirements,
         staff=staff,
         preferences=prefs,
+        weights=weights,
     )
 
     best_shift_days = [copy.deepcopy(sd) for sd in current_shift_days]
@@ -151,6 +167,7 @@ def ruin_and_recreate(
                         requirements=requirements,
                         staff=staff,
                         preferences=prefs,
+                        weights=weights,
                     )
 
                     # スコア改善判定 (Hard優先)
