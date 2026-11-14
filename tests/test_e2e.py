@@ -47,7 +47,7 @@ def test_一連の業務フロー(solved_week, week_inputs):
 
     assert len(children) > 0
     assert len(staff) == 28
-    assert total_required_hours(table) == pytest.approx(521.0)
+    assert total_required_hours(table) == pytest.approx(476.0)
 
     result = solved_week
     assert result.ok is True
@@ -137,7 +137,7 @@ def test_データ入出力のラウンドトリップ(solved_week, week_inputs)
 def test_一週間の必要人時が市政基準の想定内(week_inputs):
     """1 週間分の必要人時とピーク配置が市政基準の想定内であること。"""
     children, staff, prefs, table = week_inputs
-    assert total_required_hours(table) == pytest.approx(521.0)
+    assert total_required_hours(table) == pytest.approx(476.0)
     assert peak_requirement(table) == 9
     assert len(table.all_days()) == 7
     assert len(table.day_slots()) == 25

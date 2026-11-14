@@ -327,16 +327,16 @@ def test_根拠に日本語の定員比が入っている(week_days, fq_standard
 
 
 def test_総必要人時とピーク(week_days, fq_standard):
-    """1 週間・福岡市サンプルで 521.0 人時・ピーク 9 名であること。"""
+    """1 週間・福岡市サンプルで 476.0 人時（合同保育適正化後）・ピーク 9 名であること。"""
     from shiftai import sample_data
 
     children, _, _ = sample_data.make_dataset(week_days, seed=42)
     table = build_requirements(
         children, week_days, fq_standard, day_open=time(7, 15), day_close=time(19, 30)
     )
-    assert total_required_hours(table) == pytest.approx(521.0)
+    assert total_required_hours(table) == pytest.approx(476.0)
     assert peak_requirement(table) == 9
-    assert table.total_needed_hours() == pytest.approx(521.0)
+    assert table.total_needed_hours() == pytest.approx(476.0)
 
 
 def test_to_long_dataframeが例外なく列を持つ(week_days, fq_standard):

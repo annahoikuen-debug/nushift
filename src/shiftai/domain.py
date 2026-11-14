@@ -734,6 +734,11 @@ class StaffingStandard:
         config.DEFAULT_LATE_CARE_END,
     )
     """延長保育の時間帯。"""
+    combined_care_early_late: bool = True
+    """早朝・延長保育時間帯に全年齢児を合算（合同保育）して必要人員を算出する。
+    園児数が少ない時間帯に年齢クラス別切り上げで保育士が過大算定されるのを防ぎ、
+    実務に即した最低2名配置とする。
+    """
     late_care_relaxed: bool = True
     """延長時に「保育士1名＋他資格者」で代替できるとする（Fukuoka型）。"""
     late_care_min_qualified: int = 1

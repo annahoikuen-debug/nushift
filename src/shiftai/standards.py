@@ -232,9 +232,26 @@ def _slot_requirements(
     if not present:
         return []
 
+    is_combined = (
+        standard.combined_care_early_late
+        and kind in (SlotKind.EARLY, SlotKind.LATE, SlotKind.LATE_STRICT)
+    )
+
     if standard.headcount_mode == HEADCOUNT_FACILITY_FORMULA:
         total = standard.headcount_for_slot(slot_counts)
         staff_alloc = standard.allocate_staff(slot_counts)
+    elif is_combined:
+        # 合同保育（早朝・延長）: 全年齢児の加重比率を合算して必要人員を算出（最低1名）
+        ratio_sum = sum(
+            slot_counts[ac] / standard.ratios[ac].children_per_staff
+            for ac in present
+            if ac in standard.ratios and standard.ratios[ac].children_per_staff > 0
+        )
+        combined_total = max(1, math.ceil(ratio_sum))
+        youngest = present[0]
+        # 合同保育行として代表クラス（最年少）に集約し、0名の不要行は作らない
+        staff_alloc = {youngest: combined_total}
+        total = combined_total
     else:
         staff_alloc = {
             age_class: standard.headcount_for(age_class, slot_counts[age_class])
@@ -247,11 +264,11 @@ def _slot_requirements(
         qual_alloc = standard.allocate_qualified(staff_alloc, qual_total)
     else:
         # 認可保育所: 行ごとに「必要人員＝必要保育士数」（延長緩和の時は半数を保育士）
-        qual_total = sum(staff_alloc.values())
         qual_alloc = {
             age_class: _required_qualified(standard, kind, staff_alloc[age_class])
-            for age_class in present
+            for age_class in staff_alloc
         }
+        qual_total = sum(qual_alloc.values())
 
     shared_basis = (
         _facility_formula_basis(standard, slot_counts, total, qual_total)
@@ -260,21 +277,30 @@ def _slot_requirements(
     )
 
     rows: list[Requirement] = []
-    for age_class in present:
+    youngest = present[0] if present else None
+    for age_class in (staff_alloc if is_combined else present):
         needed_staff = staff_alloc[age_class]
         needed_qualified = qual_alloc.get(age_class, 0)
+        child_count = sum(slot_counts.values()) if is_combined else slot_counts[age_class]
         if shared_basis:
             row_basis = [
-                f"{age_class.value} {slot_counts[age_class]}名 → 必要人員{needed_staff}名",
+                f"{age_class.value} {child_count}名 → 必要人員{needed_staff}名",
                 slot_kind_label(kind),
                 shared_basis,
             ]
+        elif is_combined:
+            row_basis = [
+                f"合同保育（在園計{child_count}名・定員比（1:N）合算{ratio_sum:.2f}・端数切り上げ） → 必要人員{needed_staff}名（うち保育士{needed_qualified}名）",
+                slot_kind_label(kind),
+            ]
+            if standard.late_care_relaxed and kind is SlotKind.LATE and needed_qualified < needed_staff:
+                row_basis.append("延長保育に伴う保育士代替措置を適用（半数以上を保育士配置）")
         else:
             row_basis = [
                 _basis_text(
                     standard,
                     age_class,
-                    slot_counts[age_class],
+                    child_count,
                     needed_staff,
                     needed_qualified,
                     kind,

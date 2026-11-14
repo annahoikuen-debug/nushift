@@ -557,7 +557,7 @@ def test_配置基準を満たす1週間シフト(solved_week, week_inputs):
     # Other BLOCKERs should not exist
     other_blockers = [v for v in blockers if v.code != "BREAK_INSUFFICIENT"]
     assert len(other_blockers) == 0, f"Unexpected BLOCKERs: {other_blockers}"
-    assert report.total_required_hours == pytest.approx(521.0)
+    assert report.total_required_hours == pytest.approx(476.0)
     assert solved_week.stats["num_slots"] == 25
     assert solved_week.stats["num_days"] == 7
 

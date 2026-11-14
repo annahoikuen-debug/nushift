@@ -34,6 +34,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date
+import os
 from time import perf_counter
 from typing import Any
 
@@ -203,7 +204,17 @@ def _get_solver(
 
     if chosen.lower() in ("highs", "highspy") and is_highs_available():
         try:
-            return pulp.HiGHS(msg=msg, timeLimit=limit, warmStart=warm_start), "HiGHS"
+            num_threads = min(4, os.cpu_count() or 1)
+            return (
+                pulp.HiGHS(
+                    msg=msg,
+                    timeLimit=limit,
+                    threads=num_threads,
+                    gapRel=0.03,
+                    mip_heuristic_effort=0.2,
+                ),
+                "HiGHS",
+            )
         except Exception:
             pass
 
@@ -908,12 +919,19 @@ def _build_cells(
                     work_map[i] = wv
                 if not _is_zero(bv):
                     breaks[i] = bv
-            eff_break = (
+            raw_break = (
                 st.contract.break_minutes
                 if st.contract.break_minutes is not None
                 else getattr(settings, "break_minutes", None) or break_minutes
             )
-            eff_break = min(max(eff_break, config.MIN_ALLOWABLE_BREAK_MINUTES), config.MAX_ALLOWABLE_BREAK_MINUTES)
+            is_part_short = (
+                (st.contract.daily_hours is not None and st.contract.daily_hours <= 6.0)
+                or st.contract.employment_type in (EmploymentType.PART, EmploymentType.BUNKIN)
+            )
+            if (st.contract.break_minutes is not None and st.contract.break_minutes == 0) or is_part_short or cap_min <= 6 * 60:
+                eff_break = 0
+            else:
+                eff_break = min(max(raw_break, config.MIN_ALLOWABLE_BREAK_MINUTES), config.MAX_ALLOWABLE_BREAK_MINUTES)
             max_blocks = (
                 st.contract.max_work_blocks_per_day
                 if st.contract.max_work_blocks_per_day is not None
@@ -1140,6 +1158,8 @@ def _add_workload(
 
 def _break_slots(cap_min: int, break_minutes: int, gran: int) -> int:
     """必要休憩スロット数を算出する（0 以上、日上限スロット数以下）。"""
+    if break_minutes <= 0 or cap_min <= 6 * 60:
+        return 0
     return min(max(1, -(-break_minutes // gran)), max(0, cap_min // gran))
 
 
@@ -1157,13 +1177,20 @@ def _add_breaks(
     gran = max(1, int(requirements.granularity_min or slots[0].minutes))
     for st in staff:
         sid = st.staff_id
-        eff_break = (
+        raw_break = (
             st.contract.break_minutes
             if st.contract.break_minutes is not None
             else getattr(settings, "break_minutes", None) or break_minutes
         )
-        eff_break = min(max(eff_break, config.MIN_ALLOWABLE_BREAK_MINUTES), config.MAX_ALLOWABLE_BREAK_MINUTES)
         cap_min = _daily_cap_minutes(st.contract)
+        is_part_short = (
+            (st.contract.daily_hours is not None and st.contract.daily_hours <= 6.0)
+            or st.contract.employment_type in (EmploymentType.PART, EmploymentType.BUNKIN)
+        )
+        if (st.contract.break_minutes is not None and st.contract.break_minutes == 0) or is_part_short or cap_min <= 6 * 60:
+            eff_break = 0
+        else:
+            eff_break = min(max(raw_break, config.MIN_ALLOWABLE_BREAK_MINUTES), config.MAX_ALLOWABLE_BREAK_MINUTES)
         need_slots = _break_slots(cap_min, eff_break, gran)
         if need_slots <= 0:
             continue
