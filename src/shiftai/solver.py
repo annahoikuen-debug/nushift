@@ -2458,6 +2458,7 @@ def _finish(
     stats["elapsed_sec"] = round(elapsed, 3)
     stats["pass"] = pass_no
     stats["relaxed"] = relaxed
+    stats.setdefault("fallback", None)
     requirements = payload.requirements
     days = requirements.all_days()
     slots = tuple(requirements.slots)

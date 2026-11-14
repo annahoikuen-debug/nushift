@@ -289,6 +289,18 @@ def solve_monthly_hierarchical(
             return None
 
         week_days_set = set(week_days)
+        closed_days_set = set(getattr(context.facility_settings, "closed_days", None) or [])
+        if all(
+            d in closed_days_set or (hasattr(context.requirements, "is_closed") and context.requirements.is_closed(d))
+            for d in week_days
+        ):
+            # 休園日は全職員 OFF の ShiftDay を直接生成して即時返却
+            closed_sds = [
+                ShiftDay(day=d, assignments={s.staff_id: {slot.label: CellState.OFF for slot in slots} for s in context.staff})
+                for d in week_days
+            ]
+            return (closed_sds, [], [f"{d.isoformat()} は休園日のため全員 OFF です" for d in week_days], SolveStatus.OPTIMAL)
+
         week_children = [c for c in context.children if c.day in week_days_set]
 
         week_requirements = RequirementTable(
@@ -520,6 +532,18 @@ def _solve_stage1_daily_patterns(
     for sid in staff_ids:
         for d in days:
             prob += pulp.lpSum([x_vars[(sid, d, pk)] for pk in pat_keys]) == duty_vars[(sid, d)]
+
+    # 制約1-1: 休園日（closed_days）は全職員出勤禁止（全パターン 0 / duty 0）
+    closed_days = set(getattr(context.facility_settings, "closed_days", None) or [])
+    for d in days:
+        is_closed = (d in closed_days) or (
+            hasattr(context.requirements, "is_closed") and context.requirements.is_closed(d)
+        )
+        if is_closed:
+            for sid in staff_ids:
+                prob += duty_vars[(sid, d)] == 0
+                for p in patterns:
+                    prob += x_vars[(sid, d, p.key)] == 0
 
     # 制約1-2: 手動確定（fixed_assignments）の反映
     fixed_by_staff_day: dict[tuple[str, dt.date], set[CellState]] = {}
