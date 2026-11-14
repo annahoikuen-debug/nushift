@@ -1603,6 +1603,10 @@ def test_シフト表は不足違反の部分指定を受け取る(tmp_path, sol
     infos = "\n".join(i.value for i in at.info)
     assert slots[0].label in infos
     assert "職員候補" in infos or "オフ" in infos
+    # オフ職員候補のワンクリック配置ボタンが生成されていること
+    quick_buttons = [b for b in at.button if b.key.startswith("quick_assign_")]
+    if quick_buttons:
+        assert "配置" in quick_buttons[0].label
 
 
 def test_シフト表は職員単位の指定を受け取る(tmp_path, solved_payload):
@@ -1620,6 +1624,30 @@ def test_シフト表は職員単位の指定を受け取る(tmp_path, solved_pa
     assert not at.exception, [str(e.value) for e in at.exception]
     infos = "\n".join(i.value for i in at.info)
     assert "S01" in infos
+
+
+def test_固定セル一覧は本日のみ解除と全解除を出し分ける(tmp_path, solved_payload, one_day, slots):
+    """本日分の固定がある場合は「本日の確定のみ解除」と「すべて解除」の2つのボタンが出ること。"""
+    today_iso = one_day[0].isoformat()
+    body = (
+        "from datetime import date\n"
+        "from shiftai.domain import CellState\n"
+        "from shiftai.ui import state, tab_shift\n"
+        "state.set(state.KEY_SOLVE_RESULT, PAYLOAD['state'][state.KEY_SOLVE_RESULT])\n"
+        "state.set(state.KEY_STAFF, PAYLOAD['state'][state.KEY_STAFF])\n"
+        f"st.session_state['active_day'] = date.fromisoformat('{today_iso}')\n"
+        f"fixed = {{('S01', date.fromisoformat('{today_iso}'), '{slots[0].label}'): CellState.WORK}}\n"
+        "state.set(state.KEY_FIXED_ASSIGNMENTS, fixed)\n"
+        "tab_shift._render_fixed_list()\n"
+    )
+    at = _run_widget_script(tmp_path, body, payload=solved_payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    day_clear = [b for b in at.button if b.key == "clear_fixed_day"]
+    all_clear = [b for b in at.button if b.key == "clear_fixed"]
+    assert day_clear, "本日の確定のみ解除ボタンが無い"
+    assert all_clear, "すべての確定を全解除するボタンが無い"
+    assert "本日" in day_clear[0].label
+
 
 
 def _run_widget_script(tmp_path: Path, body: str, *, payload: Any = None) -> Any:

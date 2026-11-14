@@ -547,20 +547,44 @@ def cmd_solve(args: argparse.Namespace) -> int:
         for g in gaps[:5]:
             _echo(f"  - {g.describe()}")
 
-    result = solve_shift(
-        loaded.children,
-        loaded.staff,
-        table,
-        preferences=loaded.preferences,
-        settings=settings,
-        time_limit_sec=args.time_limit,
-        standard=standard,
-        patterns=patterns,
-        relaxation=relaxation,
-        solver_name=args.solver,
-        warm_start=not args.no_warm_start,
-        pattern_mode=args.pattern_mode,
-    )
+    if getattr(args, "mode", "weekly") == "monthly":
+        from shiftai.monthly import MonthlySolveContext, solve_monthly_hierarchical
+        contracts_map = {s.staff_id: s.contract for s in loaded.staff if s.contract}
+        effective_patterns = list(patterns or default_patterns(settings.day_open, settings.day_close))
+        monthly_ctx = MonthlySolveContext(
+            target_month=f"{days[0].year:04d}-{days[0].month:02d}",
+            all_days=days,
+            staff=loaded.staff,
+            contracts=contracts_map,
+            preferences=loaded.preferences,
+            patterns=effective_patterns,
+            requirements=table,
+            facility_settings=settings,
+            fixed_assignments={},
+            prior_duty_history={},
+            monthly_holiday_target=getattr(args, "monthly_holiday_target", 8) or 8,
+            children=loaded.children,
+        )
+        result = solve_monthly_hierarchical(
+            monthly_ctx,
+            time_limit_sec=args.time_limit,
+            solver_name=args.solver,
+        )
+    else:
+        result = solve_shift(
+            loaded.children,
+            loaded.staff,
+            table,
+            preferences=loaded.preferences,
+            settings=settings,
+            time_limit_sec=args.time_limit,
+            standard=standard,
+            patterns=patterns,
+            relaxation=relaxation,
+            solver_name=args.solver,
+            warm_start=not args.no_warm_start,
+            pattern_mode=args.pattern_mode,
+        )
     _echo(f"最適化: {result.status.value}（{result.stats.get('elapsed_sec', 0.0)} 秒）")
     for message in result.messages:
         _echo(f"  {message}")
@@ -836,6 +860,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-pattern-snap",
         action="store_true",
         help="パターンをMILP へ渡すだけで、生成後の境界の整列は行わない",
+    )
+    solve.add_argument(
+        "--mode",
+        choices=["weekly", "monthly"],
+        default="weekly",
+        help="最適化モード（weekly: 週単位詳細最適化 / monthly: 2段階階層的月次最適化）。既定: weekly",
+    )
+    solve.add_argument(
+        "--monthly-holiday-target",
+        type=int,
+        default=8,
+        help="月次モード時の月間公休目標日数（既定: 8日）",
     )
     solve.add_argument(
         "--pattern-mode",

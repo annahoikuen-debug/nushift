@@ -103,20 +103,45 @@ def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveRes
         progress.progress(PROGRESS_STEPS[1][0], text=PROGRESS_STEPS[1][1])
         progress.progress(PROGRESS_STEPS[2][0], text=PROGRESS_STEPS[2][1])
         with st.spinner(PROGRESS_STEPS[3][1]):
-            result = solver.solve_shift(
-                children,
-                staff,
-                table,
-                preferences,
-                weights,
-                fixed_assignments=fixed,
-                settings=settings,
-                time_limit_sec=limit,
-                msg=False,
-                standard=standard,
-                patterns=patterns,
-                relaxation=level,
-            )
+            solve_mode = st.session_state.get("solve_mode", "weekly")
+            if solve_mode == "monthly":
+                from shiftai.monthly import MonthlySolveContext, solve_monthly_hierarchical
+
+                days_list = table.all_days()
+                contracts_map = {s.staff_id: s.contract for s in staff if s.contract}
+                m_ctx = MonthlySolveContext(
+                    target_month=f"{days_list[0].year:04d}-{days_list[0].month:02d}" if days_list else "",
+                    all_days=days_list,
+                    staff=staff,
+                    contracts=contracts_map,
+                    preferences=preferences,
+                    patterns=patterns or (),
+                    requirements=table,
+                    facility_settings=settings,
+                    fixed_assignments=fixed,
+                    prior_duty_history={},
+                    monthly_holiday_target=int(st.session_state.get("monthly_holiday_target", 8)),
+                    children=children,
+                )
+                result = solve_monthly_hierarchical(
+                    m_ctx,
+                    time_limit_sec=limit,
+                )
+            else:
+                result = solver.solve_shift(
+                    children,
+                    staff,
+                    table,
+                    preferences,
+                    weights,
+                    fixed_assignments=fixed,
+                    settings=settings,
+                    time_limit_sec=limit,
+                    msg=False,
+                    standard=standard,
+                    patterns=patterns,
+                    relaxation=level,
+                )
         progress.progress(PROGRESS_STEPS[4][0], text=PROGRESS_STEPS[4][1])
         snap_changes: tuple = ()
         if patterns and state.get(state.KEY_PATTERN_SNAP):
@@ -679,6 +704,27 @@ def render(*, auto_requirements: bool = False, embed_shift: bool = False) -> Non
 
     _render_precheck(table)
     _render_diagnosis(table, state.get(state.KEY_SOLVE_RESULT))
+
+    col_m1, col_m2 = st.columns([3, 2])
+    with col_m1:
+        st.radio(
+            "最適化モード",
+            options=["weekly", "monthly"],
+            format_func=lambda m: "週単位 (7日間)" if m == "weekly" else "月次一括 (2段階階層的最適化)",
+            key="solve_mode",
+            horizontal=True,
+            help="1ヶ月などの長期シフトを作成する場合は「月次一括」を選択すると、公休目標や連勤制限を守りながら高速に解けます。",
+        )
+    with col_m2:
+        if st.session_state.get("solve_mode") == "monthly":
+            st.number_input(
+                "月間公休目標日数",
+                min_value=4,
+                max_value=15,
+                value=8,
+                key="monthly_holiday_target",
+                help="1人あたりの月間公休数の目標値（既定: 8日）",
+            )
 
     if st.button(
         "🚀 シフトを自動作成する",

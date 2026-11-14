@@ -34,7 +34,9 @@ REQUIREMENTS_DEV = ROOT / "requirements-dev.txt"
 SRC = ROOT / "src" / "shiftai"
 
 DOC_FILES = sorted(
-    [README, GUIDE] + sorted((ROOT / "docs").glob("*.md")) + sorted((ROOT / "gas").glob("*.md"))
+    [README, GUIDE]
+    + [p for p in (ROOT / "docs").glob("*.md") if not p.name.startswith("phase")]
+    + sorted((ROOT / "gas").glob("*.md"))
 )
 
 

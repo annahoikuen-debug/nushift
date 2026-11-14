@@ -301,7 +301,7 @@ def _commit_edits(fixed: dict[tuple[str, date, str], CellState], count: int) -> 
         st.error(f"再最適化に失敗しました（確定は保持されています）: {exc}")
 
 
-def _render_fixed_list() -> None:
+def _render_fixed_list(day: date | None = None) -> None:
     """固定済みセルの一覧と全解除。"""
     fixed = state.normalize_fixed(state.get(state.KEY_FIXED_ASSIGNMENTS))
     with st.expander(f"🔒 手動で確定したセル（{len(fixed)} 件）", expanded=False):
@@ -322,10 +322,29 @@ def _render_fixed_list() -> None:
             )
         ]
         st.dataframe(records, hide_index=True, width="stretch", key="fixed_list")
-        if st.button("🔓 すべての確定を解除する", key="clear_fixed", width="stretch"):
-            state.reset(state.KEY_FIXED_ASSIGNMENTS)
-            st.session_state.pop("shift_editor", None)
-            st.rerun()
+        active_day = day or st.session_state.get("active_day")
+        day_fixed_count = sum(1 for (_, d, _) in fixed.keys() if d == active_day) if active_day else 0
+        if day_fixed_count > 0 and active_day is not None:
+            c1, c2 = st.columns(2)
+            if c1.button(
+                f"🔓 本日（{theme.format_day(active_day)}）の確定のみ解除（{day_fixed_count} 件）",
+                key="clear_fixed_day",
+                width="stretch",
+            ):
+                remaining = {k: v for k, v in fixed.items() if k[1] != active_day}
+                state.set(state.KEY_FIXED_ASSIGNMENTS, remaining)
+                st.session_state.pop("shift_editor", None)
+                st.rerun()
+            if c2.button("🔓 すべての確定を全解除する", key="clear_fixed", width="stretch"):
+                state.reset(state.KEY_FIXED_ASSIGNMENTS)
+                st.session_state.pop("shift_editor", None)
+                st.rerun()
+        else:
+            if st.button("🔓 すべての確定を解除する", key="clear_fixed", width="stretch"):
+                state.reset(state.KEY_FIXED_ASSIGNMENTS)
+                st.session_state.pop("shift_editor", None)
+                st.rerun()
+                st.rerun()
 
 
 def _render_weekday_pivot(result: SolveResult, slots: Any) -> None:
@@ -402,6 +421,7 @@ def _apply_fix_target() -> None:
         shift_day = result.day(wanted) if wanted is not None else None
         slot_obj = next((s for s in (slots or []) if s.label == slot_label), None)
         candidates: list[str] = []
+        candidate_items: list[tuple[str, str]] = []
         if shift_day is not None and slot_obj is not None:
             for member in staff:
                 sid = getattr(member, "staff_id", None)
@@ -410,15 +430,31 @@ def _apply_fix_target() -> None:
                 if shift_day.get(sid, slot_obj) is CellState.OFF:
                     mname = staff_map.get(sid, "")
                     candidates.append(f"{sid}（{mname}）" if mname else sid)
+                    candidate_items.append((sid, mname))
         shown = ", ".join(candidates[:5])
         more = f"（他 {len(candidates) - 5} 名）" if len(candidates) > 5 else ""
         st.info(
             f"🎯 修正対象: {theme.format_day(wanted)} ／ {slot_label} の時間帯。\n\n"
-            "1. 下の「✏️ 微調整」で値を「勤務」「休憩」「オフ」に変える\n"
+            "1. 下の候補ボタンまたは「✏️ 微調整」で値を変更する\n"
             "2. 「✅ 変更を確定して再最適化」を押す（確定しないと反映されません）\n"
             "3. 解消したら上の「出力前の確認」が ✅ になります\n\n"
             f"この時間帯にオフの職員候補: {shown}{more}"
         )
+        if candidate_items and wanted is not None:
+            st.markdown("##### ➕ ワンクリックで勤務を割り当てる（おすすめ候補）")
+            top_candidates = candidate_items[:3]
+            cols = st.columns(len(top_candidates))
+            for i, (csid, cname) in enumerate(top_candidates):
+                btn_label = f"＋ {csid}（{cname}）を配置" if cname else f"＋ {csid} を配置"
+                if cols[i].button(
+                    btn_label,
+                    key=f"quick_assign_{wanted}_{csid}_{slot_label}",
+                    type="primary",
+                    width="stretch",
+                ):
+                    current_fixed = dict(state.normalize_fixed(state.get(state.KEY_FIXED_ASSIGNMENTS)))
+                    current_fixed[(csid, wanted, slot_label)] = CellState.WORK
+                    _commit_edits(current_fixed, 1)
     elif staff_id is not None:
         # 職員までは特定できるが日・時間帯は特定できない違反（月間時間など）
         st.session_state["_fix_staff_id"] = staff_id
@@ -484,7 +520,7 @@ def render_section(*, in_simple: bool = False) -> None:
         args=("export",),
     )
     st.divider()
-    _render_fixed_list()
+    _render_fixed_list(day)
     st.divider()
     _render_weekday_pivot(result, slots)
     st.divider()

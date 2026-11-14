@@ -138,22 +138,22 @@ DEFAULT_SOLVER = "PULP_CBC_CMD"
 #: UI 固有の設定であり法定要件ではないため ``APP_`` 規約で持つ。
 APP_TIME_INPUT_STEP_SECONDS = 900
 
-# 表示用の既定配色
-COLOR_WORK = "#2E7D32"
-COLOR_BREAK = "#F9A825"
-COLOR_OFF = "#EEEEEE"
-COLOR_SHORTFALL = "#E53935"
-COLOR_OVER = "#1E88E5"
+# 表示用の既定配色（Emerald / Amber / Rose / Indigo 統一パレット）
+COLOR_WORK = "#059669"
+COLOR_BREAK = "#D97706"
+COLOR_OFF = "#F1F5F9"
+COLOR_SHORTFALL = "#E11D48"
+COLOR_OVER = "#4F46E5"
 
 #: 表示用の既定配色（文字色・枠色）。
 #: 上記の背景色と対で使い、同じ役割の箇所に散らばっていた値を集めたもの。
-COLOR_WORK_INK = "#1b5e20"
-COLOR_BREAK_INK = "#7a5200"
-COLOR_SHORTFALL_INK = "#8e0000"
-COLOR_OVER_INK = "#0d47a1"
+COLOR_WORK_INK = "#064E3B"
+COLOR_BREAK_INK = "#78350F"
+COLOR_SHORTFALL_INK = "#881337"
+COLOR_OVER_INK = "#312E81"
 #: 手動で確定したセルの枠色。
-COLOR_FIXED = "#6a1b9a"
+COLOR_FIXED = "#7C3AED"
 #: アクセント色（ツールチップ・進捗チップの強調）。
-COLOR_ACCENT = "#1f6feb"
+COLOR_ACCENT = "#059669"
 #: 本文の標準文字色。
-COLOR_INK = "#1f2430"
+COLOR_INK = "#1E293B"

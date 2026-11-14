@@ -133,6 +133,14 @@ def is_highs_available() -> bool:
         return False
 
 
+def is_cbc_available() -> bool:
+    """CBC ソルバーが利用可能か判定する。"""
+    try:
+        return bool(pulp.PULP_CBC_CMD(msg=False).available())
+    except Exception:
+        return False
+
+
 def available_solvers() -> list[str]:
     """PuLP 経由で利用可能な MILP ソルバーの一覧を返す。"""
     try:
@@ -142,6 +150,42 @@ def available_solvers() -> list[str]:
         return solvers
     except Exception:
         return []
+
+
+def select_optimal_solver(preference: str = "auto") -> tuple[str, bool]:
+    """最適なソルバー名と利用可能性を判定して返す。
+
+    Returns:
+        tuple[str, bool]: (選択されたソルバー名, 利用可能フラグ)
+    """
+    pref = (preference or "auto").strip().lower()
+    if pref in ("highs", "highspy"):
+        if is_highs_available():
+            return "HiGHS", True
+        return "PULP_CBC_CMD", is_cbc_available()
+    if pref in ("cbc", "pulp_cbc_cmd"):
+        return "PULP_CBC_CMD", is_cbc_available()
+
+    # auto: HiGHS 優先、なければ CBC
+    if is_highs_available():
+        return "HiGHS", True
+    if is_cbc_available():
+        return "PULP_CBC_CMD", True
+    return "NONE", False
+
+
+def solver_diagnostic_info() -> dict[str, Any]:
+    """ソルバー診断情報を辞書形式で返す。UI やヘルスチェックで使用。"""
+    highs_ok = is_highs_available()
+    cbc_ok = is_cbc_available()
+    optimal, any_ok = select_optimal_solver()
+    return {
+        "optimal_solver": optimal,
+        "is_available": any_ok,
+        "highs_available": highs_ok,
+        "cbc_available": cbc_ok,
+        "available_solvers": available_solvers(),
+    }
 
 
 def _get_solver(
@@ -154,10 +198,7 @@ def _get_solver(
     limit = max(1, int(limit_sec))
     chosen = (solver_name or "auto").strip()
     if chosen == "auto":
-        if is_highs_available():
-            chosen = "HiGHS"
-        else:
-            chosen = "PULP_CBC_CMD"
+        chosen, _ = select_optimal_solver("auto")
 
     if chosen.lower() in ("highs", "highspy") and is_highs_available():
         try:

@@ -269,3 +269,34 @@ def test_solve_緩和モードは結果を返す(tmp_path, capsys):
     assert "緩和モード: L1" in text
     assert "緩めた制約:" in text
     assert (out / "shift.csv").is_file()
+
+
+@SLOW
+def test_solve_月次モード(tmp_path, capsys):
+    """``--mode monthly`` を指定して月次階層的最適化が実行できること。"""
+    out = tmp_path / "out"
+    code = main(
+        [
+            "solve",
+            "--sample",
+            "--out",
+            str(out),
+            "--start",
+            "2026-09-28",
+            "--end",
+            "2026-10-04",
+            "--open",
+            "09:00",
+            "--close",
+            "17:00",
+            "--mode",
+            "monthly",
+            "--monthly-holiday-target",
+            "2",
+            "--time-limit",
+            "30",
+        ]
+    )
+    assert code in (EXIT_OK, 2, 3)
+    assert (out / "shift.csv").is_file()
+

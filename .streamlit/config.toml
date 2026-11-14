@@ -21,7 +21,7 @@ base = "light"
 # アクセント色（ボタン・リンク・フォーカス枠・実行中インジケータ）。
 # src/shiftai/config.py の COLOR_WORK（勤務 = 正常 = 主状態）と同じ緑に揃える。
 # 既定の赤 #FF4B4B は本アプリの「人員不足」色 COLOR_SHORTFALL と混同するため使わない。
-primaryColor = "#2E7D32"
+primaryColor = "#059669"
 
 # 背景。shiftai.ui.theme の CSS が #ffffff を前提にしているため、白で固定する。
 backgroundColor = "#FFFFFF"
