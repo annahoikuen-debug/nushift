@@ -385,10 +385,33 @@ class Contract:
     overtime_allowed: bool = True
     has_36_agreement: bool = True
     variable_working_hours: bool = False
+    min_daily_hours: float | None = None
+    """1日最低勤務時間。正社員で未指定の場合は 4.0 時間が適用される。"""
+    max_daily_hours: float | None = None
+    """1日最高勤務時間。正社員で未指定の場合は 8.0 時間または施設設定が適用される。"""
+    break_minutes: int | None = None
+    """職員個別の休憩時間（45〜120分）。未指定時は施設設定または基準値が適用される。"""
+    max_work_blocks_per_day: int | None = None
+    """職員個別の1日最大勤務ブロック数。未指定時は施設設定が適用される。"""
 
     def __post_init__(self) -> None:
         if self.daily_hours <= 0 or self.weekly_hours <= 0:
             raise ValueError("契約時間は正である必要があります")
+        if self.min_daily_hours is not None and (self.min_daily_hours <= 0 or self.min_daily_hours > self.daily_hours):
+            raise ValueError("min_daily_hours は 0 より大きく daily_hours 以下にしてください")
+        if self.max_daily_hours is not None and (self.max_daily_hours <= 0 or self.max_daily_hours > config.STATUTORY_DAILY_WORK_HOURS):
+            raise ValueError(f"max_daily_hours は 0 より大きく {config.STATUTORY_DAILY_WORK_HOURS} 以下にしてください")
+        if self.min_daily_hours is not None and self.max_daily_hours is not None and self.min_daily_hours > self.max_daily_hours:
+            raise ValueError("min_daily_hours は max_daily_hours 以下にしてください")
+        if self.employment_type is EmploymentType.SEI:
+            if self.min_daily_hours is not None and self.min_daily_hours < config.DEFAULT_SEI_MIN_DAILY_HOURS:
+                raise ValueError(f"正社員の min_daily_hours は {config.DEFAULT_SEI_MIN_DAILY_HOURS}時間以上にしてください")
+            if self.max_daily_hours is not None and self.max_daily_hours > config.DEFAULT_SEI_MAX_DAILY_HOURS:
+                raise ValueError(f"正社員の max_daily_hours は {config.DEFAULT_SEI_MAX_DAILY_HOURS}時間以下にしてください")
+        if self.break_minutes is not None and not (config.MIN_ALLOWABLE_BREAK_MINUTES <= self.break_minutes <= config.MAX_ALLOWABLE_BREAK_MINUTES):
+            raise ValueError(f"break_minutes は {config.MIN_ALLOWABLE_BREAK_MINUTES}〜{config.MAX_ALLOWABLE_BREAK_MINUTES}分の範囲にしてください")
+        if self.max_work_blocks_per_day is not None and not (1 <= self.max_work_blocks_per_day <= 4):
+            raise ValueError("max_work_blocks_per_day は 1〜4 の範囲にしてください")
         if self.max_monthly_hours < self.min_monthly_hours:
             raise ValueError("max_monthly_hours は min_monthly_hours 以上にしてください")
         if self.max_weekly_days < 0 or self.max_consecutive_days < 0:
@@ -1292,6 +1315,26 @@ class FacilitySettings:
     """人件費目安（1時間・パート係数）。"""
     use_variable_working_hours: bool = False
     """1か月単位の変形労働時間制を採用するか。"""
+    max_work_blocks_per_day: int = config.DEFAULT_MAX_WORK_BLOCKS
+    """1日の最大勤務ブロック数。既定 ``2`` は休憩1回を挟む2分割までを許容し、3分割以上を禁止する。"""
+    break_minutes: int = config.DEFAULT_BREAK_MINUTES
+    """園の標準休憩時間（45〜120分）。"""
+    sei_min_daily_hours: float = config.DEFAULT_SEI_MIN_DAILY_HOURS
+    """正社員の1日最低勤務時間（時間）。"""
+    sei_max_daily_hours: float = config.DEFAULT_SEI_MAX_DAILY_HOURS
+    """正社員の1日最高勤務時間（時間）。"""
+
+    def __post_init__(self) -> None:
+        if not (config.MIN_ALLOWABLE_BREAK_MINUTES <= self.break_minutes <= config.MAX_ALLOWABLE_BREAK_MINUTES):
+            raise ValueError(f"break_minutes は {config.MIN_ALLOWABLE_BREAK_MINUTES}〜{config.MAX_ALLOWABLE_BREAK_MINUTES}分の範囲にしてください")
+        if not (config.DEFAULT_SEI_MIN_DAILY_HOURS <= self.sei_min_daily_hours <= config.DEFAULT_SEI_MAX_DAILY_HOURS):
+            raise ValueError(f"sei_min_daily_hours は {config.DEFAULT_SEI_MIN_DAILY_HOURS}〜{config.DEFAULT_SEI_MAX_DAILY_HOURS}時間の範囲にしてください")
+        if not (config.DEFAULT_SEI_MIN_DAILY_HOURS <= self.sei_max_daily_hours <= config.DEFAULT_SEI_MAX_DAILY_HOURS):
+            raise ValueError(f"sei_max_daily_hours は {config.DEFAULT_SEI_MIN_DAILY_HOURS}〜{config.DEFAULT_SEI_MAX_DAILY_HOURS}時間の範囲にしてください")
+        if self.sei_min_daily_hours > self.sei_max_daily_hours:
+            raise ValueError("sei_min_daily_hours は sei_max_daily_hours 以下にしてください")
+        if not (1 <= self.max_work_blocks_per_day <= 4):
+            raise ValueError("max_work_blocks_per_day は 1〜4 の範囲にしてください")
 
 
 # ---------------------------------------------------------------------------

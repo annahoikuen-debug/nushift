@@ -55,6 +55,8 @@ FALLBACK_VIOLATION_LABELS: dict[str, str] = {
     "UNAVAILABLE_ASSIGNED": "希望休・不在日に勤務しています",
     "PREFERENCE_MISSED": "個人の希望を叶えられていません",
     "SHIFT_LENGTH_EXCEEDED": "1勤務の連続時間が長すぎます",
+    "DAILY_HOURS_EXCEEDED": "1日の勤務時間が契約上限を超えています",
+    "DAILY_HOURS_SHORT": "1日の勤務時間が最低時間未満です",
     "SOLVER_TIME_LIMIT": "ソルバが時間制限に達しました",
     "SOLVER_INFEASIBLE": "解なし（制約が矛盾）",
 }
@@ -77,6 +79,8 @@ FALLBACK_VIOLATION_FIX_HINTS: dict[str, str] = {
     "{shift} で始業・終業を契約内に収めるか、{data} の契約時間帯を確認してください。",
     "DAILY_HOURS_EXCEEDED": "この職員の 1 日の勤務が契約上限を超えています。"
     "{shift} で勤務時間を短くするか、{data} の契約時間を確認してください。",
+    "DAILY_HOURS_SHORT": "この職員の 1 日の勤務が最低勤務時間（正社員4時間以上など）を下回っています。"
+    "{shift} で勤務時間を増やすか、{data} の契約設定を確認してください。",
     "OVERTIME_NOT_ALLOWED": "時間外労働の契約がないため 8 時間を超えられません。"
     "{shift} で勤務を 8 時間以内に収めるか、{data} の 36 協定設定を確認してください。",
     "OVERTIME_REQUIRES_36AGREEMENT": "時間外労働として 36 協定の締結と割増賃金の確認が必要です。"

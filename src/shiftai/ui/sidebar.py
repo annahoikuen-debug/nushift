@@ -148,6 +148,48 @@ def _render_facility(*, times: bool = True) -> None:
         key="labor_cost_per_hour",
         help="実働時間から概算人件費を試算するための時給目安です（雇用形態ごとの係数が加味されます）。",
     )
+    c_set1, c_set2 = st.columns(2)
+    with c_set1:
+        break_min = st.number_input(
+            "標準休憩時間（分）",
+            min_value=45,
+            max_value=120,
+            value=int(st.session_state.get("break_minutes", DEFAULT_SETTINGS.break_minutes)),
+            step=15,
+            key="break_minutes",
+            help="園の標準休憩時間です（45〜120分）。職員個別に契約で上書きも可能です。",
+        )
+    with c_set2:
+        max_blocks = st.number_input(
+            "1日の最大勤務ブロック数",
+            min_value=1,
+            max_value=3,
+            value=int(st.session_state.get("max_work_blocks_per_day", DEFAULT_SETTINGS.max_work_blocks_per_day)),
+            step=1,
+            key="max_work_blocks_per_day",
+            help="1日の勤務が分かれる上限（既定2: 休憩1回を挟む2分割まで。3分割以上は原則禁止）。",
+        )
+    c_sei1, c_sei2 = st.columns(2)
+    with c_sei1:
+        sei_min_h = st.number_input(
+            "正社員 最低勤務時間（h）",
+            min_value=1.0,
+            max_value=8.0,
+            value=float(st.session_state.get("sei_min_daily_hours", DEFAULT_SETTINGS.sei_min_daily_hours)),
+            step=0.5,
+            key="sei_min_daily_hours",
+            help="正社員が出勤する日の最低勤務時間（既定4.0時間）。",
+        )
+    with c_sei2:
+        sei_max_h = st.number_input(
+            "正社員 最高勤務時間（h）",
+            min_value=4.0,
+            max_value=12.0,
+            value=float(st.session_state.get("sei_max_daily_hours", DEFAULT_SETTINGS.sei_max_daily_hours)),
+            step=0.5,
+            key="sei_max_daily_hours",
+            help="正社員が出勤する日の最高勤務時間（既定8.0時間）。",
+        )
     previous = state.get(state.KEY_SETTINGS)
     state.set(
         state.KEY_SETTINGS,
@@ -159,6 +201,10 @@ def _render_facility(*, times: bool = True) -> None:
             closed_days=frozenset(closed),
             holiday_dates=frozenset(holidays),
             labor_cost_per_hour=float(labor_cost),
+            max_work_blocks_per_day=int(max_blocks),
+            break_minutes=int(break_min),
+            sei_min_daily_hours=float(sei_min_h),
+            sei_max_daily_hours=float(sei_max_h),
         ),
     )
     state.reset(state.KEY_SLOTS)

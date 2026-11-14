@@ -19,6 +19,7 @@ from shiftai import config
 from shiftai.domain import (
     CellState,
     Contract,
+    EmploymentType,
     FacilitySettings,
     RequirementTable,
     Slot,
@@ -570,6 +571,51 @@ def check_violations(
                             },
                         )
                     )
+
+            # 正社員の出勤日における最低勤務時間チェック（4時間〜8時間の範囲）
+            min_h = 0.0
+            if c.employment_type == EmploymentType.SEI:
+                min_h = (
+                    c.min_daily_hours
+                    if c.min_daily_hours is not None
+                    else getattr(fac, "sei_min_daily_hours", config.DEFAULT_SEI_MIN_DAILY_HOURS)
+                )
+            elif c.min_daily_hours is not None:
+                min_h = c.min_daily_hours
+
+            if work_minutes > 0 and (work_minutes / 60.0) < min_h - config.FLOAT_TOLERANCE:
+                out.append(
+                    Violation(
+                        severity=ViolationSeverity.WARNING,
+                        code="DAILY_HOURS_SHORT",
+                        message=(
+                            f"{sid} は {day.isoformat()} の勤務が {work_minutes / 60.0:.2f} 時間で、"
+                            f"最低勤務時間 {min_h:.2f} 時間（正社員4時間以上基準）に届いていません。"
+                        ),
+                        day=day,
+                        staff_id=sid,
+                        detail={"hours": round(work_minutes / 60.0, 2), "min_hours": round(min_h, 2)},
+                    )
+                )
+
+            # 正社員の出勤日における上限勤務時間チェック（4時間〜8時間の範囲）
+            if c.employment_type == EmploymentType.SEI:
+                fac_max_h = getattr(fac, "sei_max_daily_hours", config.DEFAULT_SEI_MAX_DAILY_HOURS)
+                max_h = c.max_daily_hours if c.max_daily_hours is not None else fac_max_h
+                if work_minutes > 0 and (work_minutes / 60.0) > max_h + config.FLOAT_TOLERANCE:
+                    out.append(
+                        Violation(
+                            severity=ViolationSeverity.WARNING,
+                            code="DAILY_HOURS_EXCEEDED",
+                            message=(
+                                f"{sid} は {day.isoformat()} の勤務が {work_minutes / 60.0:.2f} 時間で、"
+                                f"正社員の1日上限勤務時間 {max_h:.2f} 時間を超えています。"
+                            ),
+                            day=day,
+                            staff_id=sid,
+                            detail={"hours": round(work_minutes / 60.0, 2), "max_hours": round(max_h, 2)},
+                        )
+                    )
             if work_idx and (work_idx[0] < 0 or work_idx[-1] >= n):
                 continue
             for i in work_idx:
@@ -622,8 +668,13 @@ def check_violations(
                     )
             break_minutes = sum(slots[i].minutes for i in brk_idx)
             required = _required_break_minutes(work_minutes)
-            if standard is not None and work_minutes > config.STATUTORY_LONG_SHIFT_MINUTES:
-                required = max(required, int(standard.break_minutes))
+            eff_target_break = (
+                c.break_minutes
+                if c and c.break_minutes is not None
+                else (getattr(fac, "break_minutes", None) or (int(standard.break_minutes) if standard is not None else 60))
+            )
+            if work_minutes > config.STATUTORY_LONG_SHIFT_MINUTES:
+                required = max(required, eff_target_break)
             if required and break_minutes < required:
                 # 8時間超勤務で法定60分に満たないときは労働基準法第34条違反。
                 # 6時間超の45分基準だけなら要調整のままにする。
@@ -669,17 +720,23 @@ def check_violations(
                 )
             if not _is_contiguous(work_idx) and len(work_idx) > 1:
                 runs = sum(1 for k, i in enumerate(work_idx) if k == 0 or i != work_idx[k - 1] + 1)
-                if runs > 2:
+                max_blocks = (
+                    c.max_work_blocks_per_day
+                    if c and c.max_work_blocks_per_day is not None
+                    else getattr(fac, "max_work_blocks_per_day", config.DEFAULT_MAX_WORK_BLOCKS)
+                )
+                if runs > max_blocks:
                     out.append(
                         Violation(
-                            severity=ViolationSeverity.WARNING,
+                            severity=ViolationSeverity.BLOCKER if runs >= 3 else ViolationSeverity.WARNING,
                             code="SPLIT_SHIFT",
                             message=(
-                                f"{sid} は {day.isoformat()} の勤務が {runs} ブロックに分かれています。"
+                                f"{sid} は {day.isoformat()} の勤務が {runs} ブロックに分かれており、"
+                                f"上限（{max_blocks}ブロック、3分割禁止）を超過しています。"
                             ),
                             day=day,
                             staff_id=sid,
-                            detail={"blocks": runs},
+                            detail={"blocks": runs, "max_blocks": max_blocks},
                         )
                     )
 
@@ -1044,6 +1101,7 @@ VIOLATION_CODE_LABELS: dict[str, str] = {
     "WORK_ON_UNAVAILABLE": "希望休・不在時間帯に勤務しています（ハード制約違反）。",
     "WORK_ON_CLOSED_DAY": "休園日に勤務しています。",
     "DAILY_HOURS_EXCEEDED": "1日の勤務時間が契約上限を超えています。",
+    "DAILY_HOURS_SHORT": "1日の勤務時間が契約・基準の最低時間を下回っています（正社員4時間以上基準）。",
     "OVERTIME_NOT_ALLOWED": "時間外労働の契約がないため8時間を超えて勤務しています（法令違反）。",
     "OVERTIME_REQUIRES_36AGREEMENT": "時間外労働として扱われるため、36協定の締結と割増賃金の確認が必要です（法令違反ではありません・参考）。",
     "OUTSIDE_CONTRACT_HOURS": "契約の勤務時間帯外で勤務しています。",

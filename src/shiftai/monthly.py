@@ -24,6 +24,7 @@ from shiftai.domain import (
     CellState,
     ChildPlan,
     Contract,
+    EmploymentType,
     FacilitySettings,
     ObjectiveWeights,
     RequirementTable,
@@ -248,20 +249,36 @@ def _solve_stage1_daily_patterns(
         elif any(st in (CellState.LEAVE, CellState.PAID_LEAVE) for st in fstates) or fstates == {CellState.OFF}:
             prob += duty_vars[(fsid, fday)] == 0
 
-    # 制約2: 契約所定労働時間（daily_hours）を超える長時間のパターンを禁止
+    # 制約2: 契約所定労働時間（daily_hours）および最低勤務時間のパターン制限
     for s in context.staff:
         sid = s.staff_id
         contract = context.contracts.get(sid) or s.contract
-        max_daily_h = (
-            contract.daily_hours
-            if (contract and getattr(contract, "daily_hours", None) is not None)
-            else 8.0
-        )
+        fac_sei_max = getattr(context.facility_settings, "sei_max_daily_hours", 8.0)
+        if contract and contract.max_daily_hours is not None:
+            max_daily_h = contract.max_daily_hours
+        elif contract and getattr(contract, "daily_hours", None) is not None:
+            max_daily_h = (
+                min(contract.daily_hours, fac_sei_max)
+                if contract.employment_type == EmploymentType.SEI
+                else contract.daily_hours
+            )
+        else:
+            max_daily_h = fac_sei_max
+        min_daily_h = 0.0
+        if contract and contract.employment_type == EmploymentType.SEI:
+            min_daily_h = (
+                contract.min_daily_hours
+                if contract.min_daily_hours is not None
+                else getattr(context.facility_settings, "sei_min_daily_hours", 4.0)
+            )
+        elif contract and contract.min_daily_hours is not None:
+            min_daily_h = contract.min_daily_hours
+
         for p in patterns:
             pat_h = (to_minutes(p.end) - to_minutes(p.start)) / 60.0
             work_h = pat_h - 1.0 if pat_h > 6.0 else pat_h
-            if work_h > max_daily_h + 0.1:
-                # この職員の 1日上限時間を超えるパターンは禁止
+            if work_h > max_daily_h + 0.1 or (min_daily_h > 0 and work_h < min_daily_h - 0.1):
+                # この職員の 1日上限超過または最低勤務時間未満のパターンは禁止
                 for d in days:
                     prob += x_vars[(sid, d, p.key)] == 0
 

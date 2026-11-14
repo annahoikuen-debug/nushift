@@ -46,6 +46,7 @@ from shiftai.domain import (
     ChildPlan,
     ClassRoom,
     Contract,
+    EmploymentType,
     FacilitySettings,
     ObjectiveWeights,
     PairingRule,
@@ -487,15 +488,17 @@ def _add_block(
     n: int,
     obj: list[object] | None = None,
     weights: ObjectiveWeights | None = None,
+    max_blocks: int | None = None,
 ) -> list[object]:
-    """列 seq が「高々1つの連続ブロック」に近づくよう制約する。
+    """列 seq が「高々1つの連続ブロック（または max_blocks 以下）」に近づくよう制約する。
 
     変数 v_i（0/1）に対し「ブロック開始フラグ」s_i を 1 個ずつ置き
     ``s_i >= v_i - v_{i-1}``（v_{-1} = 0）を課す。s_i は最小値（= ブロックの
     開始数）を取るので、2つ目以降のブロックだけを slack 変数で表現できる。
 
-    :param obj: ``None`` を渡すと**ハード制約**（``Σ s_i <= 1``）になり、
+    :param obj: ``None`` を渡すと**ハード制約**（``Σ s_i <= max_blocks or 1``）になり、
         分割すると構造的に不可能になる。``obj`` を渡すと従来のソフトペナルティ。
+    :param max_blocks: 許容する最大ブロック数。3分割禁止時は ``2`` を渡す。
     :returns: 作った ``s_i`` 変数の列（ハード判定の検証に使う）。
 
     .. note::
@@ -519,21 +522,24 @@ def _add_block(
         ctx.prob += s_var >= cur - prev
         terms.append((s_var, 1))
         starts.append(s_var)
+    limit_blocks = max_blocks if max_blocks is not None else 1
     if not terms:
-        if fixed_sum > 1:
-            if obj is None or weights is None:
-                ctx.conflicts.append(f"{tag}: 勤務が {fixed_sum} ブロックに分かれています")
+        if fixed_sum > limit_blocks:
+            if obj is None or weights is None or (max_blocks is not None and fixed_sum > max_blocks):
+                ctx.conflicts.append(f"{tag}: 勤務が {fixed_sum} ブロックに分かれており上限 {limit_blocks} を超過しています")
             else:
                 gap = pulp.LpVariable(f"{tag}_split", lowBound=0)
                 ctx.prob += gap >= fixed_sum - 1
                 obj.append(_split_penalty(weights) * gap)
         return []
     if obj is None or weights is None:
-        _hard_le(ctx, _linear(terms) + fixed_sum, 1, f"{tag}_oneblock")
+        _hard_le(ctx, _linear(terms) + fixed_sum, limit_blocks, f"{tag}_oneblock")
         return starts
     slack = pulp.LpVariable(f"{tag}_split", lowBound=0)
     _hard_le(ctx, _linear(terms) + fixed_sum - 1, slack, f"{tag}_splitcap")
     obj.append(_split_penalty(weights) * slack)
+    if max_blocks is not None and max_blocks >= 1:
+        _hard_le(ctx, _linear(terms) + fixed_sum, max_blocks, f"{tag}_maxblocks")
     return starts
 
 
@@ -713,6 +719,7 @@ def _add_duty_block(
     obj: list[object] | None = None,
     weights: ObjectiveWeights | None = None,
     break_slots: int | None = None,
+    max_work_blocks: int = 2,
 ) -> None:
     """1職員1日の勤務を運用可能な形に制約する（案1の中核）。
 
@@ -763,6 +770,9 @@ def _add_duty_block(
         _add_block(ctx, brk, f"brk_{tag}", n, soft_obj, soft_weights)
     elif not _add_interval_block(ctx, brk, f"brk_{tag}", n, host=duty, fixed_length=break_slots):
         _add_block(ctx, brk, f"brk_{tag}", n, obj, weights)
+    # D1-2: 勤務時間の3分割禁止（高々 max_work_blocks ブロック、既定2: 勤務-休憩-勤務まで）
+    if max_work_blocks is not None and max_work_blocks >= 1:
+        _add_block(ctx, work, f"work_{tag}", n, obj=None, weights=None, max_blocks=max_work_blocks)
     # D3: 休息の前後に在勤があること（**ソフト**）。
     # ハードにすると 2〜3 時間帯しか働かない短勤務には「休息を入れても
     # 前後に勤務がない」ため休息自体が入らず、総休憩時間が 138h → 56h まで
@@ -898,11 +908,23 @@ def _build_cells(
                     work_map[i] = wv
                 if not _is_zero(bv):
                     breaks[i] = bv
+            eff_break = (
+                st.contract.break_minutes
+                if st.contract.break_minutes is not None
+                else getattr(settings, "break_minutes", None) or break_minutes
+            )
+            eff_break = min(max(eff_break, config.MIN_ALLOWABLE_BREAK_MINUTES), config.MAX_ALLOWABLE_BREAK_MINUTES)
+            max_blocks = (
+                st.contract.max_work_blocks_per_day
+                if st.contract.max_work_blocks_per_day is not None
+                else getattr(settings, "max_work_blocks_per_day", config.DEFAULT_MAX_WORK_BLOCKS)
+            )
+
             if "duty_block" not in drop_groups:
                 # 案1: 1職員1日の在勤は1連続ブロック・休息は1回だけにする。
                 # allow_split=True（緩和 L3 ``RELAX_HOURS``）ならソフトに戻る。
                 _gran = max(1, int(requirements.granularity_min or slots[0].minutes))
-                _brk_slots = _break_slots(cap_min, break_minutes, _gran)
+                _brk_slots = _break_slots(cap_min, eff_break, _gran)
                 _add_duty_block(
                     ctx,
                     duty,
@@ -915,6 +937,7 @@ def _build_cells(
                     obj=obj,
                     weights=weights,
                     break_slots=_brk_slots,
+                    max_work_blocks=max_blocks,
                 )
 
             if "daily_cap" not in drop_groups:
@@ -940,6 +963,25 @@ def _build_cells(
                 # ``1.0 / len(items)`` としているのと同じ不整合）。
                 _hard_ge(ctx, yvar, _linear([(v, 1) for v in w_only]) * (1.0 / len(w_only)))
                 _hard_le(ctx, yvar, _linear([(v, 1) for v in w_only]))
+
+                # 正社員の勤務時間は 4〜8時間の間で調整可能とする
+                if st.contract.employment_type == EmploymentType.SEI and "daily_cap" not in drop_groups:
+                    sei_min_h = (
+                        st.contract.min_daily_hours
+                        if st.contract.min_daily_hours is not None
+                        else getattr(settings, "sei_min_daily_hours", config.DEFAULT_SEI_MIN_DAILY_HOURS)
+                    )
+                    fac_sei_max_h = getattr(settings, "sei_max_daily_hours", config.DEFAULT_SEI_MAX_DAILY_HOURS)
+                    if st.contract.max_daily_hours is not None:
+                        sei_max_h = st.contract.max_daily_hours
+                    elif st.contract.daily_hours is not None:
+                        sei_max_h = min(st.contract.daily_hours, fac_sei_max_h)
+                    else:
+                        sei_max_h = fac_sei_max_h
+                    min_work_min = int(round(sei_min_h * 60))
+                    max_work_min = int(round(sei_max_h * 60))
+                    _hard_ge(ctx, _linear(day_items), min_work_min * yvar, f"seimin_{sid}_{tag}")
+                    _hard_le(ctx, _linear(day_items), max_work_min * yvar, f"seimax_{sid}_{tag}")
         ctx.prob += hours == _linear(week_items)
 
 
@@ -1108,14 +1150,21 @@ def _add_breaks(
     obj: list[object],
     weights: ObjectiveWeights,
     break_minutes: int,
+    settings: FacilitySettings | None = None,
 ) -> None:
     """勤務日ごとに連続した休憩が取れるようにする（不足分はソフトペナルティ）。"""
     slots = tuple(requirements.slots)
     gran = max(1, int(requirements.granularity_min or slots[0].minutes))
     for st in staff:
         sid = st.staff_id
+        eff_break = (
+            st.contract.break_minutes
+            if st.contract.break_minutes is not None
+            else getattr(settings, "break_minutes", None) or break_minutes
+        )
+        eff_break = min(max(eff_break, config.MIN_ALLOWABLE_BREAK_MINUTES), config.MAX_ALLOWABLE_BREAK_MINUTES)
         cap_min = _daily_cap_minutes(st.contract)
-        need_slots = _break_slots(cap_min, break_minutes, gran)
+        need_slots = _break_slots(cap_min, eff_break, gran)
         if need_slots <= 0:
             continue
         for day in requirements.all_days():
@@ -1862,7 +1911,7 @@ def _build_problem(
             _add_coverage(ctx, staff, requirements, standard=standard)
     _add_workload(ctx, staff, requirements, obj, weights)
     if level < int(RelaxLevel.RELAX_HOURS) and "break" not in drop_groups:
-        _add_breaks(ctx, staff, requirements, obj, weights, break_minutes)
+        _add_breaks(ctx, staff, requirements, obj, weights, break_minutes, settings=settings)
     if level < int(RelaxLevel.RELAX_HOURS) and "rest" not in drop_groups:
         _add_rest(ctx, staff, requirements, obj, weights)
     if "weekly" not in drop_groups:

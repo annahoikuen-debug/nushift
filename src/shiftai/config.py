@@ -33,6 +33,13 @@ DEFAULT_RANGE_DAYS = 7
 
 # 休憩の既定（statutory_rules から再エクスポート）
 DEFAULT_BREAK_STAGGER_MINUTES = 30
+MIN_ALLOWABLE_BREAK_MINUTES = 45     # 労基法最低休憩（6時間超）
+MAX_ALLOWABLE_BREAK_MINUTES = 120    # 許容最大休憩（2時間）
+
+# 勤務ブロック・勤務時間柔軟化の既定
+DEFAULT_MAX_WORK_BLOCKS = 2          # 1日最大勤務ブロック数（3分割禁止のため既定2）
+DEFAULT_SEI_MIN_DAILY_HOURS = 4.0    # 正社員最低勤務時間（4時間）
+DEFAULT_SEI_MAX_DAILY_HOURS = 8.0    # 正社員最高勤務時間（8時間）
 
 # ---------------------------------------------------------------------------
 # 区間列挙・区間制約
