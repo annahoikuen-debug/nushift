@@ -10,7 +10,7 @@ from shiftai.solver import (  # noqa: F401
     _hard_ge,
     _is_zero,
     _linear,
+    _ModelCtx,  # noqa: F401
 )
-from shiftai.solver import _ModelCtx  # noqa: F401
 
 __all__ = ["_ModelCtx", "_hard_ge", "_is_zero", "_linear"]

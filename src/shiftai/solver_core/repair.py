@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from shiftai.domain import SolveResult
 
 
-def repair_shift_absence(*args: object, **kwargs: object) -> "SolveResult":
+def repair_shift_absence(*args: object, **kwargs: object) -> SolveResult:
     """:func:`shiftai.solver.repair_shift_absence` への後方互換エイリアス。"""
     from shiftai.solver import repair_shift_absence as _repair
 

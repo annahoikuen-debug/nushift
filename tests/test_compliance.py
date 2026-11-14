@@ -147,13 +147,12 @@ def test_常勤換算で足りなければ不適合になる() -> None:
     assert "不足しています" in result.message
 
 
-def test_短時間勤務者は8時間換算される() -> None:
-    """日あたり8時間の職員は1人と数える（1日あたりの式）。"""
+def test_短時間勤務は週40時間基準で換算される() -> None:
+    """週20時間の支援員は 0.5 人と数える（1人とは数えない）。"""
     record = StaffRecord("S1", "F", (Role.SHIENSHIIN,), 20.0, True)
-    assert record.daily_full_time_equivalent() == 0.5
-    assert StaffRecord("H1", "A", (Role.HOIKUSHI,), 40.0).daily_full_time_equivalent() == 1.0
-    assert StaffRecord("X", "Y", (), 0.0).daily_full_time_equivalent() == 0.0
-    assert StaffRecord("X", "Y", (), -10.0).daily_full_time_equivalent() == 0.0
+    assert record.full_time_equivalent() == 0.5
+    assert StaffRecord("X", "Y", (), 0.0).full_time_equivalent() == 0.0
+    assert StaffRecord("X", "Y", (), -10.0).full_time_equivalent() == 0.0
 
 
 def test_常勤換算は週40時間を1人と数える() -> None:
@@ -182,6 +181,40 @@ def test_2名の常勤では6名要件を満たさない() -> None:
     )
     result = check(audit_facility(thin), "headcount")
     assert result.status == NG
+
+
+def test_週30時間の保育士1名でも最低配置人数は人数で判定される() -> None:
+    """「うち保育士 1 名以上」は FTE ではなく人数要件であること。
+
+    回帰ポイント: FTE（週÷40）で判定すると週30時間の保育士は
+    0.75 となり「保育士が 1 名もいません」の誤 NG になる。
+    保育従事者 2 名（保育士 1 ＋ 支援員 1）は人数要件を満たす。
+    """
+    only_part = spec(
+        monthly_children={AgeClass.INFANT: 4},
+        staff=(
+            StaffRecord("H1", "A", (Role.HOIKUSHI,), 30.0),
+            StaffRecord("S1", "F", (Role.SHIENSHIIN,), 40.0, True),
+        ),
+    )
+    result = check(audit_facility(only_part), "min_two")
+    assert result.status == OK, result.message
+    assert "うち保育士 1 名" in result.actual
+    assert "保育士換算 0.75" in result.actual  # FTE が 1 未満でも人数で満たす
+
+
+def test_保育士が1人もいなければ最低配置人数はNG() -> None:
+    """人数判定で保育士が本当に 0 名なら NG になること（片方だけでは不十分）。"""
+    no_hoikushi = spec(
+        monthly_children={AgeClass.INFANT: 4},
+        staff=(
+            StaffRecord("S1", "F", (Role.SHIENSHIIN,), 40.0, True),
+            StaffRecord("S2", "G", (Role.SHIENSHIIN,), 40.0, True),
+        ),
+    )
+    result = check(audit_facility(no_hoikushi), "min_two")
+    assert result.status == NG
+    assert "1 名もいません" in result.message
 
 
 def test_調理員は保育従事者数に含めない() -> None:

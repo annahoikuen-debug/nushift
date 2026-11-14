@@ -674,6 +674,58 @@ def test_パターンが無効なら一期分は空になる(tmp_path, plan_widg
     assert at.session_state[state.KEY_PATTERNS_ENABLED] is False
 
 
+def test_すべて初期化がウィジェットキーと衝突しない(tmp_path):
+    """「入力と計算結果をすべて初期化」が例外を出さないこと（回帰テスト）。
+
+    修正前: ``patterns_enabled`` / ``pattern_snap`` が ``state.WIDGET_KEYS`` に
+    無かったため、``reset_all()`` → ``reset()`` が**サイドバーの checkbox
+    生成後**に ``st.session_state`` へ代入し、
+    ``StreamlitWidgetAlreadyInstantiatedError`` で初期化が中断していた。
+    （「有効化していない」既定状態で checkbox が描画されるため、常に踏む。）
+    """
+    payload = {"state": {}}
+    at = _run_tabs(tmp_path, ("tab_data",), payload=payload, sidebar_on=True)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    # 既定状態では有効化 checkbox がサイドバーに描画されている
+    assert state.KEY_PATTERNS_ENABLED in {b.key for b in at.checkbox}
+
+    at.button(key="clear_all").click().run()
+    if not any(b.key == "clear_all_confirm" for b in at.button):
+        at.run()
+    assert any(b.key == "clear_all_confirm" for b in at.button), "確認ダイアログが出ていない"
+
+    at.button(key="clear_all_confirm").click().run()
+    assert not at.exception, [
+        str(e.value) for e in at.exception
+    ] or "すべて初期化が例外で失敗した"
+    assert at.session_state[state.KEY_PATTERNS_ENABLED] is False
+    assert at.session_state[state.KEY_PATTERNS] == ()
+
+
+def test_set_patternsが行ウィジェットの旧状態を消す():
+    """パターン保存時に ``pattern_*`` 行キーが pop されること（回帰テスト）。
+
+    修正前: セッションに残った行ウィジェット状態が ``value=`` より優先され、
+    プリセット適用・行削除のあとに旧値が画面へ復活していた
+    （行を減らして足すと孤児の古い値が蘇る）。
+    """
+    from shiftai.shift_patterns import ShiftPattern
+
+    st.session_state.clear()
+    state.init_state()
+    try:
+        st.session_state["pattern_name_0"] = "旧ラベル"
+        st.session_state["pattern_start_5"] = time(0, 0)  # 行削除で孤児化したキー
+        state.set_patterns(
+            (ShiftPattern(key="p0", label="新ラベル", start=time(7, 0), end=time(16, 0)),)
+        )
+        assert "pattern_name_0" not in st.session_state, "旧ラベルが残ると画面に復活する"
+        assert "pattern_start_5" not in st.session_state, "孤児キーが残ると古い時刻が蘇る"
+        assert st.session_state[state.KEY_PATTERNS], "保存されたパターン本体は残る"
+    finally:
+        st.session_state.clear()
+
+
 def _expander_labels(at) -> list[str]:
     """``AppTest`` から展开セクションの見出しを取り出す。"""
     out: list[str] = []
@@ -979,6 +1031,27 @@ def test_3表だけのクリアは園設定を保つ(tmp_path, input_payload):
         st.session_state[state.KEY_STAFF] = ["dummy"]
         tab_data.reset_tables()
         assert st.session_state[state.KEY_SETTINGS].facility_name == "消してはいけない園"
+    finally:
+        st.session_state.clear()
+
+
+def test_3表のクリアはアップロード署名も消す():
+    """クリア後に同じファイルを選び直したら再読込されること（回帰テスト）。
+
+    修正前: ``reset_tables`` が ``upload_signature_{kind}`` を消さず、
+    「クリア → 同一ファイル再選択」で署名が一致して読み込みが**スキップ**され、
+    フレームが空のまま何も起きない（エラーも出ない）状態になっていた。
+    """
+    st.session_state.clear()
+    state.init_state()
+    try:
+        st.session_state["upload_signature_children"] = "abc123"
+        st.session_state["frame_children"] = ["FRAME"]
+        tab_data.reset_tables()
+        assert "upload_signature_children" not in st.session_state, (
+            "署名が残っていると同一ファイルの再選択が読み込まれない"
+        )
+        assert "frame_children" not in st.session_state
     finally:
         st.session_state.clear()
 

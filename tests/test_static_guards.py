@@ -222,8 +222,11 @@ SIMPLIFIED_ONLY = set(
     "闹闻阁阅队阳阴阵阶际陆陇陕险随隐隶难雏雾韩顶顷项顺须顾顿颁颂预领颇颈频颗题颜额飘饥饭饮饲饱饼饿馄馅馆"
     "馈馒驰驱驳驻驼驾验骂骄骗骤骨鲁鲜鸟鸡鸣鸿鹅鹉鹏鹤麦黄齐齿龈龉龊龙龟"
     # 実際の混入が起きた字（tests/test_docs_claims.py「和对」、test_portability.py「庆幸」、
-    # test_ui_components.py「并能」、test_duty_block_constraints.py「是对立」）
+    # test_ui_components.py「并能」、test_duty_block_constraints.py「是对立」、
+    # src/standards.py「写在」、src/gap_analysis.py「跳过」、tests/test_standards.py「全和水」等）
     "对并庆幸"
+    # 日本語の正字法では 過/顯/戸 を使う（简体字は常に誤り）
+    "过显户"
 )
 
 

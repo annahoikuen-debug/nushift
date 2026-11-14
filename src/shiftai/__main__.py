@@ -942,6 +942,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     except BrokenPipeError:
         _silence_broken_pipe()
         return EXIT_OK
+    except (ValueError, OSError) as exc:
+        # argparse の検証をすり抜けた入力（``--granularity 0`` や
+        # 開所＞閉所など）が build_requirements / ファイル I/O まで
+        # 到いて raise されたケース。素の traceback を出さず、
+        # 契約どおり日本語メッセージと ``EXIT_ERROR`` で返す。
+        _error(str(exc))
+        return EXIT_ERROR
     finally:
         try:
             sys.stdout.flush()

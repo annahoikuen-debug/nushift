@@ -7,11 +7,11 @@
 from __future__ import annotations
 
 from shiftai.compliance import (
+    NG,
+    OK,
     ComplianceCheck,
     ComplianceReport,
     FacilitySpec,
-    NG,
-    OK,
     Regulation,
     StaffRecord,
     audit_facility,

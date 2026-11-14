@@ -829,7 +829,7 @@ def check_violations(
                     continue
                 # 実働時間で超えていないが拘束時間では超える場合に、
                 # 「労働時間としては 44 時間を超えている」と説明する必要がある。
-                # 実働と拘束の両方が 44 時間以内なら静かに跳过する。
+                # 実働と拘束の両方が 44 時間以内なら静かにスキップする。
                 window_bound = sum(bound_hours.get(d, 0.0) for d in window)
                 basis = "実働時間"
                 measured = window_hours

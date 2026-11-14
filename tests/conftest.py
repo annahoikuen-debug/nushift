@@ -452,7 +452,7 @@ def _is_fixture(node: ast.FunctionDef) -> bool:
 
 
 def _fixture_uses_cbc() -> set[str]:
-    """CBC を起動する（あるいは thereof に依存する）フィクスチャ名を集める。
+    """CBC を起動する（あるいはそれに依存する）フィクスチャ名を集める。
 
     ``conftest*.py`` だけでなく **全テストモジュール** の
     モジュールレベル ``@pytest.fixture`` も対象にする。
@@ -578,6 +578,13 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(pytest.mark.slow)
     # ``sample/`` が無いクリーンチェックアウトで依存テストを skip する
     if not requires_sample():
+        if config.getoption("--regenerate-snapshots"):
+            # skip にすると「再生成できた」ように見えて空振りする。
+            # 再生成を明示指定されたのに sample が無ければ、先に止める。
+            raise pytest.UsageError(
+                "--regenerate-snapshots には sample/ が必要です。"
+                "先に `python -m shiftai sample --out sample` を実行してください。"
+            )
         skip_sample = pytest.mark.skip(reason="sample/ が無いため skip（make sample で生成）")
         for item in items:
             module = getattr(item, "module", None)

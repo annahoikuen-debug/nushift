@@ -167,6 +167,12 @@ WIDGET_KEYS: frozenset[str] = frozenset(
         "labor_cost_per_hour",
         "late_care_relaxed",
         "min_staff_per_room",
+        # サイドバーの checkbox（sidebar.py の有効化スイッチとスナップ）。
+        # DEFAULT_KEYS にも載っているため reset_all() → reset() が
+        # 「代入」を選択すると、サイドバー描画後に
+        # StreamlitWidgetAlreadyInstantiatedError で初期化が中断する。
+        "pattern_snap",
+        "patterns_enabled",
         "range_days",
         "range_start",
         "shift_editor",
@@ -630,9 +636,25 @@ def current_patterns() -> tuple:
     return tuple(patterns or ())
 
 
+_PATTERN_WIDGET_PREFIXES = ("pattern_name_", "pattern_start_", "pattern_end_")
+_PATTERN_WIDGET_SCAN_ROWS = 64
+"""行ウィジェットキーの走査上限（追加ボタンの現実的な行数より十分大きく取る）。"""
+
+
 def set_patterns(patterns: Sequence[ShiftPattern]) -> None:
-    """勤務パターンを保存する（無効のままでも保持はする）。"""
+    """勤務パターンを保存する（無効のままでも保持はする）。
+
+    保存と同時に行ウィジェット（``pattern_name_*`` 等）のキーを ``pop`` する。
+    Streamlit はセッションに残るウィジェット状態を ``value=`` より**優先**する
+    ため、消さないとプリセット適用・削除・行数変更のあとにも**旧値が画面に
+    残り続け**、行を減らして足すと孤児状態の古い値が復活する。
+    代入と違い ``pop`` はウィジェット生成後でも例外にならない（本リポジトリの
+    慣習どおり）ので、毎フレームの保存後でも安全に使える。
+    """
     set(KEY_PATTERNS, tuple(patterns))
+    for prefix in _PATTERN_WIDGET_PREFIXES:
+        for i in range(_PATTERN_WIDGET_SCAN_ROWS):
+            st.session_state.pop(f"{prefix}{i}", None)
 
 
 # ---------------------------------------------------------------------------

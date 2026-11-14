@@ -409,7 +409,6 @@ def _preview_table(kind: str, title: str, label: str, detail: str) -> None:
             st.session_state[f"frame_{kind}"] = frame
             st.session_state.pop(f"editor_{kind}", None)
             _record_edit(kind, frame)
-            st.session_state[f"seed_{kind}"] = int(st.session_state.get(f"sample_seed_{kind}", 42))
             st.toast(f"{title} のサンプルを {len(frame)} 行読み込みました", icon="✅")
 
     uploads = st.file_uploader(
@@ -691,6 +690,9 @@ def reset_tables() -> None:
         st.session_state.pop(f"frame_{kind}", None)
         st.session_state.pop(f"editor_{kind}", None)
         st.session_state.pop(f"upload_{kind}", None)
+        # 署名を消さないと、クリア後に**同じファイルを選び直しても**
+        # 「署名一致で再読込スキップ」され、フレームが空のままになる
+        st.session_state.pop(f"upload_signature_{kind}", None)
     state.reset_edit_histories()
 
 

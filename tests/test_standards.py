@@ -185,7 +185,7 @@ def test_必要人員は正(week_days, fq_standard):
 # ---------------------------------------------------------------------------
 
 
-def test_延長緩和_福岡市は保育士が少于必要人員(fq_standard):
+def test_延長緩和_福岡市は必要保育士数が必要人員より少ない(fq_standard):
     """福岡市は延長帯で「保育士1名＋支援員」の代替措置が使え、必要保育士数が少なくなること。"""
     assert fq_standard.late_care_relaxed is True
     kids = _kids(*[(f"C{i}", AgeClass.INFANT, time(17, 30), time(18, 30)) for i in range(4)])
@@ -205,8 +205,32 @@ def test_延長緩和_福岡市は保育士が少于必要人員(fq_standard):
     assert any("代替措置" in r.basis for r in rows)
 
 
+def test_延長緩和は早朝帯には効かない(fq_standard):
+    """``late_care_relaxed`` は延長保育（LATE）専用で、早朝帯は全員保育士であること。
+
+    回帰ポイント: 修正前は EARLY にも半減が効き、朝時間帯の必要保育士数が
+    不当に少なく数えられていた（代替措置は延長時のみ許容する制度）。
+    """
+    assert fq_standard.late_care_relaxed is True
+    kids = _kids(*[(f"C{i}", AgeClass.INFANT, time(7, 30), time(12, 0)) for i in range(4)])
+    table = build_requirements(
+        kids,
+        [DAY],
+        fq_standard,
+        day_open=time(7, 15),
+        day_close=time(13, 0),
+        enforce_min_two=False,
+    )
+    early_rows = [r for r in table.for_day(DAY) if r.slot_kind is SlotKind.EARLY]
+    assert early_rows, "検証前提: 早朝帯の行が立っていること"
+    assert all(r.needed_qualified == r.needed_staff for r in early_rows), (
+        "早朝帯で代替措置（半減）が適用されている: "
+        f"{[(r.slot.label, r.needed_qualified, r.needed_staff) for r in early_rows]}"
+    )
+
+
 def test_延長緩和_offでは必要保育士数と必要人員が等しい(standard):
-    """``late_care_relaxed=False`` の基準では全時間帯で保育士が全和水となること。"""
+    """``late_care_relaxed=False`` の基準では全時間帯で必要保育士数が必要人員と一致すること。"""
     assert standard.late_care_relaxed is False
     kids = _kids(*[(f"C{i}", AgeClass.INFANT, time(17, 30), time(19, 0)) for i in range(4)])
     table = build_requirements(
@@ -222,7 +246,7 @@ def test_延長緩和_offでは必要保育士数と必要人員が等しい(sta
 
 
 def test_延長緩和なしは常に必要保育士数と必要人員が等しい(fq_standard):
-    """``LATE_STRICT``（緩和期限以降）は代替措置が使えず全和水になること。"""
+    """``LATE_STRICT``（緩和期限以降）は代替措置が使えず必要保育士数が必要人員と一致すること。"""
     kids = _kids(*[(f"C{i}", AgeClass.INFANT, time(19, 0), time(19, 30)) for i in range(4)])
     table = build_requirements(
         kids,

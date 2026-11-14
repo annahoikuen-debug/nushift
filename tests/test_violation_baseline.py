@@ -70,7 +70,7 @@ def violation_code_counts(result) -> dict[str, int]:
     return dict(counter)
 
 
-def test_violation_baseline():
+def test_violation_baseline(pytestconfig):
     """ゴールデンマスター方式のベースラインテスト。
 
     JSON が無い場合は fail（初回実行が常に緑になる自己生成を廃止）。
@@ -87,7 +87,7 @@ def test_violation_baseline():
     with open(BASELINE_FILE, encoding="utf-8") as f:
         expected_counts = json.load(f)
 
-    if pytest.config.getoption("--regenerate-snapshots", default=False):  # type: ignore[attr-defined]
+    if pytestconfig.getoption("--regenerate-snapshots"):
         with open(BASELINE_FILE, "w", encoding="utf-8") as f:
             json.dump(current_counts, f, ensure_ascii=False, indent=2, sort_keys=True)
         return

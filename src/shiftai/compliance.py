@@ -4,12 +4,12 @@
 
 配置基準エンジン（:mod:`shiftai.standards`）が扱うのは
 「その時間帯に何人在園させればよいか」だけである。実際の届出・報告では
-1 日 ＊常勤換算人数**で判定し、もら該日 資性による依存の必置職員や
+1 日ごとの**常勤換算人数**で判定し、資格に基づく必置職員や
 比率上限が加わる。シフト作成の機能では表せない次の要件がある。
 
 * 月極めの基礎乳幼児数と、日極め等の平均加算（指導監督基準 第1(1)）
-* 短時間勤務職員の**常勤換算**（週契約時間÷40時間。基準の「勤務延べ時間÷8」は日単位の式で、
-  日あたり判定には :meth:`StaffRecord.daily_full_time_equivalent` を使う）
+* 短時間勤務職員の**常勤換算**（週契約時間÷40時間。基準の「勤務延べ時間÷8」は
+  日単位の式で、5 日勤務なら同じ値になる）
 * 保育従事者の**半分以上**（保育事業者型は4分の3以上）が保育士であること
 * 保健師・看護師・准看護師の**みなし保育士は1人に限り**
 * **嘱託医・調理員の必置**（調理業務の全部委託または食事の搬入で調理員を免除できる）
@@ -173,20 +173,12 @@ class StaffRecord:
     def full_time_equivalent(self) -> float:
         """常勤換算人数（有資格者・その他別はこのメソッドを分けて使う）。
 
-        週契約時間を 1 週 40 時間の常勤で割る。指導監督基準 第1(1) の
-        「勤務延べ時間数÷8」は 1 日あたりの式なので、日単位の値で判定する場合は
-        :meth:`daily_full_time_equivalent` を使う。
+        週契約時間を 1 週 40 時間の常勤で割る（1 週 40 時間 ＝ 常勤 1 人）。
+        指導監督基準 第1(1) の「勤務延べ時間数÷8」は 1 日あたりの式であり、
+        5 日勤務なら「日あたり時間÷8」と一致する。日単位で数える必要が
+        出た場合は、週契約時間を勤務日数で割り 8 で割る。
         """
         return max(0.0, self.weekly_hours) / FULL_TIME_WEEKLY_HOURS
-
-    def daily_full_time_equivalent(self, workdays: int = 5) -> float:
-        """1 日あたりの勤務時間を「勤務延べ時間数÷8」で常勤換算する。
-
-        指導監督基準 第1(1) の原文どおりの式。``workdays`` は週の勤務日数
-        （既定 5 日）で、週契約時間を日あたり時間に換算してから 8 で割る。
-        """
-        daily = self.weekly_hours / workdays if workdays > 0 else 0.0
-        return max(0.0, daily) / FULL_TIME_HOURS
 
 
 @dataclass(frozen=True)
@@ -371,7 +363,7 @@ def _qualified_fte(records: Sequence[StaffRecord], standard: StaffingStandard) -
 
     :func:`shiftai.domain.qualified_count` と同じルール（看護師の扱い）を
     常勤換算に適用したもの。准看護師も対象だが、
-    ``StaffRecord.roles`` には ``Role.KANGSHI`` しか無 nurse のため、
+    ``StaffRecord.roles`` には ``Role.KANGSHI`` しかないため、
     看護師と准看護師の区別はこのデータモデルでは表現できない。
     """
     hoikushi = sum(r.full_time_equivalent() for r in records if r.is_hoikushi)
@@ -381,6 +373,22 @@ def _qualified_fte(records: Sequence[StaffRecord], standard: StaffingStandard) -
     if standard.nurse_as_qualified_cap <= 0:
         return hoikushi
     return hoikushi + min(nurses, float(standard.nurse_as_qualified_cap))
+
+
+def _qualified_persons(records: Sequence[StaffRecord], standard: StaffingStandard) -> int:
+    """「うち保育士 1 名以上」など**人数**の要件用に、同じルールで人数を数える。
+
+    :func:`_qualified_fte` と同じ看護師の扱い（上限・対象外）で数えるが、
+    常勤換算ではなく**人数**。週30時間の保育士 1 名は 0.75 FTE でも
+    人数としては 1 名であり、「1 名以上」の判定は人数側で行う。
+    """
+    hoikushi = sum(1 for r in records if r.is_hoikushi)
+    nurses = sum(1 for r in records if r.is_nurse)
+    if standard.qualified_extra_roles & {Role.KANGSHI}:
+        return hoikushi + nurses
+    if standard.nurse_as_qualified_cap <= 0:
+        return hoikushi
+    return hoikushi + min(nurses, standard.nurse_as_qualified_cap)
 
 
 def _nurse_note(standard: StaffingStandard) -> str:
@@ -488,12 +496,16 @@ def _staff_checks(spec: FacilitySpec, standard: StaffingStandard) -> list[Compli
         present = [s for s in spec.staff if not s.is_chuubou]
         nurses_count = sum(1 for s in present if s.is_nurse)
         qualified = _qualified_fte(present, standard)
+        # 「うち保育士 1 名以上」は**人数**の要件。常勤換算（FTE）で判定すると、
+        # 週30時間の保育士 1 名（0.75 FTE）が「保育士が 1 名もいません」の
+        # 誤 NG になる（FTE は合計人員の充足判定にだけ使う）。
+        qualified_persons = _qualified_persons(present, standard)
         min_two = standard.min_staff_per_room
-        status = OK if (len(present) >= min_two and qualified >= 1) else NG
+        status = OK if (len(present) >= min_two and qualified_persons >= 1) else NG
         message = ""
         if len(present) < min_two:
             message = f"保育従事者が {min_two - len(present)} 名不足しています。"
-        elif qualified < 1:
+        elif qualified_persons < 1:
             message = "保育士（またはみなし保育士として数えられる看護師）が 1 名もいません。"
         out.append(
             ComplianceCheck(
@@ -502,7 +514,8 @@ def _staff_checks(spec: FacilitySpec, standard: StaffingStandard) -> list[Compli
                 status=status,
                 actual=(
                     f"保育従事者 {len(present)} 名"
-                    f"（看護師 {nurses_count} 名、うち保育士換算 {qualified:.2f} 名）"
+                    f"（うち保育士 {qualified_persons} 名・看護師 {nurses_count} 名／"
+                    f"保育士換算 {qualified:.2f} 名）"
                 ),
                 required=f"{min_two} 名（うち保育士 1 名以上）",
                 basis=f"{basis_facility}／月次報告の手引き",

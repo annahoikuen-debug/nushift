@@ -20,9 +20,9 @@ from shiftai.domain import (
     Contract,
     EmploymentType,
     Role,
+    SolveStatus,
     StaffMember,
     StaffPreferences,
-    SolveStatus,
 )
 from shiftai.gap_analysis import analyze_gap, check_violations
 from shiftai.solver import solve_shift, verify_solution

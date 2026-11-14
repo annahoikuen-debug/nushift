@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from shiftai.data_loader import load_children, load_preferences, load_staff, read_table
 from shiftai.domain import FacilitySettings, SolveResult, SolveStatus
 from shiftai.local_rules import get_standard
@@ -74,12 +76,15 @@ def _serialize_result(res: SolveResult) -> dict:
     }
 
 
-def test_generate_or_verify_golden_master():
+def test_generate_or_verify_golden_master(pytestconfig):
     """Verify that solver output matches the frozen golden master snapshot.
 
     スナップショットが無いときに **現在値で再生成して pass してはならない**
     （初回実行が常に緑になり、壊れた変更を見逃す）。
     再生成は明示的に ``python -m pytest --regenerate-snapshots`` で行う。
+
+    ``pytest.config`` は pytest 5.0 で削除されたため ``pytestconfig``
+    フィクスチャ経由でオプションを読む。
     """
     if not SNAPSHOT_FILE.exists():
         pytest.fail(
@@ -92,7 +97,7 @@ def test_generate_or_verify_golden_master():
     with open(SNAPSHOT_FILE, encoding="utf-8") as f:
         expected_data = json.load(f)
 
-    if pytest.config.getoption("--regenerate-snapshots", default=False):  # type: ignore[attr-defined]
+    if pytestconfig.getoption("--regenerate-snapshots"):
         with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
             json.dump(current_data, f, ensure_ascii=False, indent=2)
         return
@@ -101,4 +106,9 @@ def test_generate_or_verify_golden_master():
     assert current_data["is_feasible"] == expected_data["is_feasible"]
     assert current_data["work_count"] == expected_data["work_count"]
     assert current_data["break_count"] == expected_data["break_count"]
-    assert len(current_data["violations"]) == len(expected_data["violations"])
+    # 違反は「件数」だけでなく**内容**を比較する。件数が同じでも
+    # コード構成が入れ替われば回帰であり、基準側の別テストに丸投げしない。
+    assert current_data["violations"] == expected_data["violations"], (
+        "違反のコード構成が変わりました。\n"
+        f"expected={expected_data['violations']}\nactual={current_data['violations']}"
+    )

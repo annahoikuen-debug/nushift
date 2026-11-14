@@ -258,8 +258,13 @@ def solve_shift_greedy(
             row[i] = CellState.WORK
             used += slots[i].minutes
             added += slots[i].minutes
-            left -= 1
-            right += 1
+            # 配置した**側のポインタだけ**進める。
+            # 修正前は両方を進めていたため、置かなかった側のセルが
+            # 永久にスキップされ、在勤に穴（帰宅を挟む＝分割シフト）が空いていた。
+            if take_left:
+                left -= 1
+            else:
+                right += 1
         if added:
             worked_minutes[sid] += added
             worked_days[sid].add(day)

@@ -843,12 +843,16 @@ def test_READMEに外国語スクリプトが混ざっていない() -> None:
     assert not offenders, "外国語スクリプトが混入しています:\n" + "\n".join(offenders)
 
 
+@pytest.mark.slow
 def test_READMEのPythonデモが実際に動く() -> None:
     """README に載せた Python デモが、そのまま実行できること。
 
     デモが壊れていたら読者が最初に触る部分なので、
     **記載したコードを実際に走らせる**ことで保証する。
-    最適解が求まる規模なので CBC が起動する（``slow`` 自動付与の対象）。
+    最適解が求まる規模なので子プロセスで CBC が起動する。
+    **``slow`` は明示的に手動付与する**（``conftest`` の自動付与は
+    プロセス内の ``solve_shift`` 直呼びしか検出できず、
+    ``subprocess`` 経由の求解は見逃すため）。
     """
     import sys
     import textwrap
@@ -860,7 +864,7 @@ def test_READMEのPythonデモが実際に動く() -> None:
     assert blocks, "README に Python コードブロックが無い"
 
     code = textwrap.dedent(blocks[0])
-    # ``python -c`` は CLI unlike ``python -m shiftai`` で _force_utf8_streams を
+    # ``python -c`` は ``python -m shiftai`` と異なり _force_utf8_streams を
     # 経由しないため、Windows の日本語環境では出力が cp932 になる。
     # 共通ヘルパで PYTHONIOENCODING=utf-8 を明示し、ロケールに依存させない。
     result = run_utf8([sys.executable, "-c", code], cwd=ROOT)
