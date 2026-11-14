@@ -74,6 +74,31 @@ def compute_shift_score(
             weight = w.shortfall_penalty if is_hard else 5.0
 
         count = len(v_list)
+        # スロット詳細情報が存在する場合、総スロット不足数を精密カウント
+        if code in ("SHORTFALL_STAFF", "SHORTFALL_QUALIFIED") and requirements and shift_days:
+            slot_shortfall = 0
+            for sd in shift_days:
+                d = sd.day
+                for slot in requirements.slots:
+                    if code == "SHORTFALL_STAFF":
+                        needed = requirements.needed_staff(d, slot)
+                        actual = sum(1 for a in sd.assignments.values() if a.get(slot.label) == CellState.WORK)
+                        if actual < needed:
+                            slot_shortfall += (needed - actual)
+                    elif code == "SHORTFALL_QUALIFIED":
+                        needed_q = requirements.needed_qualified(d, slot)
+                        # 有資格者数のカウント
+                        actual_q = 0
+                        for sid, a in sd.assignments.items():
+                            if a.get(slot.label) == CellState.WORK:
+                                sm = next((s for s in (staff or ()) if s.staff_id == sid), None)
+                                if sm and (sm.is_qualified or sm.has_role("保育士")):
+                                    actual_q += 1
+                        if actual_q < needed_q:
+                            slot_shortfall += (needed_q - actual_q)
+            if slot_shortfall > 0:
+                count = slot_shortfall
+
         details = [f"{v.day} {v.slot.label if v.slot else ''}: {v.message}" for v in v_list]
         impact = count * weight
 
