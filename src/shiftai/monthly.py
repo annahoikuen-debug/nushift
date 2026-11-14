@@ -236,6 +236,18 @@ def _solve_stage1_daily_patterns(
         for d in days:
             prob += pulp.lpSum([x_vars[(sid, d, pk)] for pk in pat_keys]) == duty_vars[(sid, d)]
 
+    # 制約1-2: 手動確定（fixed_assignments）の反映
+    fixed_by_staff_day: dict[tuple[str, dt.date], set[CellState]] = {}
+    for (fsid, fday, _), fstate in context.fixed_assignments.items():
+        if (fsid, fday) in duty_vars:
+            fixed_by_staff_day.setdefault((fsid, fday), set()).add(fstate)
+
+    for (fsid, fday), fstates in fixed_by_staff_day.items():
+        if CellState.WORK in fstates:
+            prob += duty_vars[(fsid, fday)] == 1
+        elif any(st in (CellState.LEAVE, CellState.PAID_LEAVE) for st in fstates) or fstates == {CellState.OFF}:
+            prob += duty_vars[(fsid, fday)] == 0
+
     # 制約2: 契約所定労働時間（daily_hours）を超える長時間のパターンを禁止
     for s in context.staff:
         sid = s.staff_id
@@ -259,29 +271,29 @@ def _solve_stage1_daily_patterns(
         target_holidays = context.monthly_holiday_target
         if contract and hasattr(contract, "monthly_holiday_target") and contract.monthly_holiday_target:
             target_holidays = contract.monthly_holiday_target
+        elif contract and getattr(contract, "weekly_work_days", None):
+            est_work_days = round(contract.weekly_work_days * len(days) / 7.0)
+            target_holidays = max(0, len(days) - est_work_days)
 
         work_days_target = len(days) - target_holidays
         prob += pulp.lpSum([duty_vars[(sid, d)] for d in days]) <= work_days_target
 
-    # 制約4: 連続勤務上限（前月末連勤履歴考慮）
+    # 制約4: 連続勤務上限（前月末連勤履歴を仮想ウィンドウで正確に考慮）
     for sid in staff_ids:
         contract = context.contracts.get(sid)
         max_streak = 5
         if contract and hasattr(contract, "max_consecutive_days") and contract.max_consecutive_days:
             max_streak = contract.max_consecutive_days
 
-        prior_streak = context.prior_duty_history.get(sid, 0)
-        if prior_streak > 0:
-            remaining_allowance = max(0, max_streak - prior_streak)
-            prob += (
-                pulp.lpSum([duty_vars[(sid, days[i])] for i in range(min(remaining_allowance + 1, len(days)))])
-                <= remaining_allowance
-            )
-
+        prior_streak = min(context.prior_duty_history.get(sid, 0), max_streak)
+        # 前月末の連勤履歴（1）と月内の勤務変数を結合した拡張系列で sliding window を適用
+        extended_vars: list[pulp.LpVariable | int] = [1] * prior_streak + [
+            duty_vars[(sid, d)] for d in days
+        ]
         window_size = max_streak + 1
-        for i in range(len(days) - window_size + 1):
-            window_days = [days[i + k] for k in range(window_size)]
-            prob += pulp.lpSum([duty_vars[(sid, d)] for d in window_days]) <= max_streak
+        for i in range(len(extended_vars) - window_size + 1):
+            window_slice = extended_vars[i : i + window_size]
+            prob += pulp.lpSum(window_slice) <= max_streak
 
     # 制約5: 日次最低必要人員（大まかな確保）
     for d in days:
@@ -290,12 +302,20 @@ def _solve_stage1_daily_patterns(
         if max_req > 0:
             prob += pulp.lpSum([duty_vars[(sid, d)] for sid in staff_ids]) >= min(max_req, len(staff_ids))
 
-    # 制約6: 職員の公平な勤務日数平準化（目的関数）
-    avg_work_days = len(days) - context.monthly_holiday_target
+    # 制約6: 職員の公平な勤務日数平準化（契約別の目標日数に基づく目的関数）
     for sid in staff_ids:
+        contract = context.contracts.get(sid)
+        target_holidays = context.monthly_holiday_target
+        if contract and hasattr(contract, "monthly_holiday_target") and contract.monthly_holiday_target:
+            target_holidays = contract.monthly_holiday_target
+        elif contract and getattr(contract, "weekly_work_days", None):
+            est_work_days = round(contract.weekly_work_days * len(days) / 7.0)
+            target_holidays = max(0, len(days) - est_work_days)
+
+        target_work_days = max(0, len(days) - target_holidays)
         work_diff = pulp.LpVariable(f"diff_{sid}", lowBound=0)
-        prob += pulp.lpSum([duty_vars[(sid, d)] for d in days]) - avg_work_days <= work_diff
-        prob += avg_work_days - pulp.lpSum([duty_vars[(sid, d)] for d in days]) <= work_diff
+        prob += pulp.lpSum([duty_vars[(sid, d)] for d in days]) - target_work_days <= work_diff
+        prob += target_work_days - pulp.lpSum([duty_vars[(sid, d)] for d in days]) <= work_diff
         obj_terms.append(work_diff * 10)
 
     prob += pulp.lpSum(obj_terms)

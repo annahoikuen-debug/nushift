@@ -344,7 +344,6 @@ def _render_fixed_list(day: date | None = None) -> None:
                 state.reset(state.KEY_FIXED_ASSIGNMENTS)
                 st.session_state.pop("shift_editor", None)
                 st.rerun()
-                st.rerun()
 
 
 def _render_weekday_pivot(result: SolveResult, slots: Any) -> None:
