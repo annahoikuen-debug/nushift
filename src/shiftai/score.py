@@ -92,8 +92,10 @@ def compute_shift_score(
                         for sid, a in sd.assignments.items():
                             if a.get(slot.label) == CellState.WORK:
                                 sm = next((s for s in (staff or ()) if s.staff_id == sid), None)
-                                if sm and (sm.is_qualified or sm.has_role("保育士")):
-                                    actual_q += 1
+                                if sm:
+                                    is_qual = getattr(sm, "is_qualified", False) or sm.has_role(Role.HOIKUSHI) or sm.has_role("保育士") or any(getattr(r, "value", str(r)) == "保育士" for r in sm.roles)
+                                    if is_qual:
+                                        actual_q += 1
                         if actual_q < needed_q:
                             slot_shortfall += (needed_q - actual_q)
             if slot_shortfall > 0:
