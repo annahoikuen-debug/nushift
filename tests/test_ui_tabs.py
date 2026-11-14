@@ -22,11 +22,14 @@ from typing import Any
 import pytest
 import streamlit as st
 
+app_test = pytest.importorskip("streamlit.testing.v1", reason="AppTest が無い環境ではスキップ")
+
 from shiftai import gap_analysis
 from shiftai.domain import (
     ChildPlan,
     FacilitySettings,
     RequirementTable,
+    Slot,
     SolveResult,
     SolveStatus,
     StaffPreferences,
@@ -1533,3 +1536,120 @@ def test_サンプル投入からシフト作成まで一連が通る():
     assert isinstance(result, SolveResult)
     assert result.assignments, "1 日分の割当が 1 つも無いのはおかしい"
     assert at.session_state[state.KEY_GAP_REPORT] is not None
+
+
+def test_不足違反の部分指定ボタンで対象を指定できる(tmp_path, solved_payload, one_day, slots):
+    """日付・時間帯まで分かる不足違反でも修正対象にできること。"""
+    payload = {key: dict(value) for key, value in solved_payload.items()}
+    payload["state"][state.KEY_VIOLATIONS] = [
+        Violation(
+            severity=ViolationSeverity.BLOCKER,
+            code="SHORTFALL_STAFF",
+            message="不足",
+            day=one_day[0],
+            slot=slots[0],
+            staff_id=None,
+        )
+    ]
+    at = _run_tabs(tmp_path / "partial_slot", ("tab_export",), payload=payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    buttons = [b for b in at.button if b.key.startswith("export_fix_partial_")]
+    assert buttons, "部分指定の修正ボタンが無い"
+    target = at.button(key=buttons[0].key)
+    assert not target.proto.disabled
+    target.click().run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    fixed = at.session_state[state.KEY_FIX_TARGET]
+    assert fixed == (one_day[0].isoformat(), None, slots[0].label), fixed
+
+
+def test_職員単位違反の部分指定ボタンで対象を指定できる(tmp_path, solved_payload):
+    """職員ID まで分かる違反でも修正対象にできること。"""
+    payload = {key: dict(value) for key, value in solved_payload.items()}
+    payload["state"][state.KEY_VIOLATIONS] = [
+        Violation(
+            severity=ViolationSeverity.WARNING,
+            code="MONTHLY_HOURS_EXCEEDED",
+            message="超過",
+            day=None,
+            slot=None,
+            staff_id="S01",
+        )
+    ]
+    at = _run_tabs(tmp_path / "partial_staff", ("tab_export",), payload=payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    buttons = [b for b in at.button if b.key.startswith("export_fix_partial_")]
+    assert buttons, "部分指定の修正ボタンが無い"
+    target = at.button(key=buttons[0].key)
+    target.click().run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert at.session_state[state.KEY_FIX_TARGET] == (None, "S01", None)
+
+
+def test_シフト表は不足違反の部分指定を受け取る(tmp_path, solved_payload, one_day, slots):
+    """日付・時間帯指定を受け取ると日付を切り替え、時間帯ラベルを残すこと。"""
+    body = (
+        "from shiftai.ui import state, tab_shift\n"
+        "state.set(state.KEY_SOLVE_RESULT, PAYLOAD['state'][state.KEY_SOLVE_RESULT])\n"
+        "state.set(state.KEY_STAFF, PAYLOAD['state'][state.KEY_STAFF])\n"
+        f"state.set_fix_target(('{one_day[0].isoformat()}', None, '{slots[0].label}'))\n"
+        "tab_shift._apply_fix_target()\n"
+        f"assert st.session_state['active_day'].isoformat() == '{one_day[0].isoformat()}'\n"
+        f"assert st.session_state['_fix_slot_label'] == '{slots[0].label}'\n"
+        "assert '_fix_staff_id' not in st.session_state\n"
+    )
+    at = _run_widget_script(tmp_path, body, payload=solved_payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    infos = "\n".join(i.value for i in at.info)
+    assert slots[0].label in infos
+    assert "職員候補" in infos or "オフ" in infos
+
+
+def test_シフト表は職員単位の指定を受け取る(tmp_path, solved_payload):
+    """職員ID のみ指定された場合は職員行を案内し、日付は変更しないこと。"""
+    body = (
+        "from shiftai.ui import state, tab_shift\n"
+        "state.set(state.KEY_SOLVE_RESULT, PAYLOAD['state'][state.KEY_SOLVE_RESULT])\n"
+        "state.set(state.KEY_STAFF, PAYLOAD['state'][state.KEY_STAFF])\n"
+        "state.set_fix_target((None, 'S01', None))\n"
+        "tab_shift._apply_fix_target()\n"
+        "assert st.session_state['_fix_staff_id'] == 'S01'\n"
+        "assert '_fix_slot_label' not in st.session_state\n"
+    )
+    at = _run_widget_script(tmp_path, body, payload=solved_payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    infos = "\n".join(i.value for i in at.info)
+    assert "S01" in infos
+
+
+def _run_widget_script(tmp_path: Path, body: str, *, payload: Any = None) -> Any:
+    """``shiftai.ui`` のウィジェット関数をヘッドレスに実行して ``AppTest`` を返す。
+
+    ``payload`` を渡すとスクリプト内で ``PAYLOAD`` として pickle 復元される。
+    """
+    import pickle
+
+    blob = None
+    if payload is not None:
+        blob = tmp_path / "payload.pkl"
+        blob.write_bytes(pickle.dumps(payload))
+    prelude = (
+        f"import pickle\nPAYLOAD = pickle.load(open({str(blob)!r}, 'rb'))\n"
+        if payload is not None
+        else "PAYLOAD = None\n"
+    )
+    script = (
+        "import sys\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "import streamlit as st\n"
+        "from shiftai.ui import components, state\n"
+        f"{prelude}"
+        "state.init_state()\n"
+        f"{body}\n"
+    )
+    app_file = tmp_path / "widget_script.py"
+    app_file.write_text(script, encoding="utf-8")
+    at = app_test.AppTest.from_file(str(app_file), default_timeout=60)
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    return at

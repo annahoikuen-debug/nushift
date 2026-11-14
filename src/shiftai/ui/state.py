@@ -64,7 +64,14 @@ KEY_INPUT_FINGERPRINT = "input_fingerprint"
 """計算結果に影響する入力の指紋。最後に計算したときと同じかを比べる。"""
 
 KEY_FIX_TARGET = "ui_fix_target"
-"""修正対象を指定した ``(日付の ISO 文字列, 職員ID, 時間帯ラベル)``。"""
+"""修正対象を指定した ``(日付の ISO 文字列, 職員ID, 時間帯ラベル)``。
+
+各要素は ``None`` を取りうる（どれか 1 つしか特定できない違反用）。
+欠けている要素は ``None`` で埋める。
+"""
+
+FixTarget = tuple[str | None, str | None, str | None]
+"""修正対象の型エイリアス。``set_fix_target`` / ``take_fix_target`` でやり取りする。"""
 
 KEY_FIX_REQUESTED = "ui_fix_requested"
 """修正対象の指定が新しい Ones かどうか。読み終えたら ``False`` に戻す。"""
@@ -454,10 +461,11 @@ def mark_inputs_baseline() -> None:
     set(KEY_STALE_REASON, "")
 
 
-def set_fix_target(target: tuple[str, str, str] | None) -> None:
+def set_fix_target(target: FixTarget | None) -> None:
     """修正対象を指定する。
 
     ``target`` は ``(日付の ISO 文字列, 職員ID, 時間帯ラベル)``。
+    各要素に ``None`` を取りうる（どれか 1 つしか特定できない違反用）。
     ``None`` で解除する。
     """
     set(KEY_FIX_TARGET, target)

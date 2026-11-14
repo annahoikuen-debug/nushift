@@ -129,8 +129,13 @@ def _render_editor(result: SolveResult, day: date, slots: Any, staff: list[Any])
         return
     st.markdown("##### ✏️ 微調整（セルの状態を変更できます）")
     slot_label = st.session_state.get("_fix_slot_label")
+    staff_id = st.session_state.get("_fix_staff_id")
     if slot_label:
         st.markdown(f"修正セル: **{slot_label}**")
+    if staff_id:
+        name = state.staff_name_map().get(staff_id, "")
+        who = f"{staff_id}（{name}）" if name else staff_id
+        st.markdown(f"修正対象の職員: **{who}**")
     st.caption(
         f"💡 セルの状態を変更できます。変更後に「確定して再最適化」を押すと {LOCK} 印で固定されます。"
     )
@@ -366,29 +371,67 @@ def _apply_fix_target() -> None:
 
     違反一覧は読み取り専用なので、どこを直せばよいかは分かるが、
     実際の編集画面へ誘導する手段がなかった。ここでは日付を切り替え、
-    時間帯ラベルを session に残して案内を出す。
+    時間帯ラベル・職員ID を session に残して案内を出す。
     """
     target = state.take_fix_target()
     if target is None:
         return
     iso_day, staff_id, slot_label = target
-    wanted = date.fromisoformat(iso_day)
+    wanted = date.fromisoformat(iso_day) if iso_day else None
     options = components.day_options(state.get(state.KEY_SOLVE_RESULT))
-    if wanted in options:
+    staff_map = state.staff_name_map()
+    name = staff_map.get(staff_id, "") if staff_id else ""
+    who = f"{staff_id}（{name}）" if staff_id and name else (staff_id or "")
+
+    if wanted is not None:
+        if wanted not in options:
+            st.session_state.pop("_fix_slot_label", None)
+            st.session_state.pop("_fix_staff_id", None)
+            st.warning("修正対象の日付が現在のシフトに存在しません。期間を確認してください。")
+            st.session_state[state.KEY_FIX_REQUESTED] = False
+            return
         st.session_state["active_day"] = wanted
+
+    if slot_label is not None:
+        # 日付・時間帯まで特定できる違反（不足時間帯など）
         st.session_state["_fix_slot_label"] = slot_label
-        name = state.staff_name_map().get(staff_id, "")
-        who = f"{staff_id}（{name}）" if name else staff_id
+        st.session_state.pop("_fix_staff_id", None)
+        result = state.get(state.KEY_SOLVE_RESULT)
+        slots = state.current_slots()
+        staff = state.get(state.KEY_STAFF) or []
+        shift_day = result.day(wanted) if wanted is not None else None
+        slot_obj = next((s for s in (slots or []) if s.label == slot_label), None)
+        candidates: list[str] = []
+        if shift_day is not None and slot_obj is not None:
+            for member in staff:
+                sid = getattr(member, "staff_id", None)
+                if not sid or sid == staff_id:
+                    continue
+                if shift_day.get(sid, slot_obj) is CellState.OFF:
+                    mname = staff_map.get(sid, "")
+                    candidates.append(f"{sid}（{mname}）" if mname else sid)
+        shown = ", ".join(candidates[:5])
+        more = f"（他 {len(candidates) - 5} 名）" if len(candidates) > 5 else ""
         st.info(
-            f"🎯 修正対象: {theme.format_day(wanted)} ／ {who} ／ {slot_label}"
-            " のセル。\n\n"
+            f"🎯 修正対象: {theme.format_day(wanted)} ／ {slot_label} の時間帯。\n\n"
             "1. 下の「✏️ 微調整」で値を「勤務」「休憩」「オフ」に変える\n"
+            "2. 「✅ 変更を確定して再最適化」を押す（確定しないと反映されません）\n"
+            "3. 解消したら上の「出力前の確認」が ✅ になります\n\n"
+            f"この時間帯にオフの職員候補: {shown}{more}"
+        )
+    elif staff_id is not None:
+        # 職員までは特定できるが日・時間帯は特定できない違反（月間時間など）
+        st.session_state["_fix_staff_id"] = staff_id
+        st.session_state.pop("_fix_slot_label", None)
+        day_part = f"{theme.format_day(wanted)} ／ " if wanted is not None else ""
+        st.info(
+            f"🎯 修正対象: {day_part}{who} の勤務。\n\n"
+            "1. 下の「✏️ 微調整」で該当職員の行を「勤務」「休憩」「オフ」に変える\n"
             "2. 「✅ 変更を確定して再最適化」を押す（確定しないと反映されません）\n"
             "3. 解消したら上の「出力前の確認」が ✅ になります"
         )
     else:
-        st.session_state.pop("_fix_slot_label", None)
-        st.warning("修正対象の日付が現在のシフトに存在しません。期間を確認してください。")
+        st.warning("修正対象の日付・職員・時間帯のいずれも特定できていません。")
     st.session_state[state.KEY_FIX_REQUESTED] = False
 
 

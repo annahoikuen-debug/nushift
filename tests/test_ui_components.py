@@ -23,7 +23,7 @@ import pytest
 import streamlit as st
 
 from shiftai import gap_analysis
-from shiftai.domain import CellState, Violation, ViolationSeverity
+from shiftai.domain import CellState, Slot, Violation, ViolationSeverity
 from shiftai.ui import components, state
 
 logging.getLogger("streamlit").setLevel(logging.ERROR)
@@ -606,8 +606,8 @@ def test_style_gap_tableは不足と過剰で色分けする():
     )
     html = components.style_gap_table(frame).to_html()
     assert html.count("background-color") >= 2
-    assert "#8e0000" in html
-    assert "#0d47a1" in html
+    assert components.COLOR_SHORTFALL_INK.lower() in html.lower()
+    assert components.COLOR_OVER_INK.lower() in html.lower()
 
 
 def test_style_gap_tableは過剰列が無ても描画できる():
@@ -620,14 +620,14 @@ def test_style_gap_tableは0だけだと色が付かない():
     """過不足 0 の行には色を付けない（不要な背景色を避ける）こと。"""
     frame = pd.DataFrame({"時間帯": ["09:00-09:30"], "不足": [0], "過剰": [0]})
     html = components.style_gap_table(frame).to_html()
-    assert "#8e0000" not in html
+    assert components.COLOR_SHORTFALL_INK.lower() not in html.lower()
 
 
 def test_style_gap_tableは数値でないセルを無視する():
     """``—`` や空文字が混ざっていても例外にせず色なしとして扱うこと。"""
     frame = pd.DataFrame({"時間帯": ["09:00-09:30"], "不足": ["—"], "過剰": [None]})
     html = components.style_gap_table(frame).to_html()
-    assert "#8e0000" not in html
+    assert components.COLOR_SHORTFALL_INK.lower() not in html.lower()
 
 
 def test_violation_dataframeは空なら列定義だけ返す():
@@ -1060,3 +1060,195 @@ def test_stat_displayはスカラーとシーケンスを文字列にする():
     assert display(()) == "（なし）"
     assert display(["a", "b"]) == "a、b"
     assert display(("a",)) == "a"
+
+
+# --------------------------------------------------------------------------
+# 違反の修正対象レベルと直し方ガイド（案1＋案2）
+# --------------------------------------------------------------------------
+
+FIX_DAY = date(2026, 9, 28)
+FIX_SLOT = Slot(time(9, 0), time(9, 30))
+
+
+def _make_fix_violation(
+    code: str,
+    *,
+    day: date | None = FIX_DAY,
+    slot: Slot | None = FIX_SLOT,
+    staff_id: str | None = "S01",
+    severity: ViolationSeverity = ViolationSeverity.WARNING,
+    message: str = "message",
+    detail: dict | None = None,
+) -> Violation:
+    return Violation(
+        severity=severity,
+        code=code,
+        message=message,
+        day=day,
+        slot=slot,
+        staff_id=staff_id,
+        detail=detail,
+    )
+
+
+@pytest.mark.parametrize(
+    "code,day,slot,staff_id,level",
+    [
+        ("SHORTFALL_STAFF", FIX_DAY, FIX_SLOT, None, "slot"),
+        ("SHORTFALL_QUALIFIED", FIX_DAY, FIX_SLOT, None, "slot"),
+        ("BREAK_OVERLAP", FIX_DAY, FIX_SLOT, None, "slot"),
+        ("WORK_ON_UNAVAILABLE", FIX_DAY, FIX_SLOT, "S01", "cell"),
+        ("MONTHLY_HOURS_EXCEEDED", None, None, "S01", "staff"),
+        ("MONTHLY_HOURS_SHORT", None, None, "S01", "staff"),
+        ("WEEKLY_HOURS_EXCEEDED", None, None, "S01", "staff"),
+        ("CONSECUTIVE_DAYS", FIX_DAY, None, "S01", "staff"),
+        ("REST_HOURS_SHORT", FIX_DAY, None, "S01", "staff"),
+        ("HOURS_IMBALANCE", None, None, None, "guide"),
+        ("CHECK_UNAVAILABLE", None, None, None, "guide"),
+        ("NOT_PLACED_ROLE", None, None, None, "guide"),
+    ],
+)
+def test_classify_violationは座標の揃い方でレベルを返す(code, day, slot, staff_id, level):
+    v = _make_fix_violation(code, day=day, slot=slot, staff_id=staff_id)
+    assert components.classify_violation(v) == level
+
+
+def test_全違反コードに直し方ガイドがある():
+    """check_violations が出すコードにガイド文の漏れを防ぐ。"""
+    for code in gap_analysis.VIOLATION_CODE_LABELS:
+        hint = components.fix_hint(code)
+        assert hint, f"{code} に直し方ガイドが無い"
+        assert "{" not in hint and "}" not in hint, f"{code} のガイドにプレースホルダーが残っている"
+
+
+def test_fix_hintは未知コードで空文字を返す():
+    assert components.fix_hint("UNKNOWN_CODE") == ""
+
+
+def test_violation_dataframeは直し方列を持つ():
+    violations = [
+        _make_fix_violation("HOURS_IMBALANCE"),
+        _make_fix_violation("UNKNOWN_CODE"),
+    ]
+    df = components.violation_dataframe(violations)
+    assert "直し方" in df.columns
+    assert df.loc[df["コード"] == "HOURS_IMBALANCE", "直し方"].iloc[0]
+    assert df.loc[df["コード"] == "UNKNOWN_CODE", "直し方"].iloc[0] == ""
+
+
+@pytest.mark.parametrize(
+    "code,day,slot,staff_id",
+    [
+        ("WORK_ON_UNAVAILABLE", FIX_DAY, FIX_SLOT, "S01"),   # cell
+        ("SHORTFALL_STAFF", FIX_DAY, FIX_SLOT, None),        # slot
+        ("SHORTFALL_STAFF", None, FIX_SLOT, None),           # day 欠け
+        ("MONTHLY_HOURS_EXCEEDED", None, None, "S01"),       # staff only
+        ("MONTHLY_HOURS_EXCEEDED", FIX_DAY, None, "S01"),    # staff + day
+        ("HOURS_IMBALANCE", None, None, None),               # guide
+        ("SHORTFALL_STAFF", FIX_DAY, None, "S01"),           # slot 欠け（集約後）
+    ],
+)
+def test_render_violation_actionsは座標の組み合わせでも落ちない(
+    tmp_path, code, day, slot, staff_id
+):
+    """どんな座標の欠け方でも例外を出さないこと（回帰防止の本丸）。"""
+    slot_expr = "Slot(time(9, 0), time(9, 30))" if slot is not None else "None"
+    day_expr = f"date(2026, 9, 28)" if day is not None else "None"
+    staff_expr = '"S01"' if staff_id is not None else "None"
+    body = (
+        "from shiftai.domain import Violation, ViolationSeverity, Slot\n"
+        "from datetime import date, time\n"
+        f"v = Violation(\n"
+        f'    severity=ViolationSeverity.WARNING,\n'
+        f'    code="{code}",\n'
+        f'    message="message",\n'
+        f"    day={day_expr},\n"
+        f"    slot={slot_expr},\n"
+        f"    staff_id={staff_expr},\n"
+        ")\n"
+        "components.render_violation_actions([v], key_prefix='x')\n"
+    )
+    at = _run_widget_script(tmp_path, body)
+    assert not at.exception, [str(e.value) for e in at.exception]
+
+
+def test_render_violation_actionsは不足違反に部分指定ボタンを出す(tmp_path):
+    """日付・時間帯まで分かる違反には「人員を追加」ボタンが出ること。"""
+    violation = _make_fix_violation("SHORTFALL_STAFF")
+    body = (
+        "from shiftai.domain import Violation, ViolationSeverity, Slot\n"
+        "from datetime import date, time\n"
+        "v = Violation(\n"
+        "    severity=ViolationSeverity.BLOCKER,\n"
+        '    code="SHORTFALL_STAFF",\n'
+        '    message="不足",\n'
+        "    day=date(2026, 9, 28),\n"
+        "    slot=Slot(time(9, 0), time(9, 30)),\n"
+        "    staff_id=None,\n"
+        ")\n"
+        "components.render_violation_actions([v], key_prefix='x')\n"
+    )
+    at = _run_widget_script(tmp_path, body)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    buttons = [b for b in at.button if b.key.startswith("x_fix_partial_")]
+    assert buttons, "部分指定の修正ボタンが無い"
+    assert "09:00-09:30 に人員を追加" in buttons[0].label
+    assert not at.warning, "不足違反には汎用警告を出さない"
+    target = at.button(key=buttons[0].key)
+    assert not target.proto.disabled
+    target.click().run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert at.session_state[state.KEY_FIX_TARGET] == ("2026-09-28", None, "09:00-09:30")
+
+
+def test_render_violation_actionsは職員単位の違反に調整ボタンを出す(tmp_path):
+    """職員ID まで分かる違反には「勤務を調整」ボタンが出ること。"""
+    body = (
+        "from shiftai.domain import Violation, ViolationSeverity\n"
+        "v = Violation(\n"
+        '    severity=ViolationSeverity.WARNING,\n'
+        '    code="MONTHLY_HOURS_EXCEEDED",\n'
+        '    message="超過",\n'
+        "    day=None,\n"
+        "    slot=None,\n"
+        '    staff_id="S01",\n'
+        ")\n"
+        "components.render_violation_actions([v], key_prefix='x')\n"
+    )
+    at = _run_widget_script(tmp_path, body)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    buttons = [b for b in at.button if b.key.startswith("x_fix_partial_")]
+    assert buttons, "部分指定の修正ボタンが無い"
+    assert "S01 の勤務を調整" in buttons[0].label
+    target = at.button(key=buttons[0].key)
+    target.click().run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert at.session_state[state.KEY_FIX_TARGET] == (None, "S01", None)
+
+
+def test_render_violation_actionsは座標なし違反でガイドを出す(tmp_path):
+    """セルでも日付・職員でも特定できない違反にはコード別ガイドを出すこと。"""
+    body = (
+        "from shiftai.domain import Violation, ViolationSeverity\n"
+        "v = Violation(\n"
+        '    severity=ViolationSeverity.INFO,\n'
+        '    code="HOURS_IMBALANCE",\n'
+        '    message="偏り",\n'
+        "    day=None,\n"
+        "    slot=None,\n"
+        "    staff_id=None,\n"
+        ")\n"
+        "components.render_violation_actions([v], key_prefix='x')\n"
+    )
+    at = _run_widget_script(tmp_path, body)
+    assert not at.exception, [str(e.value) for e in at.exception]
+    buttons = [b for b in at.button if b.key.startswith("x_fix_")]
+    assert not buttons, "ガイド違反に修正ボタンを出さない"
+    assert at.warning, "ガイド違反には警告を出す"
+    markdown = "\n".join(m.value for m in at.markdown)
+    assert "再計算" in markdown, "直し方ガイドが表示されていない"
+    expanders = [e for e in at.expander if "セルでは直せない違反" in e.label]
+    assert expanders, "未修正違反の expander が無い"
+    frames = [d.value for e in expanders for d in e.dataframe]
+    assert frames, "未修正違反のデータフレームが無い"
+    assert "直し方" in frames[0].columns, "直し方列が表示されていない"

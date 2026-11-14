@@ -59,6 +59,62 @@ FALLBACK_VIOLATION_LABELS: dict[str, str] = {
     "SOLVER_INFEASIBLE": "解なし（制約が矛盾）",
 }
 
+
+FALLBACK_VIOLATION_FIX_HINTS: dict[str, str] = {
+    "SHORTFALL_STAFF": "不足している時間帯に入れる職員が足りません。"
+    "{shift} でその時間帯のオフの職員を「勤務」に変えるか、"
+    "{data} の必要人員（職員数・保育士数）を見直してください。",
+    "SHORTFALL_QUALIFIED": "不足している時間帯の保育士が足りません。"
+    "{shift} で保育士資格の職員をその時間帯に配置するか、"
+    "{data} の配置基準を見直してください。",
+    "BREAK_OVERLAP": "同時刻の休憩が集中しています。"
+    "{shift} で休憩の始まる時間帯をずらしてください。",
+    "WORK_ON_UNAVAILABLE": "希望休・不在時間帯に勤務が入っています。"
+    "{shift} で該当セルを「オフ」にするか、{data} の勤務不可設定を確認してください。",
+    "WORK_ON_CLOSED_DAY": "休園日に勤務が入っています。"
+    "{shift} で該当セルを「オフ」にするか、{data} の開園日設定を確認してください。",
+    "OUTSIDE_CONTRACT_HOURS": "契約時間帯の外で勤務しています。"
+    "{shift} で始業・終業を契約内に収めるか、{data} の契約時間帯を確認してください。",
+    "DAILY_HOURS_EXCEEDED": "この職員の 1 日の勤務が契約上限を超えています。"
+    "{shift} で勤務時間を短くするか、{data} の契約時間を確認してください。",
+    "OVERTIME_NOT_ALLOWED": "時間外労働の契約がないため 8 時間を超えられません。"
+    "{shift} で勤務を 8 時間以内に収めるか、{data} の 36 協定設定を確認してください。",
+    "OVERTIME_REQUIRES_36AGREEMENT": "時間外労働として 36 協定の締結と割増賃金の確認が必要です。"
+    "{shift} で勤務を短縮するか、{data} の職員設定を確認してください。",
+    "BREAK_INSUFFICIENT": "休憩が規定時間に足りません。"
+    "{shift} で休憩セルを追加・延長してください。",
+    "BREAK_FRAGMENTED": "休憩が分断されています。"
+    "{shift} で連続した休憩になるようセルを調整してください。",
+    "SPLIT_SHIFT": "勤務が分割されています。園の運用で分割勤務を許可しない場合は、"
+    "{shift} で勤務ブロックを 1 つにまとめてください。",
+    "CONSECUTIVE_DAYS": "連続勤務日数が上限を超えています。"
+    "{shift} で連続区間の間に休みを入れてください。",
+    "WEEKLY_DAYS_EXCEEDED": "週の勤務日数が上限を超えています。"
+    "{shift} で該当週の休みを増やしてください。",
+    "REST_HOURS_SHORT": "勤務間の休息が 11 時間未満です。"
+    "{shift} で翌日の始業を遅らせるか前日の終業を早めてください。",
+    "WEEKLY_HOURS_EXCEEDED": "この職員の週勤務が 44 時間を超えています。"
+    "{shift} で該当週の勤務を減らしてください。",
+    "MONTHLY_HOURS_EXCEEDED": "この職員の勤務時間が契約上限を超えています。"
+    "{shift} で休みを増やすか、{data} の職員 CSV（契約時間）を確認してください。",
+    "MONTHLY_HOURS_SHORT": "この職員の勤務時間が契約下限に届いていません。"
+    "{shift} で勤務を増やすか、{data} の契約時間を確認してください。",
+    "VARIABLE_HOURS_EXCEEDED": "変形労働時間制の総枠を超えています。36 協定に基づく割増賃金が必要です。"
+    "{shift} で総勤務時間を減らすか、{data} の 36 協定設定を確認してください。",
+    "VARIABLE_HOURS_EXCEEDED_NO_36": "変形労働時間制の総枠を超えていますが 36 協定が未締結のため違法です。"
+    "{shift} で総勤務時間を減らすか、{data} で 36 協定を設定してください。",
+    "AVOID_EARLY_CONFLICT": "早朝保育を希望しない職員が配置されています。"
+    "{shift} で早朝のセルを「オフ」にするか、{data} の希望設定を確認してください。",
+    "AVOID_LATE_CONFLICT": "延長保育を希望しない職員が配置されています。"
+    "{shift} で延長のセルを「オフ」にするか、{data} の希望設定を確認してください。",
+    "HOURS_IMBALANCE": "職員間の勤務時間の偏りが大きいです。1 つのセルでは直せません。"
+    "{solve} で公平さの重みを上げて再計算するか、全体の勤務配分を調整してください。",
+    "CHECK_UNAVAILABLE": "違反検査が完了していません。"
+    "{solve} で再計算するか、時間制限を延ばして再実行してください。",
+    "NOT_PLACED_ROLE": "配置対象外の職種です（調理員・栄養教諭など）。"
+    "シフト・労働時間の判定対象外のため対応は不要です。",
+}
+
 HEAT_SCALES: dict[str, tuple[tuple[int, int, int], ...]] = {
     "warm": ((255, 247, 236), (253, 208, 162), (244, 165, 130), (214, 96, 77), (153, 0, 0)),
     "shortfall": ((165, 0, 38), (215, 48, 39), (255, 191, 191), (199, 233, 192), (0, 104, 55)),
@@ -811,10 +867,112 @@ def violation_dataframe(violations: Sequence[Violation]) -> pd.DataFrame:
                 "曜日": japanese_weekday(v.day) if v.day else "",
                 "時間帯": v.slot.label if v.slot else "—",
                 "職員ID": v.staff_id or "—",
+                "直し方": _first_sentence(_format_hint(fix_hint(v.code))),
             }
             for v in violations
         ]
     )
+
+
+def _first_sentence(text: str) -> str:
+    """テキストの最初の 1 文を返す（「。」で区切る）。"""
+    index = text.find("。")
+    return text[: index + 1] if index >= 0 else text
+
+
+FixTarget = tuple[str | None, str | None, str | None]
+"""修正対象：``(日付の ISO 文字列, 職員ID, 時間帯ラベル)``。
+
+各要素は ``None`` を取りうる（どれか 1 つしか特定できない違反用）。
+欠けている要素は ``None`` で埋める。
+"""
+
+
+def classify_violation(v: Violation) -> str:
+    """違反がどの粒度で修正対象にできるかを返す。
+
+    ``cell``: 日付・時間帯・職員ID すべて揃っている（1 つのセルを直す）
+    ``slot``: 日付・時間帯は揃っているが職員は特定できない（その列に人員を追加）
+    ``staff``: 職員ID は揃っているが日・時間帯は揃っていない（その職員の行を調整）
+    ``guide``: 座標が揃っておらず、1 つのセルでは直せない（ガイド文のみ）
+    """
+    if v.day is not None and v.slot is not None and v.staff_id:
+        return "cell"
+    if v.day is not None and v.slot is not None:
+        return "slot"
+    if v.staff_id:
+        return "staff"
+    return "guide"
+
+
+def violation_fix_hints() -> dict[str, str]:
+    """``gap_analysis.VIOLATION_FIX_HINTS`` があればそれを、無ければ内置の辞書を使う。"""
+    found = getattr(gap_analysis, "VIOLATION_FIX_HINTS", None)
+    if isinstance(found, dict) and found:
+        return {**FALLBACK_VIOLATION_FIX_HINTS, **{str(k): str(v) for k, v in found.items()}}
+    return dict(FALLBACK_VIOLATION_FIX_HINTS)
+
+
+_TAB_KEYS = ("shift", "data", "solve", "export")
+
+
+def _format_hint(hint: str) -> str:
+    """ガイド文中のプレースホルダーをタブ参照文言に展開する。"""
+    for key in _TAB_KEYS:
+        hint = hint.replace("{" + key + "}", theme.tab_ref_for(key))
+    return hint
+
+
+def fix_hint(code: str) -> str:
+    """違反コードの「直し方」を返す。見つからなければ空文字。"""
+    return _format_hint(violation_fix_hints().get(str(code), ""))
+
+
+def partial_violation_targets(
+    violations: Sequence[Violation], *, limit: int = 10
+) -> list[tuple[str, FixTarget, str]]:
+    """セルを 1 つ特定できないが日付や職員は特定できる違反を返す。
+
+    ``(説明文, 修正対象, 粒度)`` の並び。粒度は ``"slot"`` または ``"staff"``。
+    上位 ``limit`` 件だけ返す。
+    """
+    from shiftai.ui import state
+
+    targets: list[tuple[str, FixTarget, str]] = []
+    for v in violations:
+        level = classify_violation(v)
+        if level == "slot":
+            assert v.day is not None and v.slot is not None
+            target: FixTarget = (v.day.isoformat(), None, v.slot.label)
+            label = f"{v.day.isoformat()} {v.slot.label} に人員を追加"
+            targets.append((label, target, level))
+        elif level == "staff":
+            slot_label = None
+            slots = (v.detail or {}).get("slots")
+            if isinstance(slots, list) and len(slots) == 1:
+                slot_label = str(slots[0])
+            target = (
+                v.day.isoformat() if v.day else None,
+                v.staff_id,
+                slot_label,
+            )
+            name = state.staff_name_map().get(v.staff_id, "")
+            who = f"{v.staff_id}（{name}）" if name else v.staff_id
+            day_part = f"{v.day.isoformat()} " if v.day else ""
+            label = f"{day_part}{who} の勤務を調整"
+            targets.append((label, target, level))
+        if len(targets) >= limit:
+            break
+    return targets
+
+
+def unfixable_violations(violations: Sequence[Violation]) -> list[Violation]:
+    """1 つのセルにも日付や職員にも特定できない違反を返す。
+
+    日付・時間帯・職員ID のすべてが欠ける違反は、どのセルを変えればよいか
+    特定できないため修正ボタンを持たせられない。
+    """
+    return [v for v in violations if classify_violation(v) == "guide"]
 
 
 def violation_targets(
@@ -838,33 +996,27 @@ def violation_targets(
     return targets
 
 
-def unfixable_violations(violations: Sequence[Violation]) -> list[Violation]:
-    """セルを 1 つ指定して直せない違反を返す。
-
-    日付・時間帯・職員ID のどれかが欠けるものは、どのセルを変えればよいか
-    特定できないため修正ボタンを持たせられない。放置すると
-    「ダウンロードできない」のまま出口がなくなるので、これらの件数と
-    内容を明示する必要がある。
-    """
-    return [v for v in violations if v.day is None or v.slot is None or not v.staff_id]
-
-
 def render_violation_actions(violations: Sequence[Violation], *, key_prefix: str) -> None:
     """違反一覧の下に修正ボタンを並べる。
 
-    押されたボタンに対応する ``state.set_fix_target()`` を呼び、
-    **シフト表のタブへ自動で移動する**（移動しないと「押しても何も起こらない」
-    導線になる）。
-    修正対象のセルが 1 つもなくても、セルでは直せない違反の件数は出す。
+    日付・時間帯・職員ID の揃い方に応じて 3 種類の導線を出す。
+
+    * セル指定可能（3 要素すべて）: セルを選択して直すボタン（現行どおり）
+    * 日付・時間帯まで指定可能: その列に人員を追加するボタン
+    * 職員まで指定可能: その職員の行を調整するボタン
+
+    押すと ``state.set_fix_target()`` を呼び、**シフト表のタブへ自動で移動する**。
+    セルでは直せない違反だけの場合は、違反コードごとの「直し方」ガイドを出す。
     """
     from shiftai.ui import state
 
-    targets = violation_targets(violations)
+    cell_targets = violation_targets(violations)
+    partial_targets = partial_violation_targets(violations)
     unfixable = unfixable_violations(violations)
     if not violations:
         return
 
-    def _jump(target: tuple[str, str, str]) -> None:
+    def _jump(target: FixTarget) -> None:
         """修正対象を予約し、シフト表のタブを開く。"""
         state.set_fix_target(target)
         st.session_state[state.KEY_FIX_REQUESTED] = True
@@ -872,13 +1024,14 @@ def render_violation_actions(violations: Sequence[Violation], *, key_prefix: str
 
     st.markdown("#### 🛠 この違反を修正する")
     st.caption(
-        f"ボタンを押すと、{theme.tab_ref_for('shift')} が開き、"
-        "該当の日付・職員・時間帯が選択された状態になります。"
-        "セルの値を「勤務」「休憩」「オフ」に変えて「✅ 変更を確定して再最適化する」を押すと、"
-        "違反が解消されます。"
+        f"ボタンを押すと、{theme.tab_ref_for('shift')} が開き、該当の日付・職員・時間帯が"
+        "選択された状態になります。日付や職員だけが分かる違反には、それぞれの列・行を"
+        "指定するボタンが出ます。セルの値を「勤務」「休憩」「オフ」に変えて"
+        "「✅ 変更を確定して再最適化する」を押すと、違反が解消されます。"
     )
-    if targets:
-        shown = targets[:8]
+
+    shown = cell_targets[:8]
+    if shown:
         for start in range(0, len(shown), 2):
             pair = shown[start : start + 2]
             columns = st.columns(len(pair))
@@ -893,16 +1046,56 @@ def render_violation_actions(violations: Sequence[Violation], *, key_prefix: str
                         on_click=_jump,
                         args=(target,),
                     )
-        if len(targets) > len(shown):
+        if len(cell_targets) > len(shown):
             st.caption(
-                f"ほか {len(targets) - len(shown)} 件。"
-                "下の違反一覧（深刻度別）から日付・職員・時間帯を確認してください。"
+                f"ほか {len(cell_targets) - len(shown)} 件のセル指定違反があります。"
             )
-    else:
+
+    if partial_targets:
+        st.markdown(f"##### ⚠️ 日付または職員を選択して修正する（{len(partial_targets)} 件）")
+        shown = partial_targets[:8]
+        for start in range(0, len(shown), 2):
+            pair = shown[start : start + 2]
+            columns = st.columns(len(pair))
+            for offset, (label, target, level) in enumerate(pair):
+                index = start + offset
+                icon = "👥" if level == "slot" else "👤"
+                with columns[offset]:
+                    st.button(
+                        f"{icon} {label}",
+                        key=f"{key_prefix}_fix_partial_{index}",
+                        width="stretch",
+                        help=theme.tab_ref_for("shift")
+                        + " を開いて該当の列または行を編集します。",
+                        on_click=_jump,
+                        args=(target,),
+                    )
+        if len(partial_targets) > len(shown):
+            st.caption(
+                f"ほか {len(partial_targets) - len(shown)} 件。"
+                "下の違反一覧から日付・職員・時間帯を確認してください。"
+            )
+
+    if not cell_targets and not partial_targets:
+        # セル・部分指定どちらも出ない違反だけの場合はコード別ガイドを出す
         st.warning(
             "この違反は 1 つのセルに特定できないため、修正ボタンを出せません。"
-            "下の違反一覧の内容を確認し、園の条件や職員データを見直してください。"
+            "違反コードごとの直し方をご確認ください。"
         )
+        shown_codes: list[str] = []
+        for v in unfixable:
+            if v.code in shown_codes:
+                continue
+            shown_codes.append(v.code)
+            hint = fix_hint(v.code) or "園の条件や職員データを見直してください。"
+            st.markdown(
+                f"- **{violation_title(v.code)}**: {_format_hint(hint)}"
+            )
+        if len(shown_codes) < len({v.code for v in unfixable}):
+            st.caption(
+                f"ほか {len({v.code for v in unfixable}) - len(shown_codes)} 種類の違反があります。"
+            )
+
     if unfixable:
         with st.expander(f"ℹ️ セルでは直せない違反（{len(unfixable)} 件）", expanded=True):
             st.dataframe(
@@ -913,9 +1106,7 @@ def render_violation_actions(violations: Sequence[Violation], *, key_prefix: str
             )
             st.caption(
                 "「—」は日付・時間帯・職員が特定できないことを表します。"
-                "過不足や労働時間など期間全体の問題は、"
-                f"{theme.tab_ref_for('data')} の入力や {theme.tab_ref_for('solve')} "
-                "の再計算で解消します。"
+                "表の「直し方」列、あるいは園の条件・職員データを見直してください。"
             )
 
 
