@@ -282,7 +282,7 @@ def solve_monthly_hierarchical(
     else:
         overall_status = SolveStatus.PARTIAL
 
-    return SolveResult(
+    res = SolveResult(
         status=overall_status,
         shift_days=all_shift_days,
         violations=all_violations,
@@ -295,6 +295,21 @@ def solve_monthly_hierarchical(
             "stage1_patterns": len(stage1_res),
         },
     )
+    try:
+        from shiftai.score import compute_shift_score
+
+        res.score = compute_shift_score(
+            shift_days=res.shift_days,
+            violations=res.violations,
+            requirements=context.requirements,
+            staff=context.staff,
+            preferences=context.preferences,
+            weights=weights,
+        )
+    except Exception:
+        pass
+
+    return res
 
 
 def _solve_stage1_daily_patterns(

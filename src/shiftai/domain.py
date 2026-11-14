@@ -1206,6 +1206,52 @@ class Violation:
         }
 
 
+@dataclass(frozen=True)
+class ConstraintMatch:
+    """制約ごとの適合・違反スコア影響（Score Explanation の構成単位）。"""
+
+    constraint_id: str
+    constraint_name: str
+    is_hard: bool
+    weight: float
+    match_count: int
+    score_impact: float
+    details: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ShiftScore:
+    """Timefold の HardSoftScore 思想に基づくシフト評価スコア。"""
+
+    hard_score: int  # 0: 完全適法 (BLOCKERゼロ), 負数: ハード制約違反件数 (-N)
+    soft_score: float  # ソフト評価値（目的関数ペナルティの合計、0に近いほど高品質）
+    matches: dict[str, ConstraintMatch] = field(default_factory=dict)
+
+    @property
+    def is_feasible(self) -> bool:
+        """ハード制約違反が 0 件（実現可能・適法）であるか。"""
+        return self.hard_score == 0
+
+    def to_dict(self) -> dict:
+        return {
+            "hard_score": self.hard_score,
+            "soft_score": round(self.soft_score, 2),
+            "is_feasible": self.is_feasible,
+            "matches": {
+                k: {
+                    "constraint_id": m.constraint_id,
+                    "constraint_name": m.constraint_name,
+                    "is_hard": m.is_hard,
+                    "weight": m.weight,
+                    "match_count": m.match_count,
+                    "score_impact": round(m.score_impact, 2),
+                    "details": m.details[:20],
+                }
+                for k, m in self.matches.items()
+            },
+        }
+
+
 @dataclass
 class SolveResult:
     """シフト最適化の結果。"""
@@ -1218,6 +1264,8 @@ class SolveResult:
     messages: list[str] = field(default_factory=list)
     stats: dict = field(default_factory=dict)
     """所要時間・変数数・制約数など。"""
+    score: ShiftScore | None = None
+    """Timefold 互換のハード・ソフト定量スコアおよび説明内訳。"""
 
     @property
     def ok(self) -> bool:

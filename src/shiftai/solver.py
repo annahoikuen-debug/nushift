@@ -2484,6 +2484,19 @@ def _finish(
     _attach_violations(
         result, requirements, payload.staff, payload.prefs, payload.standard, payload.settings
     )
+    try:
+        from shiftai.score import compute_shift_score
+
+        result.score = compute_shift_score(
+            shift_days=result.shift_days,
+            violations=result.violations,
+            requirements=requirements,
+            staff=payload.staff,
+            preferences=payload.prefs,
+            weights=payload.weights,
+        )
+    except Exception:
+        pass
     return result
 
 
