@@ -129,7 +129,8 @@ def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveRes
                     parallel_workers=int(st.session_state.get("parallel_workers", 1)),
                 )
             else:
-                result = solver.solve_shift(
+                from shiftai.weekly import solve_weekly
+                result = solve_weekly(
                     children,
                     staff,
                     table,
@@ -142,6 +143,8 @@ def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveRes
                     standard=standard,
                     patterns=patterns,
                     relaxation=level,
+                    engine=st.session_state.get("solve_engine", "hierarchical"),
+                    parallel_workers=int(st.session_state.get("parallel_workers", 1)),
                 )
         progress.progress(PROGRESS_STEPS[4][0], text=PROGRESS_STEPS[4][1])
         snap_changes: tuple = ()
@@ -717,6 +720,15 @@ def render(*, auto_requirements: bool = False, embed_shift: bool = False) -> Non
             help="1ヶ月などの長期シフトを作成する場合は「月次一括」を選択すると、公休目標や連勤制限を守りながら高速に解けます。",
         )
     with col_m2:
+        if st.session_state.get("solve_mode") == "weekly":
+            st.radio(
+                "週次エンジン",
+                options=["hierarchical", "legacy"],
+                format_func=lambda e: "階層エンジン (推奨)" if e == "hierarchical" else "旧単一モデル",
+                key="solve_engine",
+                horizontal=True,
+                help="hierarchical: 日単位チャンクで並列求解（高速）/ legacy: 旧単一モデル",
+            )
         if st.session_state.get("solve_mode") == "monthly":
             st.number_input(
                 "月間公休目標日数",
