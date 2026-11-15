@@ -11,6 +11,7 @@ K4: MIPギャップ ≤ 3% 表示（7日×28名）
 """
 from __future__ import annotations
 
+import math
 import time
 from datetime import date, timedelta
 
@@ -47,9 +48,15 @@ def run_bench(days_count: int, time_limit: int = 60) -> dict:
     k1 = len(blockers) == 0
     k2 = wall <= 60
     k3 = s.get("solver") != "greedy" and s.get("fallback") != "greedy"
+    # K4: MILP が解けたチャンクのギャップで判定する。
+    # inf（解なし・局所探索で修復されたチャンク）は除外する。
     gap = s.get("mip_gap")
-    if gap is None:
-        gap = s.get("mip_gap_max")      # monthly/hierarchical は mip_gap_max に集約
+    if gap is None or not math.isfinite(float(gap)):
+        finite_gaps = [
+            float(g) for g in (s.get("chunk_gaps") or [])
+            if g is not None and math.isfinite(float(g))
+        ]
+        gap = max(finite_gaps) if finite_gaps else None
     k4 = gap is not None and float(gap) <= 0.03
 
     return {
