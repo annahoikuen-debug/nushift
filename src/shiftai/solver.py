@@ -2098,6 +2098,7 @@ def solve_shift(
         "num_slots": len(slots),
         "relaxation": level,
         "relaxation_label": RELAX_LEVELS[level].label,
+        "budget_sec": budget,          # ★追加（全体予算の記録）
         "relaxed_constraints": list(describe_relaxations(level)),
         "patterns": [p.label for p in payload.patterns],
         "pattern_mode": payload.pattern_mode,
