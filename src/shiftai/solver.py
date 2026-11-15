@@ -2252,6 +2252,17 @@ def _run_solver(
         solver_name=solver_name,
         warm_start=warm_start,
     )
+    if actual_solver == "PULP_CBC_CMD" and ctx.counts()[0] > config.MAX_CBC_MODEL_VARS:
+        # CBC は大規模モデルで 60 秒を無駄にする（初期解すら出せない）。
+        # 起動せず即座に INFEASIBLE を返し、呼び出し元に greedy フォール
+        # バックさせる（pass1/pass2 両方に効く単一箇所）。
+        if stats is not None:
+            stats["budget_sec"] = limit_sec
+        return (
+            SolveStatus.INFEASIBLE,
+            f"BudgetGuard / CBC 拒否（変数数 {ctx.counts()[0]} > {config.MAX_CBC_MODEL_VARS}）",
+            actual_solver,
+        )
     try:
         ctx.prob.solve(solver_instance)
     except Exception as exc:
