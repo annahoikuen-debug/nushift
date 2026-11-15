@@ -86,6 +86,7 @@ from shiftai.greedy import (
 from shiftai.greedy import (
     staff_work_hours as staff_work_hours,
 )
+from shiftai.highs_start import HiGHSWithStart
 from shiftai.relaxation import (
     RELAX_LEVELS,
     RelaxLevel,
@@ -206,12 +207,12 @@ def _get_solver(
         try:
             num_threads = min(4, os.cpu_count() or 1)
             return (
-                pulp.HiGHS(
+                HiGHSWithStart(                                    # ★変更（旧: pulp.HiGHS(）
                     msg=msg,
                     timeLimit=limit,
                     threads=num_threads,
-                    gapRel=0.03,
-                    mip_heuristic_effort=0.2,
+                    gapRel=config.HIGHS_GAP_REL,                   # ★変更（旧: 0.03）
+                    mip_heuristic_effort=config.HIGHS_MIP_HEURISTIC_EFFORT,  # ★変更（旧: 0.2）
                 ),
                 "HiGHS",
             )
@@ -2269,7 +2270,9 @@ def _run_solver(
     except Exception as exc:
         return SolveStatus.ERROR, f"SolveError / {exc}", actual_solver
     if stats is not None:
-        _collect_highs_info(ctx.prob, stats)
+        _collect_highs_info(ctx.prob, stats)                    # ★追加（ステップ3で追加済み）
+        if actual_solver == "HiGHS":                            # ★追加
+            stats["mip_start_status"] = "on"                    # ★追加
     status_raw = pulp.LpStatus.get(ctx.prob.status, "Undefined")
     sol_raw = pulp.LpSolution.get(ctx.prob.sol_status, "No Solution Found")
     raw = f"{status_raw} / {sol_raw}"
