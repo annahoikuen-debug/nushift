@@ -49,12 +49,12 @@ def run_bench(days_count: int, time_limit: int = 60) -> dict:
     k2 = wall <= 60
     k3 = s.get("solver") != "greedy" and s.get("fallback") != "greedy"
     # K4: MILP が解けたチャンクのギャップで判定する。
-    # inf（解なし・局所探索で修復されたチャンク）は除外する。
+    # inf（解なし・局所探索で修復されたチャンク）と kHighsInf（≈1e30）は除外する。
     gap = s.get("mip_gap")
-    if gap is None or not math.isfinite(float(gap)):
+    if gap is None or not (math.isfinite(float(gap)) and float(gap) < 1e29):
         finite_gaps = [
             float(g) for g in (s.get("chunk_gaps") or [])
-            if g is not None and math.isfinite(float(g))
+            if g is not None and math.isfinite(float(g)) and float(g) < 1e29
         ]
         gap = max(finite_gaps) if finite_gaps else None
     k4 = gap is not None and float(gap) <= 0.03
