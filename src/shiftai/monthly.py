@@ -279,7 +279,7 @@ def solve_monthly_hierarchical(
 
     weights = effective_weights
     remaining_budget = max(time_limit_sec - stage1_time, 30)
-    per_chunk_time = max(remaining_budget // max(len(day_chunks), 1), 10)
+    per_chunk_time = max(remaining_budget // max(len(day_chunks), 1), 20)    # ★変更（旧: 下限10。K4 ギャップ収束のため下限20）
 
     total_chunks = len(day_chunks)
     completed_chunks = 0
