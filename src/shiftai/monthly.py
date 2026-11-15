@@ -345,6 +345,10 @@ def solve_monthly_hierarchical(
             standard=context.standard,
         )
 
+        # snap_to_patterns / ruin_and_recreate が sub_res を新規オブジェクトで
+        # 上書きすると solve_shift の stats（mip_gap 等）が失われるため保持する。
+        chunk_mip_gap = sub_res.stats.get("mip_gap")
+
         if context.patterns and sub_res.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE):
             sub_res, _ = snap_to_patterns(
                 sub_res,
@@ -375,6 +379,10 @@ def solve_monthly_hierarchical(
                     sub_res = ls_res
             except Exception as e:
                 sub_res.messages.append(f"Local search fallback error: {e}")
+
+        # 上書き後の stats に mip_gap が無ければ solve_shift の値を復元する
+        if chunk_mip_gap is not None and sub_res.stats.get("mip_gap") is None:
+            sub_res.stats["mip_gap"] = chunk_mip_gap
 
         return (sub_res.shift_days, sub_res.violations, sub_res.messages, sub_res.status, sub_res.stats)
 
