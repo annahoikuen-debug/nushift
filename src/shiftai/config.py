@@ -147,6 +147,15 @@ DEFAULT_SOLVER = "auto"
 #: 初期解すら出せなかった。
 MAX_CBC_MODEL_VARS = 30_000
 
+#: 週次シフトの既定エンジン（"hierarchical" | "legacy"）。
+WEEKLY_ENGINE_DEFAULT = "hierarchical"
+
+#: 週次シフトのチャンクサイズ（日単位=1）。
+WEEKLY_CHUNK_SIZE = 1
+
+#: 週次シフトの並列ワーカー数（0=自動、CPU数-1）。
+WEEKLY_PARALLEL_WORKERS = 0
+
 #: HiGHS の既定ギャップ（最適性の証明をどこまで求めるか）。
 HIGHS_GAP_REL = 0.03
 
