@@ -572,7 +572,8 @@ def cmd_solve(args: argparse.Namespace) -> int:
             parallel_workers=max(1, int(getattr(args, "workers", 1) or 1)),
         )
     else:
-        result = solve_shift(
+        from shiftai.weekly import solve_weekly
+        result = solve_weekly(
             loaded.children,
             loaded.staff,
             table,
@@ -585,6 +586,8 @@ def cmd_solve(args: argparse.Namespace) -> int:
             solver_name=args.solver,
             warm_start=not args.no_warm_start,
             pattern_mode=args.pattern_mode,
+            engine=args.engine,
+            parallel_workers=max(1, int(getattr(args, "workers", 1) or 1)),
         )
     _echo(f"最適化: {result.status.value}（{result.stats.get('elapsed_sec', 0.0)} 秒）")
     gap = result.stats.get("mip_gap")
@@ -875,6 +878,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["weekly", "monthly"],
         default="weekly",
         help="最適化モード（weekly: 週単位詳細最適化 / monthly: 2段階階層的月次最適化）。既定: weekly",
+    )
+    solve.add_argument(
+        "--engine",
+        choices=["hierarchical", "legacy"],
+        default=config.WEEKLY_ENGINE_DEFAULT,
+        help="週次エンジンの選択（hierarchical: 月次階層エンジン / legacy: 旧単一モデル）。既定: hierarchical",
     )
     solve.add_argument(
         "--monthly-holiday-target",
