@@ -785,6 +785,18 @@ def _solve_stage1_daily_patterns(
             pass
 
     prob.solve(chosen_solver)
+    # TEMP DEBUG
+    _slot_labels = [sl.label for sl in slots]
+    _nz = []
+    for v in prob.variables():
+        if v.name.startswith("slack_") and v.varValue and v.varValue > 0.5:
+            try:
+                _idx = int(v.name.rsplit("_", 1)[1])
+                _lab = _slot_labels[_idx] if 0 <= _idx < len(_slot_labels) else "?"
+            except ValueError:
+                _lab = "?"
+            _nz.append((v.name, v.varValue, _lab))
+    print(f"DEBUG STAGE1 SLACK({len(_nz)}): {_nz}", flush=True)
 
     assignments: dict[tuple[str, dt.date], str] = {
         (s.staff_id, d): "OFF" for s in context.staff for d in days
