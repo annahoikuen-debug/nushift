@@ -2259,7 +2259,9 @@ def _run_solver(
         # 起動せず即座に INFEASIBLE を返し、呼び出し元に greedy フォール
         # バックさせる（pass1/pass2 両方に効く単一箇所）。
         if stats is not None:
-            stats["budget_sec"] = limit_sec
+            # 全体予算（budget_sec）は上書きせず、CBC に実際に使った pass 予算を
+            # 別キーで記録する（CLI/UI の予算超過警告はこちらを参照する）
+            stats["pass_budget_sec"] = limit_sec
         return (
             SolveStatus.INFEASIBLE,
             f"BudgetGuard / CBC 拒否（変数数 {ctx.counts()[0]} > {config.MAX_CBC_MODEL_VARS}）",

@@ -593,9 +593,9 @@ def cmd_solve(args: argparse.Namespace) -> int:
     gap = result.stats.get("mip_gap")
     if gap is not None:
         _echo(f"  MIPギャップ: {float(gap) * 100:.2f}% / 双境界: {result.stats.get('mip_dual_bound', '-')}")
-    if result.stats.get("budget_sec") is not None:
+    if result.stats.get("pass_budget_sec") is not None:
         _echo(
-            f"  ⚠ 予算 {result.stats['budget_sec']} 秒に対しモデルが大きすぎるため、"
+            f"  ⚠ モデルが大きすぎるため（pass 予算 {result.stats['pass_budget_sec']} 秒）、"
             "CBC を起動せず早期終了しました（--solver HiGHS で再試行してください）"
         )
     for message in result.messages:
@@ -883,7 +883,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--engine",
         choices=["hierarchical", "legacy"],
         default=config.WEEKLY_ENGINE_DEFAULT,
-        help="週次エンジンの選択（hierarchical: 月次階層エンジン / legacy: 旧単一モデル）。既定: hierarchical",
+        help="週次エンジンの選択（hierarchical: 月次階層エンジン / legacy: 旧単一モデル）。既定: hierarchical（--mode monthly では無視されます）",
     )
     solve.add_argument(
         "--monthly-holiday-target",
