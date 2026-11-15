@@ -283,9 +283,10 @@ def solve_monthly_hierarchical(
 
     total_chunks = len(day_chunks)
     completed_chunks = 0
+    chunk_gaps: list[float] = []    # ★追加（各チャンクの mip_gap を集約）
     progress_lock = threading.Lock()
 
-    def _solve_chunk_task(week_days: list[dt.date]) -> tuple[list[ShiftDay], list[Violation], list[str], SolveStatus] | None:
+    def _solve_chunk_task(week_days: list[dt.date]) -> tuple[list[ShiftDay], list[Violation], list[str], SolveStatus, dict] | None:
         if _is_cancelled():
             return None
 
@@ -300,7 +301,7 @@ def solve_monthly_hierarchical(
                 ShiftDay(day=d, assignments={s.staff_id: {slot.label: CellState.OFF for slot in slots} for s in context.staff})
                 for d in week_days
             ]
-            return (closed_sds, [], [f"{d.isoformat()} は休園日のため全員 OFF です" for d in week_days], SolveStatus.OPTIMAL)
+            return (closed_sds, [], [f"{d.isoformat()} は休園日のため全員 OFF です" for d in week_days], SolveStatus.OPTIMAL, {})
 
         week_children = [c for c in context.children if c.day in week_days_set]
 
@@ -375,7 +376,7 @@ def solve_monthly_hierarchical(
             except Exception as e:
                 sub_res.messages.append(f"Local search fallback error: {e}")
 
-        return (sub_res.shift_days, sub_res.violations, sub_res.messages, sub_res.status)
+        return (sub_res.shift_days, sub_res.violations, sub_res.messages, sub_res.status, sub_res.stats)
 
     was_cancelled = False
 
@@ -407,10 +408,12 @@ def solve_monthly_hierarchical(
 
         for idx in range(total_chunks):
             if idx in chunk_results:
-                sd_list, v_list, m_list, status = chunk_results[idx]
+                sd_list, v_list, m_list, status, c_stats = chunk_results[idx]    # ★変更（stats 追加）
                 all_shift_days.extend(sd_list)
                 all_violations.extend(v_list)
                 all_messages.extend(m_list)
+                if c_stats.get("mip_gap") is not None:
+                    chunk_gaps.append(float(c_stats["mip_gap"]))                  # ★追加
                 if status == SolveStatus.OPTIMAL:
                     is_any_feasible = True
                 elif status == SolveStatus.FEASIBLE:
@@ -429,11 +432,13 @@ def solve_monthly_hierarchical(
                 was_cancelled = True
                 break
 
-            sd_list, v_list, m_list, status = res_tuple
+            sd_list, v_list, m_list, status, c_stats = res_tuple    # ★変更（stats 追加）
             all_shift_days.extend(sd_list)
             all_violations.extend(v_list)
             all_messages.extend(m_list)
 
+            if c_stats.get("mip_gap") is not None:
+                chunk_gaps.append(float(c_stats["mip_gap"]))        # ★追加
             if status == SolveStatus.OPTIMAL:
                 is_any_feasible = True
             elif status == SolveStatus.FEASIBLE:
@@ -474,6 +479,8 @@ def solve_monthly_hierarchical(
             "stage1_patterns": len(stage1_res),
             "parallel_workers": parallel_workers,
             "cancelled": was_cancelled,
+            "chunk_gaps": chunk_gaps,                                   # ★追加
+            "mip_gap_max": max(chunk_gaps) if chunk_gaps else None,     # ★追加
         },
     )
     try:
