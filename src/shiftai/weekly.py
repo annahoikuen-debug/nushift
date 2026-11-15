@@ -9,6 +9,7 @@ require_leader / require_opening_closing_skill / drop_groups / relaxation != STR
 """
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
 from datetime import date
 
@@ -58,10 +59,18 @@ def solve_weekly(
 ) -> SolveResult:
     """週次シフトを求解する。
 
-    ``engine="hierarchical"``（既定）: ``solve_monthly_hierarchical`` に委譲。
+    ``engine="hierarchical"``（既定）: ``solve_monthly_hierarchical`` に
+    日単位チャンク（``config.WEEKLY_CHUNK_SIZE``）で委譲。
     ``engine="legacy"`` または高度機能使用時: ``solve_shift`` にフォールバック。
+
+    注意:
+    - hierarchical エンジンでは ``warm_start_assignments`` と ``msg`` は
+      使用されない（Stage 1 が独自の warm start を生成するため）。
+    - hierarchical 委譲時の ``target_month`` は対象期間の先頭日の月になる
+      （月跨ぎの週では第 2 週以降の日付も先頭日の月名に含まれる）。
+    - ``parallel_workers`` は 0 以下で「自動（CPU 数 - 1、最低 1）」になる。
     """
-    # 高度機能または明示指定時は solve_shift にフォールバック
+    # 高度機能・明示指定・空データ時は solve_shift にフォールバック
     has_advanced = bool(
         pairing_rules
         or classrooms
@@ -70,7 +79,12 @@ def solve_weekly(
         or drop_groups
         or (relaxation != int(RelaxLevel.STRICT))
     )
-    if engine == "legacy" or has_advanced:
+    if parallel_workers <= 0:
+        # 0=自動（CPU 数 - 1、最低 1）。config.WEEKLY_PARALLEL_WORKERS の既定値。
+        parallel_workers = max(1, (os.cpu_count() or 2) - 1)
+    preferences = dict(preferences or {})
+    empty_input = not list(requirements.all_days()) or not staff
+    if engine == "legacy" or has_advanced or empty_input:
         from shiftai.solver import solve_shift
         return solve_shift(
             children,
@@ -99,7 +113,7 @@ def solve_weekly(
     # hierarchical エンジン: 月次階層エンジンに日単位チャンクで委譲
     from shiftai.monthly import MonthlySolveContext, solve_monthly_hierarchical
 
-    all_days = requirements.all_days()
+    all_days = list(requirements.all_days())
     contracts_map = {s.staff_id: s.contract for s in staff if s.contract}
     ctx = MonthlySolveContext(
         target_month=f"{all_days[0].year:04d}-{all_days[0].month:02d}" if all_days else "",
@@ -107,7 +121,7 @@ def solve_weekly(
         staff=staff,
         contracts=contracts_map,
         preferences=preferences,
-        patterns=patterns or (),
+        patterns=list(patterns or ()),
         requirements=requirements,
         facility_settings=settings or FacilitySettings(),
         fixed_assignments=fixed_assignments or {},
@@ -122,4 +136,5 @@ def solve_weekly(
         time_limit_sec=time_limit_sec,
         solver_name=solver_name,
         parallel_workers=parallel_workers,
+        chunk_size=config.WEEKLY_CHUNK_SIZE,
     )
