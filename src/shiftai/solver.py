@@ -2197,6 +2197,7 @@ def solve_shift(
         ctx,
         max(1, int(budget * 0.5)),
         msg,
+        stats=stats,
         solver_name=payload.solver_name,
         warm_start=payload.warm_start and bool(stats.get("warm_start_applied", False)),
     )
@@ -2242,6 +2243,7 @@ def _run_solver(
     msg: bool,
     solver_name: str = "auto",
     warm_start: bool = False,
+    stats: dict | None = None,
 ) -> tuple[SolveStatus, str, str]:
     """MILP ソルバー（HiGHS または CBC）を実行して SolveStatus とステータス文字列、ソルバー名を返す。"""
     solver_instance, actual_solver = _get_solver(
@@ -2254,6 +2256,8 @@ def _run_solver(
         ctx.prob.solve(solver_instance)
     except Exception as exc:
         return SolveStatus.ERROR, f"SolveError / {exc}", actual_solver
+    if stats is not None:
+        _collect_highs_info(ctx.prob, stats)
     status_raw = pulp.LpStatus.get(ctx.prob.status, "Undefined")
     sol_raw = pulp.LpSolution.get(ctx.prob.sol_status, "No Solution Found")
     raw = f"{status_raw} / {sol_raw}"
@@ -2439,6 +2443,7 @@ def _best_effort(
         max(1, int(left)),
         False,
         solver_name=payload.solver_name,
+        stats=stats,
         warm_start=warm_start,
     )
     stats["solver"] = actual_solver
