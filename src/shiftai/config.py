@@ -141,6 +141,18 @@ DEFAULT_TIME_LIMIT_SEC = 60
 #: MILP ソルバの既定エンジン（"auto" | "HiGHS" | "PULP_CBC_CMD"）。
 DEFAULT_SOLVER = "auto"
 
+#: CBC に渡せるモデルの最大変数数。これを超えるモデルは CBC を起動せず
+#: 早期に INFEASIBLE を返す（60 秒を無駄にしないため）。
+#: 実測: 30日一括モデルは 66,396 変数 / 75,358 制約で CBC は 60 秒経っても
+#: 初期解すら出せなかった。
+MAX_CBC_MODEL_VARS = 30_000
+
+#: HiGHS の既定ギャップ（最適性の証明をどこまで求めるか）。
+HIGHS_GAP_REL = 0.03
+
+#: HiGHS の MIP ヒューリスティック努力量。
+HIGHS_MIP_HEURISTIC_EFFORT = 0.2
+
 #: Streamlit の時刻入力ウィジェットに与える step（秒）。15分刻み。
 #: UI 固有の設定であり法定要件ではないため ``APP_`` 規約で持つ。
 APP_TIME_INPUT_STEP_SECONDS = 900
