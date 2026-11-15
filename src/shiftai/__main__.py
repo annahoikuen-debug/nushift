@@ -569,6 +569,7 @@ def cmd_solve(args: argparse.Namespace) -> int:
             monthly_ctx,
             time_limit_sec=args.time_limit,
             solver_name=args.solver,
+            parallel_workers=max(1, int(getattr(args, "workers", 1) or 1)),
         )
     else:
         result = solve_shift(
@@ -872,6 +873,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=8,
         help="月次モード時の月間公休目標日数（既定: 8日）",
+    )
+    solve.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="月次モードで日ごとの求解を並列実行するワーカー数（既定: 1）。CPUコア数以下を推奨",
     )
     solve.add_argument(
         "--pattern-mode",

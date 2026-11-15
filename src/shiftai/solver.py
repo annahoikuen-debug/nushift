@@ -2186,6 +2186,12 @@ def solve_shift(
             applied_count = apply_warm_start(ctx, slots, warm_assignments)
             stats["warm_start_applied"] = applied_count > 0
             stats["warm_start_vars"] = applied_count
+            if applied_count > 0:
+                # 1パス目が解なしになった場合の 2パス目（罰変数化モデル）でも
+                # 同じ初期解を使えるように保持する。以前はここで捨てられており、
+                # 2パス目は毎回コールドスタートしていた。
+                # （``_best_effort`` は ``payload.warm_start_assignments`` を見る）
+                payload.warm_start_assignments = warm_assignments
 
     status, raw, actual_solver = _run_solver(
         ctx,
@@ -2391,12 +2397,21 @@ def _best_effort(
         apply_warm_start(soft, tuple(payload.requirements.slots), payload.warm_start_assignments)
 
     left = budget - (perf_counter() - started)
+    # 残り時間がわずかなら MIP スタート（CBC の MST 書き出し＋読み込み）の
+    # オーバーヘッドが探索時間を圧迫する。大規模モデルで時間切れが自明な場合、
+    # 初期解を渡しても結果は変わらず wall 時間だけが伸びる（実測: 7日28名で
+    # wall 89s → 178s）。残り時間が十分なときだけ初期解を渡す。
+    warm_start = (
+        payload.warm_start
+        and bool(payload.warm_start_assignments)
+        and left >= 10
+    )
     status, raw, actual_solver = _run_solver(
         soft,
         max(1, int(left)),
         False,
         solver_name=payload.solver_name,
-        warm_start=payload.warm_start and bool(payload.warm_start_assignments),
+        warm_start=warm_start,
     )
     stats["solver"] = actual_solver
     stats["solver_status"] = f"{raw}（配置基準を罰変数化）"
@@ -2496,8 +2511,12 @@ def _finish(
             preferences=payload.prefs,
             weights=payload.weights,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        # スコア計算は付加価値だが、失敗を黙って捨てるとスコア機能が
+        # 死んでいることに誰も気づけない（実例: score.py が Role を
+        # import し忘れて NameError していた。except: pass で隠蔽されていた）。
+        # 診断できるように stats に記録する。
+        stats["score_error"] = f"{type(exc).__name__}: {exc}"
     return result
 
 

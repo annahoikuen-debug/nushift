@@ -401,6 +401,18 @@ def _render_weights() -> None:
             )
         )
         state.set(state.KEY_TIME_LIMIT_SEC, limit)
+        # 月次モードの Partitioned Search（日単位並列求解）のワーカー数。
+        # 実装は存在するが UI/CLI から接続されていなかったため、常に直列実行だった。
+        st.session_state["parallel_workers"] = int(
+            st.number_input(
+                "並列計算ワーカー数（月次モード）",
+                min_value=1,
+                max_value=8,
+                value=int(st.session_state.get("parallel_workers", 1)),
+                step=1,
+                help="月次モードで複数日の計算を同時に実行するワーカー数です。PCのCPUコア数以下を推奨します。",
+            )
+        )
         names = state.get(state.KEY_SOLVER_NAMES)
         st.caption(
             f"利用可能なソルバ（計算エンジン）: {', '.join(names) if names else 'なし（PuLP の CBC が使えません）'}"

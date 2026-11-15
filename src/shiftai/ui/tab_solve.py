@@ -126,6 +126,7 @@ def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveRes
                 result = solve_monthly_hierarchical(
                     m_ctx,
                     time_limit_sec=limit,
+                    parallel_workers=int(st.session_state.get("parallel_workers", 1)),
                 )
             else:
                 result = solver.solve_shift(

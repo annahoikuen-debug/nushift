@@ -16,6 +16,7 @@ from shiftai.domain import (
     ConstraintMatch,
     ObjectiveWeights,
     RequirementTable,
+    Role,
     ShiftDay,
     ShiftScore,
     StaffMember,

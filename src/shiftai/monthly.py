@@ -705,7 +705,10 @@ def _solve_stage1_daily_patterns(
     prob += pulp.lpSum(obj_terms)
 
     chosen_solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit_sec)
-    if solver_name in ("HiGHS", "auto") and hasattr(pulp, "HiGHS"):
+    # 注意: `hasattr(pulp, "HiGHS")` では判定できない。pulp 2.9 は highspy が
+    # 未導入でも HiGHS クラス自体は存在し、actualSolve が PulpSolverError を
+    # 送出するため、このチェックを怠ると monthly モードが必ずクラッシュする。
+    if solver_name in ("HiGHS", "auto") and is_highs_available():
         try:
             num_threads = min(4, os.cpu_count() or 1)
             chosen_solver = pulp.HiGHS(

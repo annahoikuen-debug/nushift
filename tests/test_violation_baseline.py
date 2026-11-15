@@ -92,7 +92,20 @@ def test_violation_baseline(pytestconfig):
             json.dump(current_counts, f, ensure_ascii=False, indent=2, sort_keys=True)
         return
 
-    assert current_counts == expected_counts, (
-        f"違反件数のベースラインが変わりました。\n"
-        f"expected={expected_counts}\nactual={current_counts}"
+    # 完全一致ではなく「ベースラインを超えないこと」で判定する。
+    # 完全一致だとソルバー改善（違反の減少）まで失敗扱いになり、
+    # 品質を上げる変更が回帰テストに阻まれてしまう（ラチェット問題）。
+    # 新種の違反コードが出現した場合も失敗とみなす。
+    exceeded = {
+        key: (current_counts.get(key, 0), expected_counts[key])
+        for key in expected_counts
+        if current_counts.get(key, 0) > expected_counts[key]
+    }
+    unexpected = {
+        key: value for key, value in current_counts.items() if key not in expected_counts
+    }
+    assert not exceeded and not unexpected, (
+        f"違反件数がベースラインを超えました。\n"
+        f"baseline={expected_counts}\nactual={current_counts}\n"
+        f"exceeded={exceeded}\nnew_violation_codes={unexpected}"
     )
