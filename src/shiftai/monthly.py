@@ -15,14 +15,17 @@ Stage 2: 週スライス単位の 30分スロット詳細配置 & 休憩スタ�
 from __future__ import annotations
 
 import datetime as dt
+import math
 import os
 import threading
+from time import perf_counter
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 
 import pulp
 
+from shiftai import config
 from shiftai.domain import (
     CellState,
     ChildPlan,
@@ -151,6 +154,8 @@ def solve_monthly_hierarchical(
       - weights: 園別・実行時制約重みの注入（未指定時は context.weights または規定値）
       - ruin_and_recreate: Stage 2 で解なし・タイムアウト時の局所探索自動フォールバック
     """
+    started = perf_counter()
+
     def _is_cancelled() -> bool:
         if cancellation_token is None:
             return False
@@ -279,7 +284,15 @@ def solve_monthly_hierarchical(
 
     weights = effective_weights
     remaining_budget = max(time_limit_sec - stage1_time, 30)
-    per_chunk_time = max(remaining_budget // max(len(day_chunks), 1), 20)    # ★変更（旧: 下限10。K4 ギャップ収束のため下限20）
+    chunks_n = max(len(day_chunks), 1)
+    if parallel_workers > 1:
+        waves = max(1, (chunks_n + parallel_workers - 1) // parallel_workers)
+    else:
+        waves = chunks_n
+    # タイムアウト下限: ギャップ収束のため 20 秒を確保したいが、
+    # 「波数 × 下限」が時間予算を大幅超過しないよう予算側で抑制する。
+    budget_per_wave = max(remaining_budget // waves, 10)
+    per_chunk_time = max(remaining_budget // chunks_n, 10, min(20, budget_per_wave))
 
     total_chunks = len(day_chunks)
     completed_chunks = 0
@@ -381,7 +394,9 @@ def solve_monthly_hierarchical(
                 sub_res.messages.append(f"Local search fallback error: {e}")
 
         # 上書き後の stats に mip_gap が無ければ solve_shift の値を復元する
-        if chunk_mip_gap is not None and sub_res.stats.get("mip_gap") is None:
+        if chunk_mip_gap is not None:
+            # snap_to_patterns / ruin_and_recreate 後の mip_gap が異ソースの値でも
+            # 一律に solve_shift の実ギャップ（chunk_mip_gap）で上書きする
             sub_res.stats["mip_gap"] = chunk_mip_gap
 
         return (sub_res.shift_days, sub_res.violations, sub_res.messages, sub_res.status, sub_res.stats)
@@ -420,8 +435,12 @@ def solve_monthly_hierarchical(
                 all_shift_days.extend(sd_list)
                 all_violations.extend(v_list)
                 all_messages.extend(m_list)
-                if c_stats.get("mip_gap") is not None:
-                    chunk_gaps.append(float(c_stats["mip_gap"]))                  # ★追加
+                _g = c_stats.get("mip_gap")
+                if _g is not None:
+                    _g = float(_g)
+                    # inf / kHighsInf（≈1e30、解なし）はギャップ実測値として採用しない
+                    if math.isfinite(_g) and _g < 1e29:
+                        chunk_gaps.append(_g)
                 if status == SolveStatus.OPTIMAL:
                     is_any_feasible = True
                 elif status == SolveStatus.FEASIBLE:
@@ -445,8 +464,12 @@ def solve_monthly_hierarchical(
             all_violations.extend(v_list)
             all_messages.extend(m_list)
 
-            if c_stats.get("mip_gap") is not None:
-                chunk_gaps.append(float(c_stats["mip_gap"]))        # ★追加
+            _g = c_stats.get("mip_gap")
+            if _g is not None:
+                _g = float(_g)
+                # inf / kHighsInf（≈1e30、解なし）はギャップ実測値として採用しない
+                if math.isfinite(_g) and _g < 1e29:
+                    chunk_gaps.append(_g)
             if status == SolveStatus.OPTIMAL:
                 is_any_feasible = True
             elif status == SolveStatus.FEASIBLE:
@@ -487,6 +510,7 @@ def solve_monthly_hierarchical(
             "stage1_patterns": len(stage1_res),
             "parallel_workers": parallel_workers,
             "cancelled": was_cancelled,
+            "elapsed_sec": round(perf_counter() - started, 3),
             "chunk_gaps": chunk_gaps,                                   # ★追加
             "mip_gap_max": max(chunk_gaps) if chunk_gaps else None,     # ★追加
         },
@@ -513,6 +537,29 @@ def solve_monthly_hierarchical(
     })
 
     return res
+
+
+def _target_holidays(
+    monthly_target: int, days_count: int, contract: Contract | None
+) -> int:
+    """期間日数に応じた公休目標日数を算出する。
+
+    月間公休目標（``monthly_holiday_target``、例: 30 日で 8 休）は 1 か月基準の
+    値である。週次など短いホライズンにそのまま適用すると勤務日数上限が 0 以下
+    となり Stage 1 が必ず実行不可能になる（＝全員 OFF 固定になり Stage 2 も
+    全スロット OFF で潰れる）ため、期間日数に比例して補正する。
+    さらに契約の週勤務上限（``max_weekly_days``、既定 5）から導出した公休数と
+    比較し、大きい方（休日を多く確保する側）を採用する。
+    """
+    # 30 日基準の公休目標を期間に比例補正（30 日では元の値そのまま）
+    target = round(monthly_target * days_count / 30.0)
+    # 勤務日数上限が 0/負にならないよう保証
+    target = min(target, max(0, days_count - 1))
+    max_wd = getattr(contract, "max_weekly_days", None) if contract else None
+    if max_wd:
+        est_work_days = round(max_wd * days_count / 7.0)
+        target = max(target, max(0, days_count - est_work_days))
+    return max(0, target)
 
 
 def _solve_stage1_daily_patterns(
@@ -624,15 +671,13 @@ def _solve_stage1_daily_patterns(
                 for d in days:
                     prob += x_vars[(sid, d, p.key)] == 0
 
-    # 制約3: 月間公休目標
+    # 制約3: 月間公休目標（期間日数に比例補正。週次ホライズンでの
+    # 「7日 - 公休8日 = 勤務上限 -1日」による実行不可能を防止する）
     for sid in staff_ids:
         contract = context.contracts.get(sid)
-        target_holidays = context.monthly_holiday_target
-        if contract and hasattr(contract, "monthly_holiday_target") and contract.monthly_holiday_target:
-            target_holidays = contract.monthly_holiday_target
-        elif contract and getattr(contract, "weekly_work_days", None):
-            est_work_days = round(contract.weekly_work_days * len(days) / 7.0)
-            target_holidays = max(0, len(days) - est_work_days)
+        target_holidays = _target_holidays(
+            context.monthly_holiday_target, len(days), contract
+        )
 
         work_days_target = len(days) - target_holidays
         prob += pulp.lpSum([duty_vars[(sid, d)] for d in days]) <= work_days_target
@@ -705,12 +750,9 @@ def _solve_stage1_daily_patterns(
     # 制約6: 職員の公平な勤務日数平準化（契約別の目標日数に基づく目的関数）
     for sid in staff_ids:
         contract = context.contracts.get(sid)
-        target_holidays = context.monthly_holiday_target
-        if contract and hasattr(contract, "monthly_holiday_target") and contract.monthly_holiday_target:
-            target_holidays = contract.monthly_holiday_target
-        elif contract and getattr(contract, "weekly_work_days", None):
-            est_work_days = round(contract.weekly_work_days * len(days) / 7.0)
-            target_holidays = max(0, len(days) - est_work_days)
+        target_holidays = _target_holidays(
+            context.monthly_holiday_target, len(days), contract
+        )
 
         target_work_days = max(0, len(days) - target_holidays)
         work_diff = pulp.LpVariable(f"diff_{sid}", lowBound=0)
@@ -731,8 +773,8 @@ def _solve_stage1_daily_patterns(
                 msg=False,
                 timeLimit=time_limit_sec,
                 threads=num_threads,
-                gapRel=0.03,
-                mip_heuristic_effort=0.2,
+                gapRel=config.HIGHS_GAP_REL,
+                mip_heuristic_effort=config.HIGHS_MIP_HEURISTIC_EFFORT,
             )
         except Exception:
             pass
