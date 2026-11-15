@@ -2208,6 +2208,34 @@ def solve_shift(
     return _best_effort(payload, stats, started, budget, raw)
 
 
+def _collect_highs_info(prob: Any, stats: dict) -> None:
+    """HiGHS 実行後のギャップ・双境界・ノード数を stats に記録する。
+
+    CBC など ``solverModel`` を持たないソルバーでは何もしない。
+    ``getInfo()`` は solve 後のみ有効なので、呼び出しは ``_run_solver`` 内
+    （``ctx.prob.solve`` の直後）に限る。
+    """
+    model = getattr(prob, "solverModel", None)
+    if model is None:
+        return
+    try:
+        info = model.getInfo()
+    except Exception:
+        return
+    try:
+        stats["mip_gap"] = float(info.mip_gap)
+    except (TypeError, ValueError):
+        stats["mip_gap"] = None
+    try:
+        stats["mip_dual_bound"] = float(info.mip_dual_bound)
+    except (TypeError, ValueError):
+        stats["mip_dual_bound"] = None
+    try:
+        stats["mip_node_count"] = int(info.mip_node_count)
+    except (TypeError, ValueError):
+        stats["mip_node_count"] = None
+
+
 def _run_solver(
     ctx: _ModelCtx,
     limit_sec: int,
