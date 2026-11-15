@@ -806,6 +806,8 @@ def status_banner(result: SolveResult | None) -> None:
             f"ソルバ {stats.get('solver', '-')} / 変数 {stats.get('num_variables', '-')} / "
             f"制約 {stats.get('num_constraints', '-')}）"
         )
+    if stats.get("mip_gap") is not None:                                    # ★追加
+        detail += f" / ギャップ {float(stats['mip_gap']) * 100:.2f}%"        # ★追加
     if tone == "error":
         st.error(f"**{label}** — {detail}")
     elif tone == "warning":
