@@ -215,11 +215,13 @@ def solve_monthly_hierarchical(
     # Stage 1: 月間日次パターンの割り当て (MILP)
     # ---------------------------------------------------------
     stage1_time = min(max(time_limit_sec // 4, 15), 30)
+    stage1_slack: dict[str, float] = {}
     stage1_res = _solve_stage1_daily_patterns(
         context=context,
         time_limit_sec=stage1_time,
         solver_name=effective_solver,
         weights=effective_weights,
+        stats_out=stage1_slack,
     )
 
     _notify("STAGE_1_DONE", 20, extra={"stage1_patterns": len(stage1_res)})
@@ -516,6 +518,8 @@ def solve_monthly_hierarchical(
             "parallel_workers": parallel_workers,
             "cancelled": was_cancelled,
             "elapsed_sec": round(perf_counter() - started, 3),
+            "stage1_slack_staff": stage1_slack.get("stage1_slack_staff", 0.0),
+            "stage1_slack_qual": stage1_slack.get("stage1_slack_qual", 0.0),
             "chunk_gaps": chunk_gaps,                                   # ★追加
             "mip_gap_max": max(chunk_gaps) if chunk_gaps else None,     # ★追加
         },
@@ -572,6 +576,7 @@ def _solve_stage1_daily_patterns(
     time_limit_sec: int = 30,
     solver_name: str | None = None,
     weights: ObjectiveWeights | None = None,
+    stats_out: dict[str, float] | None = None,
 ) -> dict[tuple[str, dt.date], str]:
     """Stage 1: 日単位のパターン割り当てモデルを PuLP で定式化・求解する。"""
     prob = pulp.LpProblem("Monthly_Stage1_Pattern_Assignment", pulp.LpMinimize)
@@ -785,18 +790,22 @@ def _solve_stage1_daily_patterns(
             pass
 
     prob.solve(chosen_solver)
-    # TEMP DEBUG
-    _slot_labels = [sl.label for sl in slots]
-    _nz = []
-    for v in prob.variables():
-        if v.name.startswith("slack_") and v.varValue and v.varValue > 0.5:
-            try:
-                _idx = int(v.name.rsplit("_", 1)[1])
-                _lab = _slot_labels[_idx] if 0 <= _idx < len(_slot_labels) else "?"
-            except ValueError:
-                _lab = "?"
-            _nz.append((v.name, v.varValue, _lab))
-    print(f"DEBUG STAGE1 SLACK({len(_nz)}): {_nz}", flush=True)
+    # Stage 1 の需要未充足（slack）を可視化する。
+    # slack > 0 は「そのスロットをカバーできる職員が足りない」ことを意味し、
+    # 最終的な BLOCKER の先行指標になる（K1 の診断用）。
+    if stats_out is not None:
+        slack_staff = 0.0
+        slack_qual = 0.0
+        for v in prob.variables():
+            value = v.varValue
+            if value is None or value <= 0.5:
+                continue
+            if v.name.startswith("slack_staff_"):
+                slack_staff += value
+            elif v.name.startswith("slack_qual_"):
+                slack_qual += value
+        stats_out["stage1_slack_staff"] = slack_staff
+        stats_out["stage1_slack_qual"] = slack_qual
 
     assignments: dict[tuple[str, dt.date], str] = {
         (s.staff_id, d): "OFF" for s in context.staff for d in days
