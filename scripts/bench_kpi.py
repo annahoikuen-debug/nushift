@@ -18,7 +18,7 @@ from shiftai import local_rules, sample_data
 from shiftai.config import DEFAULT_DAY_OPEN, DEFAULT_DAY_CLOSE, DEFAULT_GRANULARITY_MIN
 from shiftai.domain import FacilitySettings, ViolationSeverity
 from shiftai.standards import build_requirements
-from shiftai.solver import solve_shift
+from shiftai.weekly import solve_weekly
 
 STANDARD = local_rules.get_standard("全国基準（厚労省）")
 
@@ -35,9 +35,10 @@ def run_bench(days_count: int, time_limit: int = 60) -> dict:
     )
 
     t0 = time.perf_counter()
-    res = solve_shift(
+    res = solve_weekly(
         children, staff, table, preferences=prefs, settings=settings,
         time_limit_sec=time_limit, standard=STANDARD,
+        engine="hierarchical", parallel_workers=4,
     )
     wall = time.perf_counter() - t0
 
@@ -47,6 +48,8 @@ def run_bench(days_count: int, time_limit: int = 60) -> dict:
     k2 = wall <= 60
     k3 = s.get("solver") != "greedy" and s.get("fallback") != "greedy"
     gap = s.get("mip_gap")
+    if gap is None:
+        gap = s.get("mip_gap_max")      # monthly/hierarchical は mip_gap_max に集約
     k4 = gap is not None and float(gap) <= 0.03
 
     return {
