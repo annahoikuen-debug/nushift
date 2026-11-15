@@ -140,6 +140,7 @@ def solve_monthly_hierarchical(
     cancellation_token: object | None = None,
     parallel_workers: int = 1,
     weights: ObjectiveWeights | None = None,
+    chunk_size: int = 1,                    # ★追加（将来調整用。日単位チャンク幅）
 ) -> SolveResult:
     """2段階階層的アプローチにより月次一括シフトを求解する。
 
@@ -264,7 +265,7 @@ def solve_monthly_hierarchical(
     # ---------------------------------------------------------
     # Stage 2: 日スライス単位の 30分スロット詳細配置 & 休憩スタッガー最適化
     # ---------------------------------------------------------
-    chunk_size = 1
+    chunk_size = max(1, int(chunk_size))    # ★変更（旧: chunk_size = 1）
     day_chunks = [
         context.all_days[i : i + chunk_size]
         for i in range(0, len(context.all_days), chunk_size)
