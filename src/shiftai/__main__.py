@@ -587,6 +587,14 @@ def cmd_solve(args: argparse.Namespace) -> int:
             pattern_mode=args.pattern_mode,
         )
     _echo(f"最適化: {result.status.value}（{result.stats.get('elapsed_sec', 0.0)} 秒）")
+    gap = result.stats.get("mip_gap")
+    if gap is not None:
+        _echo(f"  MIPギャップ: {float(gap) * 100:.2f}% / 双境界: {result.stats.get('mip_dual_bound', '-')}")
+    if result.stats.get("budget_sec") is not None:
+        _echo(
+            f"  ⚠ 予算 {result.stats['budget_sec']} 秒に対しモデルが大きすぎるため、"
+            "CBC を起動せず早期終了しました（--solver HiGHS で再試行してください）"
+        )
     for message in result.messages:
         _echo(f"  {message}")
 
