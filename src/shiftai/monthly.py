@@ -191,7 +191,7 @@ def solve_monthly_hierarchical(
             shift_days=[],
             violations=[],
             messages=["Cancelled before Stage 1"],
-            stats={"cancelled": True},
+            stats={"cancelled": True, "elapsed_sec": round(perf_counter() - started, 3)},
         )
 
     # 開所・閉所スロットおよびパート枠に即した実務パターン群を自動拡充
@@ -230,7 +230,11 @@ def solve_monthly_hierarchical(
             shift_days=[],
             violations=[],
             messages=["Cancelled after Stage 1"],
-            stats={"cancelled": True, "stage1_patterns": len(stage1_res)},
+            stats={
+                "cancelled": True,
+                "stage1_patterns": len(stage1_res),
+                "elapsed_sec": round(perf_counter() - started, 3),
+            },
         )
 
     combined_fixed = dict(context.fixed_assignments)
@@ -394,9 +398,10 @@ def solve_monthly_hierarchical(
                 sub_res.messages.append(f"Local search fallback error: {e}")
 
         # 上書き後の stats に mip_gap が無ければ solve_shift の値を復元する
-        if chunk_mip_gap is not None:
+        if chunk_mip_gap is not None and math.isfinite(chunk_mip_gap) and chunk_mip_gap < 1e29:
             # snap_to_patterns / ruin_and_recreate 後の mip_gap が異ソースの値でも
-            # 一律に solve_shift の実ギャップ（chunk_mip_gap）で上書きする
+            # 一律に solve_shift の実ギャップ（chunk_mip_gap）で上書きする。
+            # inf / kHighsInf（≈1e30、解なし）は実測値として復元しない。
             sub_res.stats["mip_gap"] = chunk_mip_gap
 
         return (sub_res.shift_days, sub_res.violations, sub_res.messages, sub_res.status, sub_res.stats)
