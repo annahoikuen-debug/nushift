@@ -2284,6 +2284,15 @@ def _run_solver(
         raw = f"{raw}（制約違反 {len(violated)} 本: {violated[0]}）"
         return SolveStatus.INFEASIBLE, raw, actual_solver
     if status_raw == "Optimal" and sol_raw == "Optimal Solution Found":
+        # HiGHS は gapRel 到達で早期終了すると Optimal と報告する。
+        # 実際のギャップが 0 でないなら「最適性の証明なし」と記録する。
+        if stats is not None:
+            gap = stats.get("mip_gap")
+            if gap is not None and float(gap) > 1e-9:
+                stats["solver_status_optimal_caveat"] = (
+                    f"MIPギャップ {float(gap) * 100:.2f}% で終了（最適性の証明は時間切れ）"
+                )
+                return SolveStatus.FEASIBLE, raw, actual_solver
         return SolveStatus.OPTIMAL, raw, actual_solver
     if status_raw == "Optimal":
         return SolveStatus.FEASIBLE, raw, actual_solver
