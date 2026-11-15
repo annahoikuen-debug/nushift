@@ -112,6 +112,7 @@ def _ensure_effective_patterns(context: MonthlySolveContext) -> list[ShiftPatter
         (10 * 60, "part_mid3", "中勤パート3", "中3"),
         (13 * 60, "part_pm", "午後パート", "後1"),
         (14 * 60, "part_ml", "午後夕方パート", "後3"),   # 14:00-19:00（5h、14:15と18:15を同時カバー）
+        (13 * 60 + 30, "part_bridge", "午後夕方ブリッジ", "後4"),   # 13:30-18:30（5h、13:30〜18:30を一括カバー）
         (close_min - part_span, "part_late", "遅番パート", "後2"),
     ]:
         if start_m >= open_min and start_m + part_span <= close_min:
