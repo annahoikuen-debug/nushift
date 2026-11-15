@@ -2453,6 +2453,8 @@ def _greedy(
     # （``PULP_CBC_CMD`` 固定だと HiGHS 環境で診断が誤解される）。
     result.stats["solver"] = "greedy"
     result.stats["fallback"] = "greedy"
+    result.stats["elapsed_sec"] = round(perf_counter() - started, 3)   # ★追加
+    result.stats["pass"] = 0                                            # ★追加（貪欲法パス）
     return result
 
 
