@@ -37,6 +37,12 @@ def daily_cap_minutes(contract) -> int:
     """domain.Contract から1日の上限勤務分を計算（旧 domain.daily_cap_minutes と同一式）。
 
     36協定なしまたは残業不可は8時間で頭打ち。
+
+    注意: STATUTORY_OVERTIME_MULTIPLIER（1.25倍）は割増賃金率の値を
+    時間上限に転用した**社内目安**であり、法定の1日労働時間上限そのものではない。
+    この式を変える場合は tests/test_statutory_rules.py と合わせて変更し、
+    gap_analysis / greedy / solver / live_validation の4モジュールが
+    domain.daily_cap_minutes に委譲していることを確認すること。
     """
     base = int(round(contract.daily_hours * 60))
     if not contract.overtime_allowed or not contract.has_36_agreement:
