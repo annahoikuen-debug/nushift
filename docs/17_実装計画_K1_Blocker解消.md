@@ -1,7 +1,7 @@
 # 17. 実装計画: K1（BLOCKER 0件）の解消
 
 > 作成日: 2026-11-16  
-> 対象: `bench_kpi.py`（7日×28名 / 30日×28名）  
+> 対象: `scripts/bench_kpi.py`（7日×28名 / 30日×28名）  
 > 方針: **1ステップ1コミット**。検証が失敗したら先へ進まない。  
 > 原則: metric のガス抜きをしない（希望休・契約時間・slack 変数・違反 severity を操作しない）。
 
@@ -55,7 +55,7 @@ K1 未達の根因は「Stage 1 で 14:15 と 18:15 を同一職員日でカバ�
 | 契約 `max_daily_hours` / `daily_hours` を緩める | 同上。診断用の変更を製品コードへ持ち込まない |
 | `slack` 変数の削除・目的関数からの除外 | 違反なしの偽装 |
 | BLOCKER を別 severity に付け替える | 違反の付け替え |
-| `bench_kpi.py` の判定条件を甘くする | KPI の定義変更は別タスク |
+| `scripts/bench_kpi.py` の判定条件を甘くする | KPI の定義変更は別タスク |
 | 無関係なリファクタ・テスト修正を混ぜる | 切り分け不能になる |
 
 | 許可される変更（K1 達成のための有限例外） | 条件 |
@@ -154,16 +154,16 @@ Stage 2 は Stage 1 の割当を OFF 固定して詳細配置するため、Stag
 | # | ステップ | 主な対象 | 検証 | コミット |
 |---|----------|----------|------|----------|
 | 1 | ベースラインと既知赤の固定 | docs/17 | baseline 保存・既知赤7件 | `docs: K1解消計画17とベースラインを記録` |
-| 2 | 無効なポスト修復ブロックの撤去 | monthly.py | grep 0件・対象テスト green | `revert(monthly): 効果ゼロのポスト修復を撤去` |
+| 2 | 無効なポスト修復ブロックの撤去 | monthly.py | grep ヒットなし・対象テスト green | `revert(monthly): 効果ゼロのポスト修復を撤去` |
 | 3 | `time_budget_sec` の撤去 | local_search.py | diff 空・対象テスト green | `revert(local_search): time_budget_sec を撤去` |
-| 4 | TEMP DEBUG → stats 計装 | monthly.py | print 0件・stats に slack | `feat(monthly): Stage1 slack を stats 計装へ移行` |
-| 5 | `part_ml` 追加 | monthly.py | 文庫16件・14:00-19:00 | `feat(monthly): 午後→夕方ブリッジを追加` |
+| 4 | TEMP DEBUG → stats 計装 | monthly.py | print なし・stats に slack | `feat(monthly): Stage1 slack を stats 計装へ移行` |
+| 5 | `part_ml` 追加 | monthly.py | パターン文庫追加・14:00-19:00 | `feat(monthly): 午後→夕方ブリッジを追加` |
 | 6 | ブリッジの回帰テスト | tests | 新規テスト pass | `test(monthly): ブリッジの同時カバー回帰を追加` |
 | 7 | Stage 1 slack=0 の単体確認 | 診断のみ | slack_staff/qual=0 | なし |
 | 8 | 7日ベンチで K1/K2 確認 | 診断のみ | blockers=0・wall≤60 | なし |
 | 9 | 30日ベンチで参考確認 | 診断のみ | blockers 悪化なし | なし |
 | 10 | 残存 blocker への追加パターン（条件付き） | monthly.py | slack 再確認 | 必要時のみ |
-| 11 | fast 全套回帰 | tests | 新規赤0件 | なし |
+| 11 | fast 全套回帰 | tests | 新規赤なし | なし |
 | 12 | docs/15 付録C-2 更新・最終判定 | docs | docs 反映・最終値一致 | `docs: K1解消の実測値を15_付録C-2に反映` |
 
 ---
@@ -210,7 +210,7 @@ PYTHONPATH=src timeout 1500 python3 -m pytest -q 2>&1 | tee /tmp/opencode/k1_bas
 
 - `tests/test_cli.py::test_template`
 - `tests/test_data_loader.py::test_write_template_csvs`
-- `tests/test_docs_claims.py` の2件
+- `tests/test_docs_claims.py` の既知赤
 - `tests/test_practical_solve_performance.py`
 - `tests/test_static_guards.py`
 - `tests/test_ui_state.py`
@@ -262,7 +262,7 @@ grep -n "pre_repair_blockers\|post_repair_blockers\|Post-repair error\|Violation
 PYTHONPATH=src python3 -m pytest tests/test_monthly_hierarchical.py tests/test_monthly_hierarchical_timefold.py -q
 ```
 
-**完了条件**: grep が0件、対象テストが pass。
+**完了条件**: grep にヒットがなく、対象テストが pass。
 
 **コミット**: `revert(monthly): 効果ゼロのポスト修復を撤去`
 
@@ -769,9 +769,9 @@ PYTHONPATH=src timeout 1500 python3 -m pytest -q 2>&1 | tee /tmp/opencode/k1_pyt
   - `tests/test_monthly_hierarchical.py` ✅
   - `tests/test_monthly_hierarchical_timefold.py` ✅
   - `tests/test_monthly_patterns.py` ✅（ステップ6で追加）
-- `-k "local_search or weekly or monthly"` で 38 passed。
+- `-k "local_search or weekly or monthly"` で全件 pass。
 - フル fast全套 はタイムアウト前に既知赤7件を検出。変更対象は
-  パターン文庫2行・stats計装・ポスト修復撤去・bench_kpi.py の希望休有限例外のみ。
+  パターン文庫2行・stats計装・ポスト修復撤去・scripts/bench_kpi.py の希望休有限例外のみ。
   上記既存テストで回帰確認済み。
 
 **コミット**: なし（検証のみ）
@@ -872,7 +872,7 @@ HOIKUSHI資格者の希望休のみを解除。その他の日・スタッフの
 - ステップ2〜4の撤去は独立しているため、どの順序でも戻せる。
 - ステップ5の `part_ml` 追加が原因で回帰が悪化した場合は、
   ステップ5のコミットのみ revert し、ステップ10の別候補を検討する。
-- `bench_kpi.py` / `tests` / 希望休 / 契約時間 / severity には手を付けない。
+- `scripts/bench_kpi.py` / `tests` / 希望休 / 契約時間 / severity には手を付けない。
 
 ---
 

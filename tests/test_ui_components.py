@@ -1153,7 +1153,7 @@ def test_render_violation_actionsは座標の組み合わせでも落ちない(
 ):
     """どんな座標の欠け方でも例外を出さないこと（回帰防止の本丸）。"""
     slot_expr = "Slot(time(9, 0), time(9, 30))" if slot is not None else "None"
-    day_expr = f"date(2026, 9, 28)" if day is not None else "None"
+    day_expr = "date(2026, 9, 28)" if day is not None else "None"
     staff_expr = '"S01"' if staff_id is not None else "None"
     body = (
         "from shiftai.domain import Violation, ViolationSeverity, Slot\n"
@@ -1174,7 +1174,6 @@ def test_render_violation_actionsは座標の組み合わせでも落ちない(
 
 def test_render_violation_actionsは不足違反に部分指定ボタンを出す(tmp_path):
     """日付・時間帯まで分かる違反には「人員を追加」ボタンが出ること。"""
-    violation = _make_fix_violation("SHORTFALL_STAFF")
     body = (
         "from shiftai.domain import Violation, ViolationSeverity, Slot\n"
         "from datetime import date, time\n"

@@ -42,7 +42,7 @@ __all__ = [
 ]
 
 _ERA_BASE_YEAR = 2018
-"""和暦の起点年（R6 = 2026）。``parse_date`` は和暦を受け付けないためここで処理する。"""
+"""和暦の起点年（R6 = 2024）。``parse_date`` は和暦を受け付けないためここで処理する。"""
 
 _NON_WORD = re.compile(r"[\s　_\-()\[\]{}<>\"'、。,./\\:：*#!$%&+=|~@`^]+")
 _ERA = re.compile(r"^(?:r|R|令和)(\d+)\.(\d{1,2})\.(\d{1,2})$")
@@ -378,7 +378,7 @@ def convert(
         # 「あり/なし」が明示されている場合はその値を優先する（現場の指定が正）。
         short_text = "" if shorts is None else _value(shorts, i)
         short_flag = _flag(short_text, False)
-        if profile.infer_short_time and short_text == "" and not is_absent:
+        if profile.infer_short_time and not short_text and not is_absent:
             short_flag = _is_short_time(arrive, depart, window)
         record: dict[str, Any] = {
             "園児ID": _text(_value(ids, i)),
@@ -411,7 +411,7 @@ def _value(column: pd.Series | None, position: int) -> Any:
     if position >= len(column):
         return None
     value = column.iloc[position]
-    if value is None or (isinstance(value, float) and pd.isna(value)):
+    if value is None or (pd.api.types.is_scalar(value) and pd.isna(value)):
         return None
     return value
 

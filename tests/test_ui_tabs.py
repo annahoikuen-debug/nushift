@@ -24,19 +24,18 @@ import streamlit as st
 
 app_test = pytest.importorskip("streamlit.testing.v1", reason="AppTest が無い環境ではスキップ")
 
-from shiftai import gap_analysis
-from shiftai.domain import (
+from shiftai import gap_analysis  # noqa: E402  (計画値との整合)
+from shiftai.domain import (  # noqa: E402  (計画値との整合)
     ChildPlan,
     FacilitySettings,
     RequirementTable,
-    Slot,
     SolveResult,
     SolveStatus,
     StaffPreferences,
     Violation,
     ViolationSeverity,
 )
-from shiftai.ui import state, tab_data, tab_export, theme, wizard
+from shiftai.ui import state, tab_data, tab_export, theme, wizard  # noqa: E402  (計画値との整合)
 from tests.conftest import DAY_CLOSE, DAY_OPEN, STANDARD_KEY  # noqa: E402  (計画値との整合)
 
 #: ヘッドレス実行時の「missing ScriptRunContext!」警告でテスト出力を濁さないようにする。

@@ -75,7 +75,7 @@ def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveRes
 
     table = build_requirements()
     gaps = shortfall_gate(table, staff, preferences, settings, standard)
-    ack_key = "shortfall_ack"
+    ack_key = state.KEY_SHORTFALL_ACK
     if gaps and not state.get(ack_key):
         st.warning(
             f"⚠️ 需要が供給を上回る時間帯が {len(gaps)} 件あります。"

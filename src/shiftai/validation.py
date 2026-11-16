@@ -351,7 +351,7 @@ def analyze_children(
                     pos,
                     "降園時刻",
                     f"降園時刻 {depart.strftime('%H:%M')} が登園時刻 "
-                    f"{arrive.strftime('%H:%M')} と同じか後になっています。"
+                    f"{arrive.strftime('%H:%M')} と同じか前になっています。"
                     "在園時間が 0 分以下となり最適化できません。",
                 )
             )

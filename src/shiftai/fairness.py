@@ -211,7 +211,7 @@ def counts(
     # ソルバの公平性目的関数も配置対象職員のみを対象にしている
     # （``_fairness_spread`` の ``placeable`` フィルタ）ため、
     # ここで含むと「最小値」が構造的に 0 に固定され、
-    # UI が永远不会解消しない偏りを表示することになる。
+    # UI が永遠に解消しない偏りを表示することになる。
     for member in (m for m in staff if m.is_placeable):
         sid = member.staff_id
         totals = {key: 0 for key in CATEGORIES}

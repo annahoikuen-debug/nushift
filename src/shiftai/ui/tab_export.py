@@ -467,7 +467,7 @@ def _render_acknowledge_control(violations: list) -> None:
     修正前は「参考（INFO）」を含む全違反の件数をゲートにしていたため、
     ``HOURS_IMBALANCE`` が 1 件あるだけで全ダウンロードが無効になり、
     解除する手段がなかった。ここでは要調整（WARNING）だけを列挙し、
-    確認済みにする／戻すadion_operationを提供する。法令違反（BLOCKER）は
+    確認済みにする／戻す操作を提供する。法令違反（BLOCKER）は
     確認済みでは解除できない。
     """
     warnings = [

@@ -1,7 +1,5 @@
-import re
-from pathlib import Path
 import tomllib
-import pytest
+from pathlib import Path
 
 from shiftai import config
 

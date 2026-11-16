@@ -44,7 +44,6 @@ FALLBACK_VIOLATION_LABELS: dict[str, str] = {
     "COVERAGE_SHORTFALL": "配置基準を満たしていません",
     "QUALIFIED_SHORTFALL": "保育士数が基準を下回っています",
     "TWO_PER_ROOM_VIOLATION": "2名ルールに抵触しています",
-    "DAILY_HOURS_EXCEEDED": "1日の勤務時間が上限超過",
     "WEEKLY_HOURS_EXCEEDED": "週の勤務時間が上限超過",
     "MONTHLY_HOURS_EXCEEDED": "月間の勤務時間が上限超過",
     "MAX_WEEKLY_DAYS_EXCEEDED": "週最大出勤日数を超過",

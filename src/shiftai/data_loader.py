@@ -142,7 +142,7 @@ _ROLE_ALIASES: dict[str, Role] = {
     "eiyou": Role.EIYOU,
     "調理員": Role.CHUUBOU,
     "調理師": Role.CHUUBOU,
-    " choosable": Role.CHUUBOU,
+    "choosable": Role.CHUUBOU,
     "chuubou": Role.CHUUBOU,
     "薬剤師": Role.YAKUARIN,
     "やくざいん": Role.YAKUARIN,

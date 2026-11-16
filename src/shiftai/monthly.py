@@ -18,10 +18,10 @@ import datetime as dt
 import math
 import os
 import threading
-from time import perf_counter
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
+from time import perf_counter
 
 import pulp
 
@@ -100,6 +100,20 @@ def _ensure_effective_patterns(context: MonthlySolveContext) -> list[ShiftPatter
         if start_m >= open_min and start_m + full_span <= close_min:
             cand_patterns.append(
                 ShiftPattern(key, label, _clock_m(start_m), _clock_m(start_m + full_span), symbol=sym)
+            )
+
+    # 2-1. 短時間早朝パート（開所直前〜開所後数時間、2〜3h拘束）
+    # 早朝保育（7時台など）の配置不足を Stage1 で補うため、開所前・直後を
+    # カバーする短時間枠を追加する。
+    for start_m, key, label, sym in [
+        (max(0, open_min - 60), "part_dawn1", "夜明けパート1", "夜1"),
+        (max(0, open_min - 30), "part_dawn2", "夜明けパート2", "夜2"),
+        (open_min, "part_dawn3", "夜明けパート3", "夜3"),
+    ]:
+        end_m = start_m + 3 * 60  # 3時間拘束
+        if start_m >= 0 and end_m <= close_min:
+            cand_patterns.append(
+                ShiftPattern(key, label, _clock_m(start_m), _clock_m(end_m), symbol=sym)
             )
 
     # 2. 短時間パート勤務（5時間拘束 = 5時間実働、休憩0分）
@@ -289,6 +303,7 @@ def solve_monthly_hierarchical(
     all_messages: list[str] = []
     is_all_optimal = True
     is_any_feasible = False
+    had_chunk_error = False
 
     weights = effective_weights
     remaining_budget = max(time_limit_sec - stage1_time, 30)
@@ -347,7 +362,9 @@ def solve_monthly_hierarchical(
                         for d in week_days:
                             k = (s_mem.staff_id, d, s.label)
                             if week_warm.get(k) == CellState.WORK:
-                                week_fixed[k] = CellState.WORK
+                                # ユーザーの手動 OFF 固定は上書きしない
+                                if week_fixed.get(k) != CellState.OFF:
+                                    week_fixed[k] = CellState.WORK
 
         sub_res = solve_shift(
             week_children,
@@ -430,7 +447,12 @@ def solve_monthly_hierarchical(
                     if res_tuple is not None:
                         chunk_results[idx] = res_tuple
                 except Exception as e:
+                    had_chunk_error = True
                     all_messages.append(f"Chunk {idx} error: {e}")
+                    # チャンク例外時はその日の ShiftDay が無言で欠落しないよう、
+                    # 全 OFF の ShiftDay を補い、メッセージに原因を残す（status は PARTIAL）。
+                    for d in day_chunks[idx]:
+                        all_shift_days.append(ShiftDay(day=d))
 
                 with progress_lock:
                     completed_chunks += 1
@@ -459,7 +481,7 @@ def solve_monthly_hierarchical(
                     is_all_optimal = False
     else:
         # 直列求解
-        for idx, week_days in enumerate(day_chunks):
+        for _idx, week_days in enumerate(day_chunks):
             if _is_cancelled():
                 was_cancelled = True
                 break
@@ -498,6 +520,8 @@ def solve_monthly_hierarchical(
     if was_cancelled:
         overall_status = SolveStatus.PARTIAL
         all_messages.append("Solve cancelled by user request; partial checkpoint solution returned")
+    elif had_chunk_error:
+        overall_status = SolveStatus.PARTIAL
     elif is_all_optimal and len(all_shift_days) == len(context.all_days):
         overall_status = SolveStatus.OPTIMAL
     elif is_any_feasible and len(all_shift_days) == len(context.all_days):
@@ -536,6 +560,7 @@ def solve_monthly_hierarchical(
             staff=context.staff,
             preferences=context.preferences,
             weights=weights,
+            standard=context.standard,
         )
     except Exception:
         pass
@@ -589,6 +614,13 @@ def _solve_stage1_daily_patterns(
     days = context.all_days
     patterns = context.patterns
     pat_keys = [p.key for p in patterns]
+    if len(set(pat_keys)) != len(pat_keys):
+        dupes = sorted(k for k in set(pat_keys) if pat_keys.count(k) > 1)
+        raise ValueError(
+            f"パターンに重複する key（label）があります: {dupes}. "
+            "同一 key が複数パターンで使われると制約1が 2*x == duty になり壊れるため、"
+            "重複を許容しません。"
+        )
 
     x_vars: dict[tuple[str, dt.date, str], pulp.LpVariable] = {}
     duty_vars: dict[tuple[str, dt.date], pulp.LpVariable] = {}

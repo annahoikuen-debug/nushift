@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
 from shiftai.solver import (
-    available_solvers,
     is_cbc_available,
     is_highs_available,
     select_optimal_solver,

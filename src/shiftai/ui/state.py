@@ -80,6 +80,7 @@ KEY_STALE_REASON = "stale_reason"
 """入力が計算後に変わった理由の日本語短文。空文字なら最新。"""
 KEY_WEIGHTS = "weights"
 KEY_GAS_CLIENT = "gas_client"
+KEY_SHORTFALL_ACK = "shortfall_ack"
 
 # 勤務パターンの整列（優先2: 早番・日勤・遅番へのスナップ）
 KEY_PATTERNS_ENABLED = "patterns_enabled"
@@ -137,6 +138,7 @@ DEFAULT_KEYS: dict[str, Any] = {
     KEY_STALE_REASON: "",
     KEY_FIX_TARGET: None,
     KEY_FIX_REQUESTED: False,
+    KEY_SHORTFALL_ACK: False,
 }
 
 WEIGHT_WIDGETS: tuple[tuple[str, str, float, float, float], ...] = (
@@ -173,10 +175,31 @@ WIDGET_KEYS: frozenset[str] = frozenset(
         # StreamlitWidgetAlreadyInstantiatedError で初期化が中断する。
         "pattern_snap",
         "patterns_enabled",
+        # サイドバーのパターンプリセット selectbox。reset_all で pop しないと
+        # 旧プリセットが復活する。
+        "pattern_preset",
         "range_days",
         "range_start",
         "shift_editor",
         "standard_preset",
+        # サイドバーの園設定ウィジェット（閉業日・祝日・休憩・ブロック数・
+        # 正社員労働時間・計算時間上限など）。reset_all() で pop しないと
+        # 旧園設定の値が残る。
+        "closed_days",
+        "holiday_dates",
+        "break_minutes",
+        "max_work_blocks_per_day",
+        "sei_min_daily_hours",
+        "sei_max_daily_hours",
+        "ui_time_limit_sec",
+        # サイドバーの 2名ルール チェックボックス。
+        "ui_enforce_min_two",
+        # tab_solve の不足ゲートチェックボックス。reset_all で pop しないと
+        # 古いチェック状態が残り shortfall_ack と不整合になる。
+        "shortfall_ack_box",
+        # 月次モードの並列ワーカー数（session_state に直接書き込まれるが
+        # reset で消したいので WIDGET_KEYS に登録）。
+        "parallel_workers",
     }
 )
 """ウィジェット自身が所有するキー。生成済みキーは代入せず ``pop`` で破棄する。"""
@@ -246,9 +269,11 @@ def reset(key: str) -> None:
 
 
 def reset_all() -> None:
-    """管理下のキーのみを既定値に戻す（ウィジェットキーは破棄して既定値で再生成させる）。"""
+    """管理下のキーを既定値に戻し、ウィジェット所有キーは破棄してウィジェットを既定値で再生成させる。"""
     for key in DEFAULT_KEYS:
         reset(key)
+    for key in WIDGET_KEYS:
+        st.session_state.pop(key, None)
     init_state()
 
 
@@ -347,8 +372,13 @@ def invalidate_pipeline() -> None:
         KEY_VIOLATIONS,
         KEY_FIXED_ASSIGNMENTS,
         KEY_ACKNOWLEDGED,
+        KEY_SHORTFALL_ACK,
     ):
         reset(key)
+    # shortfall_ack_box はチェックボックスウィジェットのキー。
+    # 入力変更で短納性承認を解除する際にウィジェット状態も破棄し、
+    # 次回求解時にチェックボックスが未チェック状態で再表示されるようにする。
+    st.session_state.pop("shortfall_ack_box", None)
 
 
 def acknowledged_fingerprints() -> frozenset[str]:

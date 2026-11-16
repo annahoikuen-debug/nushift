@@ -606,7 +606,7 @@ def to_ics(result: SolveResult, slots: Sequence[Slot], staff: Sequence[StaffMemb
                         f"DTEND:{end_dt:%Y%m%dT%H%M%S}",
                         f"SUMMARY:{_ics_escape(summary)}",
                         f"DESCRIPTION:{_ics_escape(f'職種: {role_text}')} 作業時間: {minutes} 分",
-                        f"X-ALT-DESC;FMTTYPE=text:{_ics_escape(alt_desc)}",
+                        f"X-ALT-DESC;FMTTYPE=text/plain:{_ics_escape(alt_desc)}",
                         "TRANSP:OPAQUE",
                         "END:VEVENT",
                     ]

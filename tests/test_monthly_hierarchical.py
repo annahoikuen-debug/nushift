@@ -1,10 +1,7 @@
-import datetime as dt
 from datetime import date, time
-import pytest
 
 from shiftai.domain import (
     AgeClass,
-    CellState,
     ChildPlan,
     Contract,
     EmploymentType,
@@ -12,7 +9,6 @@ from shiftai.domain import (
     Role,
     SolveStatus,
     StaffMember,
-    StaffPreferences,
 )
 from shiftai.monthly import MonthlySolveContext, solve_monthly_hierarchical
 from shiftai.shift_patterns import ShiftPattern

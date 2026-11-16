@@ -1,6 +1,5 @@
 """NuShift Timefold 拡張機能（進捗イベント・協調的キャンセル・分割並列探索）のテスト。"""
 
-import datetime as dt
 from datetime import date, time
 
 from shiftai import local_rules

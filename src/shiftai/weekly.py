@@ -23,9 +23,9 @@ from shiftai.domain import (
     PairingRule,
     RequirementTable,
     SolveResult,
+    StaffingStandard,
     StaffMember,
     StaffPreferences,
-    StaffingStandard,
 )
 from shiftai.relaxation import RelaxLevel
 from shiftai.shift_patterns import ShiftPattern

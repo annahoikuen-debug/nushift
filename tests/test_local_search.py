@@ -1,6 +1,5 @@
 """局所探索 (Ruin & Recreate) の単体テスト。"""
 
-import datetime as dt
 from datetime import date, time
 
 from shiftai import local_rules

@@ -241,10 +241,10 @@ function initModal() {
       setTimeout(() => {
         form.innerHTML = `
           <div style="text-align: center; padding: 20px 0;">
-            <div style="font-size: 3rem; margin-bottom: 12px;">🎉</div>
-            <h3 style="font-size: 1.5rem; margin-bottom: 8px;">お申し込みを受け付けました</h3>
+            <div style="font-size: 3rem; margin-bottom: 12px;">⚠️</div>
+            <h3 style="font-size: 1.5rem; margin-bottom: 8px;">送信先が設定されていません</h3>
             <p style="color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 24px;">
-              ご登録いただいたメールアドレス宛に、デモ環境のログイン情報をお送りいたします。
+              このフォームは現在送信先が設定されていません。お問い合わせは、お問い合わせフォームからご連絡ください。
             </p>
             <button type="button" class="btn btn-secondary" onclick="document.getElementById('demoModal').classList.remove('open'); location.reload();">閉じる</button>
           </div>

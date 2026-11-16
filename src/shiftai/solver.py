@@ -31,10 +31,10 @@ PuLP 4.0 以降は API が変わるため、古典的な
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date
-import os
 from time import perf_counter
 from typing import Any
 
@@ -1433,6 +1433,14 @@ def _staff_signature(st: StaffMember, prefs: Mapping[str, StaffPreferences] | No
         c.latest_end,
         c.can_work_holiday,
         c.overtime_allowed,
+        # 36協定・契約細部：有無で daily_cap が変わるため、同一署名でも
+        # 交換不可能な職員が混ざると対称性破り（WLOG）が崩れる。
+        c.has_36_agreement,
+        c.variable_working_hours,
+        c.break_minutes,
+        c.min_daily_hours,
+        c.max_daily_hours,
+        c.max_work_blocks_per_day,
         pref_key,
     )
 
@@ -2497,15 +2505,32 @@ def _greedy(
     diagnosis: list[str] | None = None,
 ) -> SolveResult:
     """貪欲法による最終保険。"""
-    result = solve_shift_greedy(
-        payload.children,
-        payload.staff,
-        payload.requirements,
-        payload.prefs,
-        fixed_assignments=payload.fixed,
-        standard=payload.standard,
-        settings=payload.settings,
-    )
+    try:
+        result = solve_shift_greedy(
+            payload.children,
+            payload.staff,
+            payload.requirements,
+            payload.prefs,
+            fixed_assignments=payload.fixed,
+            standard=payload.standard,
+            settings=payload.settings,
+        )
+    except Exception as exc:
+        # 最後の砦が例外で落ちないよう、ERROR の SolveResult を返す。
+        result = SolveResult(
+            status=SolveStatus.ERROR,
+            shift_days=[],
+            violations=[],
+            messages=[f"{message}（貪欲法で例外: {exc})", *(diagnosis or [])],
+            stats={
+                **stats,
+                "solver": "greedy",
+                "fallback": "greedy",
+                "elapsed_sec": round(perf_counter() - started, 3),
+                "pass": 0,
+            },
+        )
+        return result
     result.messages = [message, *(diagnosis or []), *result.messages]
     result.stats.update({k: v for k, v in stats.items() if k != "solver"})
     # 実際に走ったのは貪欲法なので solver 名を偽らない

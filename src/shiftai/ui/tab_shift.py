@@ -395,7 +395,12 @@ def _apply_fix_target() -> None:
     if target is None:
         return
     iso_day, staff_id, slot_label = target
-    wanted = date.fromisoformat(iso_day) if iso_day else None
+    wanted = None
+    if iso_day:
+        try:
+            wanted = date.fromisoformat(iso_day)
+        except ValueError:
+            wanted = None
     options = components.day_options(state.get(state.KEY_SOLVE_RESULT))
     staff_map = state.staff_name_map()
     name = staff_map.get(staff_id, "") if staff_id else ""

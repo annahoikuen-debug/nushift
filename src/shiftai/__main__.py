@@ -79,7 +79,7 @@ from shiftai.exporter import (
 from shiftai.gap_analysis import analyze_gap, check_violations
 from shiftai.relaxation import MAX_RELAX_LEVEL, RELAX_LEVELS, normalize_level
 from shiftai.shift_patterns import default_patterns, normalize_patterns, parse_pattern_spec
-from shiftai.solver import shortfall_rows, snap_to_patterns, solve_shift
+from shiftai.solver import shortfall_rows, snap_to_patterns
 from shiftai.standards import build_requirements, peak_requirement, total_required_hours
 
 APP_FILE_NAME = "streamlit_app.py"

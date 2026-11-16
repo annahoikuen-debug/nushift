@@ -2,10 +2,10 @@
 from datetime import date, timedelta
 
 from shiftai import local_rules, sample_data
-from shiftai.config import DEFAULT_DAY_OPEN, DEFAULT_DAY_CLOSE, DEFAULT_GRANULARITY_MIN
+from shiftai.config import DEFAULT_DAY_CLOSE, DEFAULT_DAY_OPEN, DEFAULT_GRANULARITY_MIN
 from shiftai.domain import FacilitySettings
-from shiftai.standards import build_requirements
 from shiftai.solver import solve_shift
+from shiftai.standards import build_requirements
 
 STANDARD = local_rules.get_standard("全国基準（厚労省）")
 

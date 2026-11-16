@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from datetime import date
-from typing import Any
 
 from shiftai.domain import (
     CellState,
@@ -19,10 +17,12 @@ from shiftai.domain import (
     Role,
     ShiftDay,
     ShiftScore,
+    StaffingStandard,
     StaffMember,
     StaffPreferences,
     Violation,
     ViolationSeverity,
+    qualified_count,
 )
 
 
@@ -33,8 +33,15 @@ def compute_shift_score(
     staff: Sequence[StaffMember] | None = None,
     preferences: Mapping[str, StaffPreferences] | None = None,
     weights: ObjectiveWeights | None = None,
+    standard: StaffingStandard | None = None,
 ) -> ShiftScore:
-    """シフト配置結果と違反一覧から Timefold 互換の ShiftScore を計算する。"""
+    """シフト配置結果と違反一覧から Timefold 互換の ShiftScore を計算する。
+
+    ``standard`` が与えられると SHORTFALL_QUALIFIED の有資格者数を
+    ``domain.qualified_count`` に委譲し（nurse_as_qualified_cap /
+    qualified_extra_roles を反映）、None なら従来の保育士のみカウント
+    動作を維持する（後方互換）。
+    """
     w = weights or ObjectiveWeights()
     matches: dict[str, ConstraintMatch] = {}
 
@@ -89,14 +96,28 @@ def compute_shift_score(
                     elif code == "SHORTFALL_QUALIFIED":
                         needed_q = requirements.needed_qualified(d, slot)
                         # 有資格者数のカウント
-                        actual_q = 0
-                        for sid, a in sd.assignments.items():
-                            if a.get(slot.label) == CellState.WORK:
-                                sm = next((s for s in (staff or ()) if s.staff_id == sid), None)
-                                if sm:
-                                    is_qual = getattr(sm, "is_qualified", False) or sm.has_role(Role.HOIKUSHI) or sm.has_role("保育士") or any(getattr(r, "value", str(r)) == "保育士" for r in sm.roles)
-                                    if is_qual:
-                                        actual_q += 1
+                        working_members = [
+                            sm
+                            for sid, a in sd.assignments.items()
+                            if a.get(slot.label) == CellState.WORK
+                            for sm in (staff or ())
+                            if sm.staff_id == sid
+                        ]
+                        if standard is not None:
+                            # standard（nurse_as_qualified_cap / qualified_extra_roles 等）を反映
+                            actual_q = qualified_count(working_members, standard)
+                        else:
+                            # 後方互換: 保育士のみを数える
+                            actual_q = 0
+                            for sm in working_members:
+                                is_qual = (
+                                    getattr(sm, "is_qualified", False)
+                                    or sm.has_role(Role.HOIKUSHI)
+                                    or sm.has_role("保育士")
+                                    or any(getattr(r, "value", str(r)) == "保育士" for r in sm.roles)
+                                )
+                                if is_qual:
+                                    actual_q += 1
                         if actual_q < needed_q:
                             slot_shortfall += (needed_q - actual_q)
             if slot_shortfall > 0:
@@ -121,7 +142,9 @@ def compute_shift_score(
         )
 
     # 2. 余剰配置 (Overstaff) のソフト評価集計 (RequirementTable とシフト配置がある場合)
-    if requirements and shift_days:
+    if requirements and shift_days and "OVERSTAFF" not in matches:
+        # violations 由来で matches に OVERSTAFF が既にある場合は再集計をスキップし
+        # 二重計上を防ぐ（後方互換のため standard なしでも動作する）。
         overstaff_slots = 0
         overstaff_details = []
         for sd in shift_days:

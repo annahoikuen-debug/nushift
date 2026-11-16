@@ -306,9 +306,9 @@ class GoogleAppsScriptClient:
         return payload_to_frame(payload)
 
     def push_table(self, df: pd.DataFrame, sheet: str, *, mode: str = "replace") -> dict:
-        """DataFrame をシートへ送る。``mode`` は ``replace`` / ``append``。"""
+        """DataFrame をシートへ送る。``mode`` は ``replace`` / ``write`` / ``append``。"""
         if mode not in ("replace", "write", "append"):
-            raise GasConfigError(f"mode は 'replace' か 'append' にしてください（got {mode!r}）")
+            raise GasConfigError(f"mode は 'replace' / 'write' / 'append' にしてください（got {mode!r}）")
         action = "append" if mode == "append" else "write"
         body = {"action": action, "sheet": sheet}
         body.update(frame_to_payload(df))

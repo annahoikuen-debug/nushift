@@ -389,6 +389,7 @@ def validate_day(
         actual = sum(
             1
             for member in staff
+            if member.is_placeable
             for i, s in enumerate(states.get(member.staff_id, []))
             if slots[i] == slot and s is CellState.WORK
         )
@@ -407,6 +408,7 @@ def validate_day(
             working_qualified = [
                 member
                 for member in staff
+                if member.is_placeable
                 if any(
                     slots[i] == slot and s is CellState.WORK
                     for i, s in enumerate(states.get(member.staff_id, []))

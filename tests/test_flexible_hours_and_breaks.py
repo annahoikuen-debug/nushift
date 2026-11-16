@@ -1,12 +1,11 @@
 """勤務3分割禁止・休憩時間45〜120分・正社員4〜8時間勤務柔軟化のテスト。"""
-import datetime as dt
 from datetime import date, time
+
 import pytest
 
 from shiftai.domain import (
     AgeClass,
     CellState,
-    ChildPlan,
     Contract,
     EmploymentType,
     FacilitySettings,
@@ -15,7 +14,6 @@ from shiftai.domain import (
     Slot,
     SolveStatus,
     StaffMember,
-    ViolationSeverity,
 )
 from shiftai.gap_analysis import check_violations
 from shiftai.solver import solve_shift
@@ -175,7 +173,7 @@ def test_solver_respects_break_minutes_and_fulltime_hours():
         Slot(start=time(7 + i // 2, (i % 2) * 30), end=time(7 + (i + 1) // 2, ((i + 1) % 2) * 30))
         for i in range(20)  # 7:00 - 17:00
     ]
-    from shiftai.domain import AgeClass, Requirement
+    from shiftai.domain import Requirement
     req_row = [
         Requirement(
             day=d,
@@ -226,7 +224,7 @@ def test_facility_settings_applied_to_solver():
         Slot(start=time(7 + i // 2, (i % 2) * 30), end=time(7 + (i + 1) // 2, ((i + 1) % 2) * 30))
         for i in range(20)  # 7:00 - 17:00
     ]
-    from shiftai.domain import AgeClass, Requirement
+    from shiftai.domain import Requirement
     req_row = [
         Requirement(
             day=d,

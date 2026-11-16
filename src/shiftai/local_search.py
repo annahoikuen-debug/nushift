@@ -89,7 +89,7 @@ def ruin_and_recreate(
 
     improved = False
 
-    for iteration in range(max_iterations):
+    for _iteration in range(max_iterations):
         if best_score.hard_score == 0 and len(best_violations) == 0:
             break
 
