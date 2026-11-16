@@ -263,6 +263,58 @@ def test_reset_allは管理下のキーだけを初期化する():
     assert isinstance(st.session_state[state.KEY_STANDARD], StaffingStandard)
 
 
+def test_reset_allは登録済みウィジェットキーを全て消す():
+    """``WIDGET_KEYS`` の全キーが「すべて初期化」で破棄されること（回帰テスト）。
+
+    修正前: タブの状態保持ウィジェット（日付・モード・入力値）が登録漏れており、
+    初期化のあとに旧選択がセッションから復活していた。
+    ``DEFAULT_KEYS`` と重なるキーは破棄後に既定値で再生成されることも確認する。
+    """
+    for key in state.WIDGET_KEYS:
+        st.session_state[key] = "ユーザーの旧設定"
+
+    state.reset_all()
+
+    stale = [
+        key
+        for key in state.WIDGET_KEYS
+        if key not in state.DEFAULT_KEYS and key in st.session_state
+    ]
+    assert not stale, f"旧設定が残っているウィジェットキー: {stale}"
+    for key in set(state.WIDGET_KEYS) & set(state.DEFAULT_KEYS):
+        assert st.session_state[key] == state.DEFAULT_KEYS[key], key
+
+
+def test_reset_allは接頭辞管理の動的ウィジェットキーを消す():
+    """``f"weight_{name}"`` 等の動的キーも「すべて初期化」で消えること（回帰テスト）。
+
+    修正前: 重みスライダーの旧値が残ったまま ``sync_weights`` に戻ってきてしまい、
+    「すべて初期化」しても重みが既定に戻らなかった。
+    ``DEFAULT_KEYS`` のキー（``weights`` 等）は接頭辞走査で消えないことも確認する。
+    """
+    st.session_state["weight_shortfall_penalty"] = 999.0
+    st.session_state["ratio_0歳児"] = 9.9
+    st.session_state["sample_seed_children"] = 7
+    st.session_state["pattern_name_0"] = "旧ラベル"
+    st.session_state["pattern_start_0"] = time(0, 0)
+    st.session_state["wizard_source_children"] = "sample"
+
+    state.reset_all()
+
+    for key in (
+        "weight_shortfall_penalty",
+        "ratio_0歳児",
+        "sample_seed_children",
+        "pattern_name_0",
+        "pattern_start_0",
+        "wizard_source_children",
+    ):
+        assert key not in st.session_state, f"{key} が初期化後も残っている"
+    # "weight_" 接頭辞は "weights"（KEY_WEIGHTS）を誤爆しないこと
+    assert state.KEY_WEIGHTS in st.session_state
+    assert isinstance(st.session_state[state.KEY_WEIGHTS], ObjectiveWeights)
+
+
 # --------------------------------------------------------------------------
 # editing_guard
 # --------------------------------------------------------------------------

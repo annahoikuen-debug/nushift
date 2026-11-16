@@ -300,3 +300,54 @@ def test_solve_月次モード(tmp_path, capsys):
     assert code in (EXIT_OK, 2, 3)
     assert (out / "shift.csv").is_file()
 
+
+def test_solve_月次モードが配置基準をコンテキストに渡す(tmp_path, monkeypatch):
+    """``--mode monthly`` の ``MonthlySolveContext`` に ``standard`` が渡ること（回帰テスト）。
+
+    修正前: CLI の生成箇所で ``standard`` の渡し忘れがあり、
+    ``context.standard`` が ``None`` のままになり、
+    月次モードのスコア（``SHORTFALL_QUALIFIED``）が資格定義を無視していた。
+    """
+    import shiftai.monthly as monthly
+    from shiftai import local_rules
+
+    captured: dict[str, object] = {}
+    original = monthly.solve_monthly_hierarchical
+
+    def spy(ctx, **kwargs):
+        captured["ctx"] = ctx
+        return original(ctx, **kwargs)
+
+    monkeypatch.setattr(monthly, "solve_monthly_hierarchical", spy)
+
+    # 既定以外のプリセットを選び、渡し忘れではなく「選んだ基準が届く」ことを確かめる。
+    target = next(k for k in local_rules.MUNICIPAL_PRESETS if k != local_rules.DEFAULT_PRESET_KEY)
+    out = tmp_path / "out"
+    code = main(
+        [
+            "solve",
+            "--sample",
+            "--out",
+            str(out),
+            "--start",
+            "2026-09-28",
+            "--end",
+            "2026-09-28",
+            "--open",
+            "09:00",
+            "--close",
+            "17:00",
+            "--mode",
+            "monthly",
+            "--standard",
+            target,
+            "--time-limit",
+            "1",
+        ]
+    )
+    assert code in (EXIT_OK, 2, 3)
+    ctx = captured.get("ctx")
+    assert ctx is not None, "月次コンテキストが生成されていない"
+    assert getattr(ctx, "standard", None) is not None, "MonthlySolveContext.standard が None"
+    assert ctx.standard.name == local_rules.get_standard(target).name
+

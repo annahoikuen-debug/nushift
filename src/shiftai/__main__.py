@@ -564,6 +564,10 @@ def cmd_solve(args: argparse.Namespace) -> int:
             prior_duty_history={},
             monthly_holiday_target=getattr(args, "monthly_holiday_target", 8) or 8,
             children=loaded.children,
+            # 週モードと同じ配置基準を月次にも渡す。渡さないと
+            # context.standard が None のままになり、スコアの
+            # SHORTFALL_QUALIFIED 再計算が資格定義を無視する。
+            standard=standard,
         )
         result = solve_monthly_hierarchical(
             monthly_ctx,

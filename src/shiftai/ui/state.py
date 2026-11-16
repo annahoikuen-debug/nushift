@@ -200,6 +200,32 @@ WIDGET_KEYS: frozenset[str] = frozenset(
         # 月次モードの並列ワーカー数（session_state に直接書き込まれるが
         # reset で消したいので WIDGET_KEYS に登録）。
         "parallel_workers",
+        # タブの状態保持ウィジェット（日付・モード・表示切替・入力値）。
+        # reset_all() で pop しないと「すべて初期化」のあとに
+        # 旧の日付・モード・入力値がセッションから復活する。
+        # 一時的な button / download_button / 表示系 dataframe は対象外。
+        "active_day",
+        "requirements_day",
+        "requirements_long_day",
+        "curve_day",
+        "pattern_detail_day",
+        "gantt_pdf_day",
+        "relaxation_select",
+        "solve_mode",
+        "solve_engine",
+        "shift_grid_view",
+        "sample_seed",
+        "monthly_holiday_target",
+        "compliance_regulation",
+        "compliance_capacity",
+        "compliance_shared",
+        "compliance_support_certified",
+        "import_profile",
+        # 園業務支援システム（CoDMON / キッズリー）取り込みのアップローダー。
+        "import_children",
+        "export_ack_select",
+        # wizard のモード選択（wizard.KEY_MODE = "wizard_mode" と一致）。
+        "wizard_mode",
     }
 )
 """ウィジェット自身が所有するキー。生成済みキーは代入せず ``pop`` で破棄する。"""
@@ -274,6 +300,12 @@ def reset_all() -> None:
         reset(key)
     for key in WIDGET_KEYS:
         st.session_state.pop(key, None)
+    # 動的キー（f"weight_{name}" 等）はリテラルで登録できないため接頭辞で消す。
+    # DEFAULT_KEYS のキーは prefix に一致しても消さない（既定値は reset() が担当する）。
+    for prefix in DYNAMIC_WIDGET_PREFIXES:
+        for key in [k for k in list(st.session_state.keys()) if k.startswith(prefix)]:
+            if key not in DEFAULT_KEYS:
+                st.session_state.pop(key, None)
     init_state()
 
 
@@ -669,6 +701,23 @@ def current_patterns() -> tuple:
 _PATTERN_WIDGET_PREFIXES = ("pattern_name_", "pattern_start_", "pattern_end_")
 _PATTERN_WIDGET_SCAN_ROWS = 64
 """行ウィジェットキーの走査上限（追加ボタンの現実的な行数より十分大きく取る）。"""
+
+DYNAMIC_WIDGET_PREFIXES: tuple[str, ...] = (
+    # 重みスライダー（f"weight_{name}"）。消さないと旧重みが sync_weights で復活する。
+    "weight_",
+    # 園設定の定員比上書き（f"ratio_{age_class.value}"）。
+    "ratio_",
+    # サンプル投入の乱数シード（f"sample_seed_{kind}"）。
+    "sample_seed_",
+    # ウィザードのデータ投入方法の選択（f"wizard_source_{kind}"）。
+    "wizard_source_",
+    # 勤務パターンの行ウィジェット。
+    *_PATTERN_WIDGET_PREFIXES,
+)
+"""文字列リテラルを ``key=`` に置けない動的ウィジェットキーの接頭辞。
+
+``reset_all()`` が ``st.session_state`` を走査してこれらに一致するキーを ``pop`` する。
+"""
 
 
 def set_patterns(patterns: Sequence[ShiftPattern]) -> None:

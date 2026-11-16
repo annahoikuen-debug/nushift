@@ -122,6 +122,11 @@ def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveRes
                     prior_duty_history={},
                     monthly_holiday_target=int(st.session_state.get("monthly_holiday_target", 8)),
                     children=children,
+                    # 週モードと同じ配置基準・重みを月次にも渡す。
+                    # 渡さないと context.standard / context.weights が None のままになり、
+                    # スコアの資格判定と重み付けが月次で無視される。
+                    standard=standard,
+                    weights=weights,
                 )
                 result = solve_monthly_hierarchical(
                     m_ctx,

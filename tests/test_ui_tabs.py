@@ -725,6 +725,55 @@ def test_set_patternsが行ウィジェットの旧状態を消す():
         st.session_state.clear()
 
 
+def test_月次モードの求解が基準と重みをコンテキストに渡す(tmp_path, required_payload, solved_day, monkeypatch):
+    """UI の月次求解が ``standard`` / ``weights`` を ``MonthlySolveContext`` に渡すこと。
+
+    回帰テスト（``docs/18_実装計画_残課題とリグレッション防止.md`` WP-2）。
+
+    修正前: ``tab_solve`` の生成箇所で ``standard`` と ``weights`` の渡し忘れがあり、
+    ``context.standard`` / ``context.weights`` が ``None`` のままになり、
+    月次モードではスコアの資格判定と重みスライダーが無視されていた。
+
+    求解本体は実行しない（スパイが ``solved_day`` を返す）。
+    検証したいのはコンテキストの構築であって月次エンジンの挙動ではない。
+    """
+    import shiftai.monthly as monthly
+    from shiftai import local_rules
+
+    captured: dict[str, Any] = {}
+
+    def spy(ctx, **kwargs):
+        captured["ctx"] = ctx
+        return solved_day
+
+    monkeypatch.setattr(monthly, "solve_monthly_hierarchical", spy)
+
+    target = next(k for k in local_rules.MUNICIPAL_PRESETS if k != local_rules.DEFAULT_PRESET_KEY)
+    payload = {key: dict(value) for key, value in required_payload.items()}
+    payload["widgets"] = dict(payload.get("widgets", {}))
+    payload["widgets"]["solve_mode"] = "monthly"
+    payload["widgets"]["shortfall_ack_box"] = True
+    payload["state"] = dict(payload.get("state", {}))
+    payload["state"][state.KEY_SHORTFALL_ACK] = True
+    payload["state"][state.KEY_PATTERN_SNAP] = False  # 整列を挟まず結果をそのまま返す
+    payload["state"][state.KEY_STANDARD_KEY] = target
+    payload["state"][state.KEY_STANDARD] = local_rules.get_standard(target)
+
+    at = _run_tabs(tmp_path / "monthly_solve", ("tab_solve",), payload=payload)
+    assert not at.exception, [str(e.value) for e in at.exception]
+
+    run = [b for b in at.button if "自動作成する" in b.label]
+    assert len(run) == 1, "求解ボタンが出ていない"
+    run[0].click().run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+
+    ctx = captured.get("ctx")
+    assert ctx is not None, "月次コンテキストが生成されていない（月次モードになっていない）"
+    assert ctx.standard is not None, "MonthlySolveContext.standard が None"
+    assert ctx.standard.name == local_rules.get_standard(target).name, "選んだ基準が届いていない"
+    assert ctx.weights is not None, "MonthlySolveContext.weights が None（重みスライダーが無視される）"
+
+
 def _expander_labels(at) -> list[str]:
     """``AppTest`` から展开セクションの見出しを取り出す。"""
     out: list[str] = []
