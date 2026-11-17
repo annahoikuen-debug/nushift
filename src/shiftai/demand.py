@@ -41,14 +41,16 @@ def generate_standard_children(
         age_class = c_cap.age_class
 
         # 1. 保育標準時間児の生成
+        early_count = int(round(c_cap.standard_time_count * early_care_ratio))
+        late_count = int(round(c_cap.standard_time_count * late_care_ratio))
         for i in range(c_cap.standard_time_count):
             cid = f"C{child_seq:04d}"
             name = f"{c_cap.class_name}_{i+1}"
             child_seq += 1
 
-            # 一部園児は早朝保育・延長保育を利用
-            uses_early = (i % 10) < int(early_care_ratio * 10)
-            uses_late = (i % 10) < int(late_care_ratio * 10)
+            # 一部園児は早朝保育・延長保育を利用（先頭側と末尾側に分散配置）
+            uses_early = i < early_count
+            uses_late = i >= (c_cap.standard_time_count - late_count)
 
             arr = day_open if uses_early else standard_start
             dep = day_close if uses_late else standard_end

@@ -210,7 +210,7 @@ def parse_pattern_spec(spec: str) -> ShiftPattern:
     raw = spec.strip()
     if not raw:
         raise ValueError("パターンの定義が空です")
-    label = raw
+    label = ""
     if "=" in raw:
         label, _, raw = raw.partition("=")
         label = label.strip()
@@ -224,14 +224,15 @@ def parse_pattern_spec(spec: str) -> ShiftPattern:
     except ValueError as exc:
         raise ValueError(f"パターンの時刻が不正です: {spec!r}（例: 早番=07:30-16:30）") from exc
     symbol = ""
-    if "[" in label and label.endswith("]"):
-        label, _, symbol_part = label[:-1].partition("[")
-        label = label.strip()
-        symbol = symbol_part.strip()
-    elif ":" in label:
-        label, _, symbol_part = label.partition(":")
-        label = label.strip()
-        symbol = symbol_part.strip()
+    if label:
+        if "[" in label and label.endswith("]"):
+            label, _, symbol_part = label[:-1].partition("[")
+            label = label.strip()
+            symbol = symbol_part.strip()
+        elif ":" in label:
+            label, _, symbol_part = label.partition(":")
+            label = label.strip()
+            symbol = symbol_part.strip()
     if not label:
         label = "枠"
     return ShiftPattern(label=label, key=label, start=start, end=end, symbol=symbol)

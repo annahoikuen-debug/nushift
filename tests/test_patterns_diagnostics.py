@@ -94,6 +94,8 @@ def test_定義文字列を解釈できる() -> None:
     assert pat.end == time(16, 30)
     bare = parse_pattern_spec("09:00-18:00")
     assert bare.start == time(9, 0)
+    assert bare.label == "枠"
+    assert bare.symbol == ""
 
 
 @pytest.mark.parametrize("spec", ["", "09:00", "abc-def", "09:00-xx"])

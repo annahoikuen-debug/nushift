@@ -31,6 +31,7 @@ PuLP 4.0 以降は API が変わるため、古典的な
 
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -698,21 +699,33 @@ def _add_commute_penalty(
         return
     reach = min(reach, n - 1)
     slack_items: list[object] = []
+    prior: list[object] = [0] * n
     for i in range(1, n):
         start = duty.get(i, 0)
+        prev_prior = prior[i - 1]
+        duty_prev = duty.get(i - 1, 0)
+        # prior_i = OR(duty_0..duty_{i-1})：先行在勤があるか。
+        prior_i = pulp.LpVariable(f"{tag}_prior{i}", lowBound=0, upBound=1)
+        ctx.prob += prior_i >= prev_prior
+        if not _is_zero(duty_prev):
+            ctx.prob += prior_i >= duty_prev
+            ctx.prob += prior_i <= prev_prior + duty_prev
+        else:
+            ctx.prob += prior_i <= prev_prior
+        prior[i] = prior_i
         if _is_zero(start):
-            continue
-        prev = duty.get(i - 1, 0)
-        if _is_zero(start) and _is_zero(prev):
             continue
         window = [duty.get(j, 0) for j in range(max(0, i - reach), i)]
         window_vars = [v for v in window if not _is_zero(v)]
-        if not window_vars:
-            continue
         slack = pulp.LpVariable(f"{tag}_commute{i}", lowBound=0)
-        # 窓が在勤で埋まっているのに duty_i が立つと slack が 1 立つ
-        # （= 在勤ブロックを長い下班で分けた shortfall）。
-        _hard_le(ctx, start - pulp.lpSum(window_vars) - slack, 0, f"{tag}_commute_{i}")
+        # 先行在勤がない（初回ブロック）ときは slack を立てない。
+        # 先行在勤がある窓外の長い下班後の再開は罰する。
+        _hard_le(
+            ctx,
+            start - pulp.lpSum(window_vars) - slack + prior_i,
+            1,
+            f"{tag}_commute_{i}",
+        )
         slack_items.append(slack)
     if slack_items:
         obj.append(weights.split_duty_penalty * pulp.lpSum(slack_items))
@@ -926,8 +939,7 @@ def _build_cells(
                 else getattr(settings, "break_minutes", None) or break_minutes
             )
             is_part_short = (
-                (st.contract.daily_hours is not None and st.contract.daily_hours <= 6.0)
-                or st.contract.employment_type in (EmploymentType.PART, EmploymentType.BUNKIN)
+                st.contract.daily_hours is not None and st.contract.daily_hours <= 6.0
             )
             if (st.contract.break_minutes is not None and st.contract.break_minutes == 0) or is_part_short or cap_min <= 6 * 60:
                 eff_break = 0
@@ -943,7 +955,7 @@ def _build_cells(
                 # 案1: 1職員1日の在勤は1連続ブロック・休息は1回だけにする。
                 # allow_split=True（緩和 L3 ``RELAX_HOURS``）ならソフトに戻る。
                 _gran = max(1, int(requirements.granularity_min or slots[0].minutes))
-                _brk_slots = _break_slots(cap_min, eff_break, _gran)
+                _brk_slots = _break_slots(cap_min, eff_break, _gran, daily_hours=st.contract.daily_hours)
                 _add_duty_block(
                     ctx,
                     duty,
@@ -1013,13 +1025,13 @@ def _qualified_items(
 ) -> list[object]:
     """「必要保育士数」を満たす勤務変数を返す。
 
-    看護師・准看護師を保育士とみなせる基準
-    （``nurse_as_qualified_cap`` が 1 以上。企業主導型保育事業など）は看護師も含める。
-    ただし**上限を超える複数の看護師は同時に数えられない**ため、
-    看護師が上限より多いときだけ 0/1 変数を 1 つ追加して頭数を絞る。
-    通常（看護師が 1 名以下の園では）変数は増えない。
+    保育士・准看護師・``qualified_extra_roles`` を必要保育士数に算入する。
+    ``nurse_as_qualified_cap`` が 1 以上の場合（企業主導型保育事業など）、
+    看護師・准看護師は上限までのみなし保育士として算入する。
+    ``qualified_extra_roles`` と ``nurse_as_qualified_cap`` は排他（StaffingStandard.__post_init__）。
     """
     nurse_cap = standard.nurse_as_qualified_cap if standard is not None else 0
+    extra_roles = standard.qualified_extra_roles if standard is not None else frozenset()
     items: list[object] = []
     nurse_items: list[object] = []
     for member in staff:
@@ -1028,17 +1040,23 @@ def _qualified_items(
             continue
         if member.has_role(Role.HOIKUSHI):
             items.append(var)
+        elif set(member.roles) & extra_roles:
+            items.append(var)  # 比率の分子にそのまま算入（上限なし）
         elif nurse_cap > 0 and member.is_nurse:
             nurse_items.append(var)
-    if not nurse_items:
+    if not nurse_items or nurse_cap <= 0:
         return items
     if nurse_cap >= len(nurse_items):
         return items + nurse_items
 
-    # 看護師が上限より多いときだけ「1 人分だけ数える」変数を導入する。
-    used = pulp.LpVariable(f"nurse_used_{day.isoformat()}_{ctx.prob.name}_{idx}", cat=pulp.LpBinary)
-    for var in nurse_items:
-        ctx.prob += used >= var
+    # 上限付きのみなし保育士: used = min(nurse_cap, Σ nurses)。
+    # 目的関数上の短fallを埋めるため used は必要分まで最大化される。
+    used = pulp.LpVariable(
+        f"nurse_used_{day.isoformat()}_{ctx.prob.name}_{idx}",
+        lowBound=0,
+        upBound=nurse_cap,
+        cat=pulp.LpContinuous,
+    )
     ctx.prob += used <= _linear([(v, 1) for v in nurse_items])
     return items + [used]
 
@@ -1157,9 +1175,16 @@ def _add_workload(
             obj.append(weights.break_conflict_penalty * excess)
 
 
-def _break_slots(cap_min: int, break_minutes: int, gran: int) -> int:
-    """必要休憩スロット数を算出する（0 以上、日上限スロット数以下）。"""
-    if break_minutes <= 0 or cap_min <= 6 * 60:
+def _break_slots(cap_min: int, break_minutes: int, gran: int, daily_hours: float | None = None) -> int:
+    """必要休憩スロット数を算出する（0 以上、日上限スロット数以下）。
+
+    休憩不要の 6 時間以下は「契約上限」ではなく契約の標準勤務時間
+    (``daily_hours``) で判定する。実労働が短い日に休憩を過剰要求しない。
+    """
+    if break_minutes <= 0:
+        return 0
+    effective_cap = int(round((daily_hours if daily_hours is not None else cap_min / 60.0) * 60))
+    if effective_cap <= 6 * 60:
         return 0
     return min(max(1, -(-break_minutes // gran)), max(0, cap_min // gran))
 
@@ -1185,14 +1210,13 @@ def _add_breaks(
         )
         cap_min = _daily_cap_minutes(st.contract)
         is_part_short = (
-            (st.contract.daily_hours is not None and st.contract.daily_hours <= 6.0)
-            or st.contract.employment_type in (EmploymentType.PART, EmploymentType.BUNKIN)
+            st.contract.daily_hours is not None and st.contract.daily_hours <= 6.0
         )
         if (st.contract.break_minutes is not None and st.contract.break_minutes == 0) or is_part_short or cap_min <= 6 * 60:
             eff_break = 0
         else:
             eff_break = min(max(raw_break, config.MIN_ALLOWABLE_BREAK_MINUTES), config.MAX_ALLOWABLE_BREAK_MINUTES)
-        need_slots = _break_slots(cap_min, eff_break, gran)
+        need_slots = _break_slots(cap_min, eff_break, gran, daily_hours=st.contract.daily_hours)
         if need_slots <= 0:
             continue
         for day in requirements.all_days():
@@ -1442,6 +1466,14 @@ def _staff_signature(st: StaffMember, prefs: Mapping[str, StaffPreferences] | No
         c.max_daily_hours,
         c.max_work_blocks_per_day,
         pref_key,
+        # 交換不可能性：スキル・担任クラス・開閉所・リーダー・配置可否。
+        # 同一契約でもこれらが異なると入れ替え不可なので対称性破りの対象外とする。
+        frozenset(st.skills),
+        st.assigned_class_id,
+        st.can_open,
+        st.can_close,
+        st.can_lead,
+        st.is_placeable,
     )
 
 
@@ -1449,13 +1481,19 @@ def _add_symmetry_breaking(
     ctx: _ModelCtx,
     staff: Sequence[StaffMember],
     prefs: Mapping[str, StaffPreferences] | None,
+    fixed: Mapping[tuple[str, date, str], CellState] | None = None,
 ) -> None:
     """契約・希望が完全に同一の職員グループに勤務時間の大小関係を課す。
 
     この条件は「同じグループ内では入れ替えても目的関数が変わらない」ことを使う
     WLOG な対称性打断であり、最適解を失わない。職員数が多いほどCBCの探索が
     な探索になり、求解時間を大きく短縮できる。
+
+    ``fixed`` が空でないときは手動確定セルがあるため職員が入れ替え不可となり、
+    対称性破りをスキップする。
     """
+    if fixed:
+        return
     groups: dict[tuple, list[str]] = {}
     for st in staff:
         groups.setdefault(_staff_signature(st, prefs), []).append(st.staff_id)
@@ -1474,10 +1512,11 @@ def _add_hours_objective(
     obj: list[object],
     weights: ObjectiveWeights,
     prefs: Mapping[str, StaffPreferences] | None = None,
+    fixed: Mapping[tuple[str, date, str], CellState] | None = None,
 ) -> None:
     """勤務時間の偏り・月間時間・未使用職員・長時間勤務のペナルティ。"""
     days = requirements.all_days()
-    _add_symmetry_breaking(ctx, staff, prefs)
+    _add_symmetry_breaking(ctx, staff, prefs, fixed=fixed)
     if staff:
         hmax = pulp.LpVariable("H_max", lowBound=0)
         hmin = pulp.LpVariable("H_min", lowBound=0)
@@ -1953,7 +1992,7 @@ def _build_problem(
     if "weekly" not in drop_groups:
         _add_consecutive(ctx, staff, requirements, obj, weights)
     _add_preferences(ctx, staff, requirements, prefs, kinds, obj, weights)
-    _add_hours_objective(ctx, staff, requirements, obj, weights, prefs)
+    _add_hours_objective(ctx, staff, requirements, obj, weights, prefs, fixed=fixed)
     _add_pattern_alignment(ctx, staff, requirements, obj, weights, patterns or (), pattern_mode=pattern_mode)
     if "fairness" not in drop_groups:
         _add_fairness(ctx, staff, requirements, obj, weights, standard, patterns or ())
@@ -2234,11 +2273,13 @@ def _collect_highs_info(prob: Any, stats: dict) -> None:
     except Exception:
         return
     try:
-        stats["mip_gap"] = float(info.mip_gap)
+        val = float(info.mip_gap)
+        stats["mip_gap"] = val if math.isfinite(val) and val < 1e29 else None
     except (TypeError, ValueError):
         stats["mip_gap"] = None
     try:
-        stats["mip_dual_bound"] = float(info.mip_dual_bound)
+        val = float(info.mip_dual_bound)
+        stats["mip_dual_bound"] = val if math.isfinite(val) and abs(val) < 1e29 else None
     except (TypeError, ValueError):
         stats["mip_dual_bound"] = None
     try:
@@ -2313,7 +2354,7 @@ def _run_solver(
         # 実際のギャップが 0 でないなら「最適性の証明なし」と記録する。
         if stats is not None:
             gap = stats.get("mip_gap")
-            if gap is not None and float(gap) > 1e-9:
+            if gap is not None and math.isfinite(gap) and gap > 1e-9:
                 stats["solver_status_optimal_caveat"] = (
                     f"MIPギャップ {float(gap) * 100:.2f}% で終了（最適性の証明は時間切れ）"
                 )

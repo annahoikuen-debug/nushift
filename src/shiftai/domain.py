@@ -249,10 +249,11 @@ class Slot:
 
     def overlaps(self, start: time, end: time) -> bool:
         """[start, end) と重なるか（境界は重なりとみなさない）。"""
-        if self.is_midnight_end:
-            # [start_minutes, 1440) として比較する
-            return to_minutes(end) > self.start_minutes and to_minutes(start) < 24 * 60
-        return self.start < end and start < self.end
+        s_start = self.start_minutes
+        s_end = 24 * 60 if self.is_midnight_end else to_minutes(self.end)
+        o_start = to_minutes(start)
+        o_end = 24 * 60 if to_minutes(end) == 0 else to_minutes(end)
+        return s_start < o_end and o_start < s_end
 
     def contains(self, start: time, end: time) -> bool:
         """時間帯が [start, end) を完全に覆うか。"""
@@ -946,7 +947,11 @@ class StaffingStandard:
         return False
 
     def is_standard_time(self, slot: Slot) -> bool:
-        return self.standard_time[0] <= slot.start and slot.end <= self.standard_time[1]
+        s_start = slot.start_minutes
+        s_end = 24 * 60 if slot.is_midnight_end else to_minutes(slot.end)
+        std_start = to_minutes(self.standard_time[0])
+        std_end = 24 * 60 if to_minutes(self.standard_time[1]) == 0 else to_minutes(self.standard_time[1])
+        return std_start <= s_start and s_end <= std_end
 
     def slot_kind(self, slot: Slot) -> SlotKind:
         if slot.overlaps(*self.early_care_window):

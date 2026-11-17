@@ -115,3 +115,30 @@ def test_demand_generator_from_capacity():
         peak_slot = [s for s in req_table.slots if s.label == "11:00-11:30"][0]
         needed_all = req_table.needed_staff(day, peak_slot)
         assert needed_all >= 4
+
+
+def test_early_and_late_care_ratio_deterministic():
+    """early_care_ratio=0.15 のとき 20 人中 3 人（15%）が正しく早朝保育となること。"""
+    capacity = FacilityCapacity(
+        classes=(
+            ClassCapacity(
+                age_class=AgeClass.AGE_3,
+                class_name="くま組",
+                total_capacity=20,
+                standard_time_count=20,
+                short_time_count=0,
+            ),
+        )
+    )
+    days = [date(2026, 10, 5)]
+    children = generate_standard_children(
+        capacity,
+        days=days,
+        early_care_ratio=0.15,
+        late_care_ratio=0.20,
+    )
+    early_kids = [c for c in children if c.uses_early_care]
+    late_kids = [c for c in children if c.uses_late_care]
+    assert len(early_kids) == 3  # round(20 * 0.15) == 3 (以前の int(0.15*10)==1 では2人になっていた)
+    assert len(late_kids) == 4   # round(20 * 0.20) == 4
+

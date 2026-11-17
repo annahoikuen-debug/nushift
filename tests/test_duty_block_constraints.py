@@ -327,6 +327,29 @@ def test_通勤ペナルティは長い下班の後の出勤を罰する() -> No
     assert pulp.LpStatus[prob.status] == "Optimal"
 
 
+def test_通勤ペナルティは初回ブロックの出勤を罰しない() -> None:
+    """スロット 0 以外から始まる初回勤務ブロックに通勤ペナルティが課されないこと。"""
+    slots = _slots(8)
+    ctx = solver_mod._ModelCtx(prob=pulp.LpProblem("t", pulp.LpMinimize))
+    duty = {i: pulp.LpVariable(f"d{i}", 0, 1) for i in range(8)}
+    obj: list[object] = []
+    weights = ObjectiveWeights()
+
+    solver_mod._add_commute_penalty(ctx, duty, "duty_T", len(slots), 3, obj, weights)
+
+    # 初回勤務がセル 2 開始（セル 0, 1 は非勤務、セル 2, 3, 4, 5 が勤務）
+    for i, var in duty.items():
+        var.setInitialValue(1 if i in (2, 3, 4, 5) else 0)
+    ctx.prob += pulp.lpSum(obj)
+    prob = ctx.prob
+    prob.solve(pulp.PULP_CBC_CMD(msg=False))
+
+    assert pulp.LpStatus[prob.status] == "Optimal"
+    assert pulp.value(prob.objective) == pytest.approx(0.0), (
+        "スロット 0 以外から始まる初回勤務に出勤コストが課されてはいけない"
+    )
+
+
 def test_通勤ペナルティは昼休みでは効かない() -> None:
     """在勤が短い空白（1 セル）を挟む場合は罰が 0 になること。
 

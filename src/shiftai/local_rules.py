@@ -617,10 +617,32 @@ def preset_source(standard: StaffingStandard) -> str:
     return standard.remarks
 
 
+_PRESET_ALIASES: dict[str, str] = {
+    "fukuoka_city": "福岡市",
+    "fukuoka": "福岡市",
+    "tokyo": "東京都",
+    "tokyo_metropolitan": "東京都",
+    "yokohama": "横浜市",
+    "osaka": "大阪市",
+    "osaka_city": "大阪市",
+    "nagoya": "名古屋市",
+    "kyoto": "京都市",
+    "sapporo": "札幌市",
+    "kobe": "神戸市",
+    "kawasaki": "川崎市",
+    "generic": "全国基準（厚労省）",
+    "national": "全国基準（厚労省）",
+    "national_standard": "全国基準（厚労省）",
+    "national_2024": "全国基準（厚労省）",
+    "standard": "全国基準（厚労省）",
+}
+
+
 def get_standard(key: str) -> StaffingStandard:
     """プリセットキーから ``StaffingStandard`` を取得する。不明キーは ``KeyError``。"""
+    resolved_key = _PRESET_ALIASES.get(key, key)
     try:
-        return MUNICIPAL_PRESETS[key]
+        return MUNICIPAL_PRESETS[resolved_key]
     except KeyError as exc:
         raise KeyError(
             f"不明なプリセットキーです: {key!r}（選択肢: {', '.join(MUNICIPAL_PRESETS)}）"

@@ -230,7 +230,10 @@ def solve_monthly_hierarchical(
     # ---------------------------------------------------------
     # Stage 1: 月間日次パターンの割り当て (MILP)
     # ---------------------------------------------------------
-    stage1_time = min(max(time_limit_sec // 4, 15), 30)
+    if time_limit_sec <= 20:
+        stage1_time = max(1, time_limit_sec // 4)
+    else:
+        stage1_time = min(max(time_limit_sec // 4, 15), 30)
     stage1_slack: dict[str, float] = {}
     stage1_res = _solve_stage1_daily_patterns(
         context=context,
@@ -241,6 +244,18 @@ def solve_monthly_hierarchical(
     )
 
     _notify("STAGE_1_DONE", 20, extra={"stage1_patterns": len(stage1_res)})
+
+    if stage1_slack.get("stage1_status") == SolveStatus.INFEASIBLE.value:
+        return SolveResult(
+            status=SolveStatus.INFEASIBLE,
+            shift_days=[],
+            violations=[],
+            messages=["Stage 1 で月間日次パターンの実行可能解が見つかりませんでした（需要過多または制約不整合）。"],
+            stats={
+                "stage1_status": "INFEASIBLE",
+                "elapsed_sec": round(perf_counter() - started, 3),
+            },
+        )
 
     if _is_cancelled():
         return SolveResult(
@@ -306,16 +321,22 @@ def solve_monthly_hierarchical(
     had_chunk_error = False
 
     weights = effective_weights
-    remaining_budget = max(time_limit_sec - stage1_time, 30)
     chunks_n = max(len(day_chunks), 1)
     if parallel_workers > 1:
         waves = max(1, (chunks_n + parallel_workers - 1) // parallel_workers)
     else:
         waves = chunks_n
-    # タイムアウト下限: ギャップ収束のため 20 秒を確保したいが、
-    # 「波数 × 下限」が時間予算を大幅超過しないよう予算側で抑制する。
-    budget_per_wave = max(remaining_budget // waves, 10)
-    per_chunk_time = max(remaining_budget // chunks_n, 10, min(20, budget_per_wave))
+
+    if time_limit_sec <= 20:
+        remaining_budget = max(1, time_limit_sec - stage1_time)
+        budget_per_wave = max(1, remaining_budget // waves)
+        per_chunk_time = max(1, budget_per_wave)
+    else:
+        remaining_budget = max(time_limit_sec - stage1_time, 15)
+        # タイムアウト下限: ギャップ収束のため 20 秒を確保したいが、
+        # 「波数 × 下限」が時間予算を大幅超過しないよう予算側で抑制する。
+        budget_per_wave = max(remaining_budget // waves, 5)
+        per_chunk_time = max(remaining_budget // chunks_n, 5, min(20, budget_per_wave))
 
     total_chunks = len(day_chunks)
     completed_chunks = 0
@@ -395,6 +416,7 @@ def solve_monthly_hierarchical(
                 preferences=context.preferences,
                 staff=context.staff,
                 settings=context.facility_settings,
+                standard=context.standard,
             )
 
         # Timefold 思想: MILP が解なしまたはタイムアウトで実行不可能解となった場合、
@@ -824,22 +846,35 @@ def _solve_stage1_daily_patterns(
             pass
 
     prob.solve(chosen_solver)
+    status_str = pulp.LpStatus.get(prob.status, "Undefined")
+    is_infeasible = status_str == "Infeasible"
+    has_values = any(v.varValue is not None for v in x_vars.values())
+    if is_infeasible or not has_values:
+        stage1_status = SolveStatus.INFEASIBLE
+    else:
+        stage1_status = SolveStatus.OPTIMAL if status_str == "Optimal" else SolveStatus.FEASIBLE
+
     # Stage 1 の需要未充足（slack）を可視化する。
     # slack > 0 は「そのスロットをカバーできる職員が足りない」ことを意味し、
     # 最終的な BLOCKER の先行指標になる（K1 の診断用）。
     if stats_out is not None:
+        stats_out["stage1_status"] = stage1_status.value
         slack_staff = 0.0
         slack_qual = 0.0
-        for v in prob.variables():
-            value = v.varValue
-            if value is None or value <= 0.5:
-                continue
-            if v.name.startswith("slack_staff_"):
-                slack_staff += value
-            elif v.name.startswith("slack_qual_"):
-                slack_qual += value
-        stats_out["stage1_slack_staff"] = slack_staff
-        stats_out["stage1_slack_qual"] = slack_qual
+        if stage1_status is not SolveStatus.INFEASIBLE:
+            for v in prob.variables():
+                value = v.varValue
+                if value is None or value <= 0.5:
+                    continue
+                if v.name.startswith("slack_staff_"):
+                    slack_staff += value
+                elif v.name.startswith("slack_qual_"):
+                    slack_qual += value
+            stats_out["stage1_slack_staff"] = slack_staff
+            stats_out["stage1_slack_qual"] = slack_qual
+        else:
+            stats_out["stage1_slack_staff"] = None
+            stats_out["stage1_slack_qual"] = None
 
     assignments: dict[tuple[str, dt.date], str] = {
         (s.staff_id, d): "OFF" for s in context.staff for d in days

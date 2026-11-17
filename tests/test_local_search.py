@@ -74,3 +74,44 @@ def test_ruin_and_recreate_repairs_coverage():
         for state in s_dict.values() if state == CellState.WORK
     )
     assert worked_count > 0
+
+
+def test_ruin_and_recreate_respects_break_minutes():
+    """局所探索で割り当てられた勤務パターンに契約または設定に応じた休憩が含まれること。"""
+    days = [date(2026, 11, 1)]
+    staff = [
+        StaffMember(
+            staff_id="s1",
+            name="正規1",
+            roles=[Role.HOIKUSHI],
+            contract=Contract(weekly_hours=40.0, daily_hours=8.0, employment_type=EmploymentType.SEI, break_minutes=60),
+        ),
+    ]
+    children = [
+        ChildPlan(child_id="c1", name="園児1", day=days[0], age_class=AgeClass.AGE_1, arrive=time(9, 0), depart=time(17, 0))
+    ]
+    standard = local_rules.get_standard(local_rules.DEFAULT_PRESET_KEY)
+    reqs = build_requirements(children=children, days=days, standard=standard, day_open=time(9, 0), day_close=time(17, 0))
+
+    bad_days = [
+        ShiftDay(day=days[0], assignments={
+            "s1": {s.label: CellState.OFF for s in reqs.slots},
+        })
+    ]
+    initial_res = SolveResult(status=SolveStatus.PARTIAL, shift_days=bad_days, violations=[])
+    res = ruin_and_recreate(
+        initial_result=initial_res,
+        requirements=reqs,
+        staff=staff,
+        standard=standard,
+        settings=FacilitySettings(break_minutes=60),
+    )
+    break_slots = [
+        sl for sl, st in res.shift_days[0].assignments["s1"].items() if st == CellState.BREAK
+    ]
+    work_slots = [
+        sl for sl, st in res.shift_days[0].assignments["s1"].items() if st == CellState.WORK
+    ]
+    if work_slots:
+        assert len(break_slots) > 0  # 6h超パターン適用時に休憩が割り当てられている
+

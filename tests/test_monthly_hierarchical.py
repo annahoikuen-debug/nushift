@@ -108,3 +108,42 @@ def test_solve_monthly_hierarchical_success():
     res = solve_monthly_hierarchical(ctx, time_limit_sec=60)
     assert res.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE)
     assert len(res.shift_days) == 30
+
+
+def test_solve_monthly_hierarchical_stage1_infeasible(monkeypatch):
+    """Stage 1 が解なしの場合、全員OFFの表ではなく INFEASIBLE を返すこと。"""
+    from shiftai import monthly
+    from shiftai.domain import RequirementTable, Slot
+
+    def mock_stage1(*args, **kwargs):
+        stats_out = kwargs.get("stats_out")
+        if stats_out is not None:
+            stats_out["stage1_status"] = SolveStatus.INFEASIBLE.value
+        return {}
+
+    monkeypatch.setattr(monthly, "_solve_stage1_daily_patterns", mock_stage1)
+    days = [date(2026, 11, 1)]
+    c = Contract(weekly_hours=40.0, daily_hours=8.0, employment_type=EmploymentType.SEI)
+    s = StaffMember(staff_id="S1", name="常勤", roles=(Role.HOIKUSHI,), contract=c)
+    req = RequirementTable(
+        day_open=time(9, 0),
+        day_close=time(17, 0),
+        granularity_min=30,
+        slots=[Slot(time(9, 0), time(17, 0))],
+    )
+    ctx = MonthlySolveContext(
+        target_month="2026-11",
+        all_days=days,
+        staff=[s],
+        contracts={"S1": c},
+        preferences={},
+        patterns=[],
+        requirements=req,
+        facility_settings=FacilitySettings(),
+        fixed_assignments={},
+        prior_duty_history={},
+        monthly_holiday_target=0,
+    )
+    res = solve_monthly_hierarchical(ctx, time_limit_sec=5)
+    assert res.status == SolveStatus.INFEASIBLE
+    assert res.shift_days == []

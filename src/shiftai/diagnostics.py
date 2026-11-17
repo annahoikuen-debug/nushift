@@ -565,15 +565,12 @@ def relaxation_ladder(
             relaxation=level,
         )
         gaps = len([g for g in shortfall_rows(staff, requirements, preferences, settings)])
-        # ``PARTIAL`` は「ハード制約は満たすが配置基準に不足あり」で、
-        # ソフト制約化した 2 パス目が最適解を出すためこの状態になる。
-        # 修正前: OPTIMAL / FEASIBLE のみを「解けた」と判定していたため、
-        # 緩和ラダーが**まさにその目的だった**人員不足ケースを
-        # 「どの段階でも解けなかった」と誤報告していた。
-        solved = result.status in (
-            SolveStatus.OPTIMAL,
-            SolveStatus.FEASIBLE,
-            SolveStatus.PARTIAL,
+        # ``PARTIAL`` は「ハード制約は満たすが配置基準に不足あり」。
+        # L0（厳格）では不足は未解決（解けたとはみなさない）とし、
+        # L1（SOFT_COVERAGE）以上の緩和段階で初めて「緩和解として解けた」と判定する。
+        is_fully_solved = result.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE)
+        solved = is_fully_solved or (
+            result.status == SolveStatus.PARTIAL and level >= int(RelaxLevel.SOFT_COVERAGE)
         )
         outcomes.append(
             LadderOutcome(

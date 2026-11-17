@@ -131,18 +131,42 @@ def ruin_and_recreate(
                     if conflict:
                         continue
 
-                    # 候補シフトを作成（この職員にパターンを割り当て）
-                    trial_shift_days = [copy.deepcopy(d) for d in best_shift_days]
-                    trial_sd = next(d for d in trial_shift_days if d.day == target_day)
+                    # 候補シフトを作成（対象日のみ差分コピーして高速化）
+                    trial_shift_days = []
+                    trial_sd = None
+                    for d in best_shift_days:
+                        if d.day == target_day:
+                            trial_sd = ShiftDay(
+                                day=d.day,
+                                assignments={sid: dict(slots_map) for sid, slots_map in d.assignments.items()},
+                            )
+                            trial_shift_days.append(trial_sd)
+                        else:
+                            trial_shift_days.append(d)
 
-                    # パターン適用（6h超なら1h休憩）
+                    # パターン適用（6h超なら休憩）
                     span_m = p_end - p_start
+                    b_target = (
+                        sm.contract.break_minutes
+                        if sm.contract.break_minutes is not None
+                        else (settings.break_minutes if settings is not None else 60)
+                    )
                     has_break = span_m > 6 * 60
-                    break_start = p_start + (span_m // 2) - 30
+                    if has_break:
+                        actual_break_m = max(b_target, 60) if span_m > 8 * 60 else max(b_target, 45)
+                        granularity = slots[0].minutes if slots else 30
+                        break_slots_count = max(1, round(actual_break_m / granularity))
+                        break_duration = break_slots_count * granularity
+                        mid_m = p_start + (span_m - break_duration) // 2
+                        break_start = (mid_m // granularity) * granularity
+                        break_end = break_start + break_duration
+                    else:
+                        break_start = 0
+                        break_end = 0
 
                     for slot in slots:
                         if p_start <= slot.start_minutes and slot.end_minutes <= p_end:
-                            if has_break and (break_start <= slot.start_minutes < break_start + 60):
+                            if has_break and (break_start <= slot.start_minutes < break_end):
                                 trial_sd.assignments.setdefault(sm.staff_id, {})[slot.label] = CellState.BREAK
                             else:
                                 trial_sd.assignments.setdefault(sm.staff_id, {})[slot.label] = CellState.WORK

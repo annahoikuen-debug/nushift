@@ -603,9 +603,15 @@ def test_深夜閉所でも時間境界の判定が正しい():
     """``overlaps`` / ``contains`` が 00:00 終端でも破綻しないこと。"""
     slot = Slot(time(23, 30), time(0, 0))
     assert slot.overlaps(time(23, 0), time(23, 59)) is True
+    assert slot.overlaps(time(23, 0), time(0, 0)) is True
+    assert Slot(time(22, 0), time(0, 0)).overlaps(time(23, 0), time(0, 0)) is True
     assert slot.overlaps(time(0, 0), time(1, 0)) is False
     assert slot.overlaps(time(23, 0), time(23, 30)) is False
     assert slot.contains(time(23, 30), time(0, 0)) is True
+
+    # 24:00 終端スロットは標準時間（07:15〜17:15）に含まれない
+    std = _standard()
+    assert std.is_standard_time(slot) is False
 
 
 def test_深夜以外の時間帯は従来どおり():
