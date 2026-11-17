@@ -497,3 +497,55 @@ def test_violationsが空でも列を持つ(solved, small_requirements, slots_of
     )
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         assert "violations.csv" not in archive.namelist(), "空のときは同梱しない"
+
+
+def test_深夜割増時間の重なり計算が正確である():
+    """21:00-23:00の深夜は60分、04:00-06:00の深夜は60分として集計されること。"""
+    from datetime import date, time
+
+    from shiftai.domain import (
+        CellState,
+        Contract,
+        EmploymentType,
+        Role,
+        ShiftDay,
+        Slot,
+        SolveResult,
+        SolveStatus,
+        StaffMember,
+    )
+    from shiftai.exporter import payroll_dataframe
+
+    s1 = Slot(time(21, 0), time(23, 0))  # 120分中、22:00-23:00の60分が深夜
+    s2 = Slot(time(4, 0), time(6, 0))   # 120分中、04:00-05:00の60分が深夜
+    staff = [
+        StaffMember(
+            staff_id="NIGHT1",
+            name="夜勤テスト",
+            roles=(Role.HOIKUSHI,),
+            contract=Contract(
+                weekly_hours=40.0,
+                daily_hours=8.0,
+                employment_type=EmploymentType.PART,
+            ),
+        )
+    ]
+    shift_days = [
+        ShiftDay(
+            day=date(2026, 10, 1),
+            assignments={
+                "NIGHT1": {
+                    s1.label: CellState.WORK,
+                    s2.label: CellState.WORK,
+                }
+            },
+        )
+    ]
+    res = SolveResult(status=SolveStatus.OPTIMAL, shift_days=shift_days)
+    df = payroll_dataframe(res, [s1, s2], staff)
+    row = df[df["職員ID"] == "NIGHT1"].iloc[0]
+    # 合計実働は 4.0 時間 (240分)
+    assert row["実働時間"] == 4.0
+    # 深夜時間は 60分 + 60分 = 120分 = 2.0 時間
+    assert row["深夜時間"] == 2.0
+

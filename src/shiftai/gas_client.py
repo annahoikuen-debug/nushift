@@ -13,7 +13,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pandas as pd
@@ -106,7 +106,7 @@ class GasConfig:
     base_url: str
     sheet: str = "attendance"
     timeout_sec: int = DEFAULT_TIMEOUT
-    secret: str = ""
+    secret: str = field(default="", repr=False)
 
     @classmethod
     def from_env(cls) -> GasConfig | None:

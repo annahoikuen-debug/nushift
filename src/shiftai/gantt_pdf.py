@@ -381,6 +381,8 @@ def _layout_rows(row_count: int) -> tuple[int, int, float]:
     収まらないときだけ最小行高まで縮めてページ送りする。
     """
     available = _available_height()
+    if row_count <= 0:
+        return 1, 0, ROW_HEIGHT_MIN
     per_page_min = max(int(available / ROW_HEIGHT_MIN), 1)
     if row_count <= per_page_min:
         return 1, row_count, min(max(available / row_count, ROW_HEIGHT_MIN), ROW_HEIGHT_MAX)

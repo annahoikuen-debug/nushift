@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, time
 
 import pandas as pd
@@ -31,7 +32,6 @@ from shiftai.config import (
     DEFAULT_RANGE_DAYS,
     DEFAULT_RANGE_START,
 )
-from shiftai.domain import FacilitySettings
 from shiftai.ui import state, tab_data, theme
 
 KEY_MODE = "wizard_mode"
@@ -225,16 +225,7 @@ def _apply_conditions(day_open: time, day_close: time, start: date, count: int) 
     previous_times = (settings.day_open, settings.day_close)
     state.set(
         state.KEY_SETTINGS,
-        FacilitySettings(
-            facility_name=settings.facility_name,
-            day_open=day_open,
-            day_close=day_close,
-            granularity_min=settings.granularity_min,
-            closed_days=settings.closed_days,
-            holiday_dates=settings.holiday_dates,
-            rooms=settings.rooms,
-            labor_cost_per_hour=settings.labor_cost_per_hour,
-        ),
+        replace(settings, day_open=day_open, day_close=day_close),
     )
     state.reset(state.KEY_SLOTS)
     slots_error = state.current_slots_error()

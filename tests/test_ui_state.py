@@ -773,3 +773,19 @@ def test_指紋は画面に出しても邪魔にならない長さで返る():
         assert len(value) == 16
     finally:
         st.session_state.clear()
+
+
+def test_current_patterns_空タプル維持():
+    """set_patterns(()) で空にした後、既定パターンが勝手に復活しないこと。"""
+    st.session_state.clear()
+    state.init_state()
+    try:
+        st.session_state[state.KEY_PATTERNS_ENABLED] = True
+        # 未初期化（None）のときは default_patterns が生成される
+        pats = state.current_patterns()
+        assert len(pats) > 0
+        # 明示的に空タプルを設定
+        state.set_patterns(())
+        assert state.current_patterns() == ()
+    finally:
+        st.session_state.clear()

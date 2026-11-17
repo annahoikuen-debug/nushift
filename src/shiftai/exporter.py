@@ -29,6 +29,7 @@ from shiftai.domain import (
     format_jp_date,
     format_jp_date_full,
     japanese_weekday,
+    to_minutes,
 )
 
 SHIFT_DF_COLUMNS: list[str] = [
@@ -376,8 +377,12 @@ def payroll_dataframe(
                         early_days.add(shift_day.day)
                     if slot.overlaps(*LATE_WINDOW):
                         late_days.add(shift_day.day)
-                    if slot.start >= time(22, 0) or slot.end <= time(5, 0) or slot.overlaps(time(22, 0), time(23, 59)):
-                        night_min += slot.minutes
+                    # 深夜時間帯（22:00〜05:00）との厳密な重複分数を加算
+                    s_start = slot.start_minutes
+                    s_end = 24 * 60 if slot.is_midnight_end else to_minutes(slot.end)
+                    late_overlap = max(0, min(s_end, 24 * 60) - max(s_start, 22 * 60))
+                    early_overlap = max(0, min(s_end, 5 * 60) - max(s_start, 0))
+                    night_min += (late_overlap + early_overlap)
                     if is_holiday:
                         holiday_min += slot.minutes
                 elif state is CellState.BREAK:

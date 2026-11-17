@@ -137,6 +137,13 @@ def test_入力不備は終了コード1でTracebackを出さない(tmp_path, ca
     assert "Traceback (most recent call last)" not in captured.out + captured.err
 
 
+def test_compliance_不正なstandardは終了コード1でTracebackを出さない(capsys) -> None:
+    code = main(["compliance", "--regulation", "認可保育所", "--standard", "nonexistent_standard"])
+    captured = capsys.readouterr()
+    assert code == EXIT_ERROR
+    assert "Traceback (most recent call last)" not in captured.out + captured.err
+
+
 def test_versionオプションが値を返す(capsys) -> None:
     """``--version`` は argparse の ``action="version"`` なので SystemExit(0) する。"""
     with pytest.raises(SystemExit) as excinfo:

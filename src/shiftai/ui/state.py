@@ -85,6 +85,7 @@ KEY_SHORTFALL_ACK = "shortfall_ack"
 # 勤務パターンの整列（優先2: 早番・日勤・遅番へのスナップ）
 KEY_PATTERNS_ENABLED = "patterns_enabled"
 KEY_PATTERNS = "patterns"
+KEY_PATTERNS_USER_MODIFIED = "patterns_user_modified"
 KEY_PATTERN_SNAP = "pattern_snap"
 KEY_PATTERN_SNAP_REPORT = "pattern_snap_report"
 # 緩和モードと原因診断（優先3: Infeasible の特定）
@@ -127,6 +128,7 @@ DEFAULT_KEYS: dict[str, Any] = {
     KEY_TIME_LIMIT_SEC: DEFAULT_TIME_LIMIT_SEC,
     KEY_PATTERNS_ENABLED: False,
     KEY_PATTERNS: (),
+    KEY_PATTERNS_USER_MODIFIED: False,
     KEY_PATTERN_SNAP: True,
     KEY_PATTERN_SNAP_REPORT: None,
     KEY_RELAXATION: int(RelaxLevel.STRICT),
@@ -689,7 +691,8 @@ def current_patterns() -> tuple:
     if not get(KEY_PATTERNS_ENABLED):
         return ()
     patterns = get(KEY_PATTERNS)
-    if not patterns:
+    user_modified = get(KEY_PATTERNS_USER_MODIFIED)
+    if not patterns and not user_modified:
         from shiftai.shift_patterns import default_patterns
 
         settings = current_settings()
@@ -731,6 +734,7 @@ def set_patterns(patterns: Sequence[ShiftPattern]) -> None:
     慣習どおり）ので、毎フレームの保存後でも安全に使える。
     """
     set(KEY_PATTERNS, tuple(patterns))
+    set(KEY_PATTERNS_USER_MODIFIED, True)
     for prefix in _PATTERN_WIDGET_PREFIXES:
         for i in range(_PATTERN_WIDGET_SCAN_ROWS):
             st.session_state.pop(f"{prefix}{i}", None)

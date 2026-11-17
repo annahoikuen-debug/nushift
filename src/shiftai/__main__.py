@@ -326,7 +326,11 @@ def cmd_compliance(args: argparse.Namespace) -> int:
     except ValueError:
         _error(f"制度名が不正です: {args.regulation}")
         return EXIT_ERROR
-    standard = local_rules.get_standard(args.standard) if args.standard else None
+    try:
+        standard = local_rules.get_standard(args.standard) if args.standard else None
+    except KeyError as exc:
+        _error(str(exc))
+        return EXIT_ERROR
     try:
         spec = _facility_spec_from_csv(args, standard)
     except ValueError as exc:

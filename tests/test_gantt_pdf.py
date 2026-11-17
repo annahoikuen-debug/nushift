@@ -124,6 +124,13 @@ def test_layout_rows_uses_one_page_for_normal_headcount():
     assert gantt_pdf.ROW_HEIGHT_MIN <= height <= gantt_pdf.ROW_HEIGHT_MAX
 
 
+def test_layout_rows_with_zero_staff():
+    """職員数が 0 でも ZeroDivisionError にならないこと。"""
+    pages, per_page, height = gantt_pdf._layout_rows(0)
+    assert (pages, per_page) == (1, 0)
+    assert height == gantt_pdf.ROW_HEIGHT_MIN
+
+
 def test_layout_rows_paginates_instead_of_squeezing():
     """人数が多くても行高の下限は割らない。詰めて 1 枚にするよりページ送りする。"""
     pages, per_page, height = gantt_pdf._layout_rows(200)

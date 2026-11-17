@@ -112,6 +112,19 @@ def test_parse_time_範囲外はNone(value):
 def test_parse_time_Excelの分数():
     """1 未満の数値は「日の内割合」として解釈されること。"""
     assert parse_time(0.5) == time(12, 0)
+    # 端数で 1440分に丸められても 23:59 にキャップされて例外が出ないこと
+    assert parse_time(0.99999) == time(23, 59)
+
+
+def test_parse_time_午前午後():
+    """午前・午後が正しく 24時間制に変換されること。"""
+    assert parse_time("午後5時") == time(17, 0)
+    assert parse_time("午後5:30") == time(17, 30)
+    assert parse_time("午後12時") == time(12, 0)
+    assert parse_time("午前12時") == time(0, 0)
+    assert parse_time("午前9時") == time(9, 0)
+    assert parse_time("5:00 PM") == time(17, 0)
+    assert parse_time("9:30 AM") == time(9, 30)
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +209,15 @@ def test_infer_columns_空は空dict():
 # ---------------------------------------------------------------------------
 # load_children
 # ---------------------------------------------------------------------------
+
+
+def test_parse_age_class_才表記揺れ():
+    """「3才」「3才児」が「3歳」と同じく AgeClass.AGE_3 になること。"""
+    from shiftai.data_loader import _parse_age_class
+
+    assert _parse_age_class("3才") is AgeClass.AGE_3
+    assert _parse_age_class("3才児") is AgeClass.AGE_3
+    assert _parse_age_class("0才") is AgeClass.INFANT
 
 
 def test_load_children_正常系():
@@ -688,11 +710,12 @@ def test_read_table_Excel(tmp_path: Path):
 
 
 def test_read_table_文字列のCSV():
-    """パスでない CSV テキストも解釈できること。"""
+    """パスでない CSV テキストも解釈できること。IDの先頭ゼロが保持されること。"""
     out = read_table(
-        "園児ID,氏名,年齢,登園日,登園時刻,降園時刻\nC001,佐藤,3,2026-09-28,08:30,17:00\n",
-        "children",
+        "職員ID,氏名,資格（主）,雇用形態,週契約時間,1日契約時間\n001,佐藤,保育士,正職員,40,8\n",
+        "staff",
     )
+    assert out.loc[0, "職員ID"] == "001"
     assert len(out) == 1
 
 
@@ -839,3 +862,11 @@ def test_副資格が複数あっても例外にならない():
     members, issues = load_staff(frame)
     assert [i.level for i in issues if i.level == "error"] == []
     assert members[0].roles == (Role.HOIKUSHI, Role.KANGSHI, Role.EIYOU)
+
+
+def test_36協定の既定値は安全側False():
+    """36協定列が未指定または空の場合、安全側に倒して has_36_agreement=False となること。"""
+    frame = _cap_staff_frame()
+    members, _ = load_staff(frame)
+    assert members[0].contract.has_36_agreement is False
+

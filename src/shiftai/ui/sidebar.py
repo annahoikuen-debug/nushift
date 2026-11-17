@@ -20,6 +20,8 @@ from shiftai.config import (
     DEFAULT_GRANULARITY_MIN,
     DEFAULT_RANGE_DAYS,
     DEFAULT_RANGE_START,
+    DEFAULT_SEI_MAX_DAILY_HOURS,
+    DEFAULT_SEI_MIN_DAILY_HOURS,
     STATUTORY_WEEKLY_WORK_HOURS,
 )
 from shiftai.domain import (
@@ -173,8 +175,8 @@ def _render_facility(*, times: bool = True) -> None:
     with c_sei1:
         sei_min_h = st.number_input(
             "正社員 最低勤務時間（h）",
-            min_value=1.0,
-            max_value=8.0,
+            min_value=float(DEFAULT_SEI_MIN_DAILY_HOURS),
+            max_value=float(DEFAULT_SEI_MAX_DAILY_HOURS),
             value=float(st.session_state.get("sei_min_daily_hours", DEFAULT_SETTINGS.sei_min_daily_hours)),
             step=0.5,
             key="sei_min_daily_hours",
@@ -183,17 +185,16 @@ def _render_facility(*, times: bool = True) -> None:
     with c_sei2:
         sei_max_h = st.number_input(
             "正社員 最高勤務時間（h）",
-            min_value=4.0,
-            max_value=12.0,
+            min_value=float(DEFAULT_SEI_MIN_DAILY_HOURS),
+            max_value=float(DEFAULT_SEI_MAX_DAILY_HOURS),
             value=float(st.session_state.get("sei_max_daily_hours", DEFAULT_SETTINGS.sei_max_daily_hours)),
             step=0.5,
             key="sei_max_daily_hours",
             help="正社員が出勤する日の最高勤務時間（既定8.0時間）。",
         )
     previous = state.get(state.KEY_SETTINGS)
-    state.set(
-        state.KEY_SETTINGS,
-        FacilitySettings(
+    try:
+        new_settings = FacilitySettings(
             facility_name=st.session_state["facility_name"],
             day_open=day_open,
             day_close=day_close,
@@ -205,11 +206,13 @@ def _render_facility(*, times: bool = True) -> None:
             break_minutes=int(break_min),
             sei_min_daily_hours=float(sei_min_h),
             sei_max_daily_hours=float(sei_max_h),
-        ),
-    )
-    state.reset(state.KEY_SLOTS)
-    state.current_slots()
-    _invalidate_if_changed(previous, state.get(state.KEY_SETTINGS), "園設定を変更しました")
+        )
+        state.set(state.KEY_SETTINGS, new_settings)
+        state.reset(state.KEY_SLOTS)
+        state.current_slots()
+        _invalidate_if_changed(previous, new_settings, "園設定を変更しました")
+    except ValueError as exc:
+        st.error(f"園設定が不正です: {exc}")
     # 以前は current_slots() が ValueError を握り潰していたため、
     # この except 節は到達不能で「開所・閉所時刻の設定が不正です」が
     # 結局一周もしていなかった。current_slots_error() で理由を読む。

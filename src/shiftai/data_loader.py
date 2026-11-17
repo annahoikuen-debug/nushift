@@ -473,10 +473,13 @@ def parse_time(value: Any) -> time | None:
     if isinstance(value, int | float) and not isinstance(value, bool):
         frac = float(value)
         if 0.0 <= frac < 1.0:
-            total = int(round(frac * 24 * 60))
+            total = min(int(round(frac * 24 * 60)), 24 * 60 - 1)
             return time(hour=total // 60, minute=total % 60)
         return None
-    text = _digits(_text(value))
+    raw_text = _text(value)
+    pm = "午後" in raw_text or "PM" in raw_text.upper()
+    am = "午前" in raw_text or "AM" in raw_text.upper()
+    text = _digits(raw_text)
     if not text:
         return None
     text = (
@@ -484,27 +487,39 @@ def parse_time(value: Any) -> time | None:
         .replace("分", "")
         .replace("午前", "")
         .replace("午後", "")
+        .replace("AM", "")
+        .replace("PM", "")
+        .replace("am", "")
+        .replace("pm", "")
         .replace(";", ":")
     )
     text = text.rstrip(":")
+
+    def _adjust_hour(h: int) -> int:
+        if pm and h < 12:
+            return h + 12
+        if am and h == 12:
+            return 0
+        return h
+
     if re.match(r"^\d{1,2}$", text):
-        hour = int(text)
+        hour = _adjust_hour(int(text))
         return time(hour=hour) if 0 <= hour < 24 else None
     match = re.match(r"^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$", text)
     if match:
-        hour, minute = int(match.group(1)), int(match.group(2))
+        hour, minute = _adjust_hour(int(match.group(1))), int(match.group(2))
         second = int(match.group(3) or 0)
         if 0 <= hour < 24 and 0 <= minute < 60 and 0 <= second < 60:
             return time(hour=hour, minute=minute, second=second)
         return None
     match = re.match(r"^(\d{1,2})(\d{2})$", text)
     if match:
-        hour, minute = int(match.group(1)), int(match.group(2))
+        hour, minute = _adjust_hour(int(match.group(1))), int(match.group(2))
         if 0 <= hour < 24 and 0 <= minute < 60:
             return time(hour=hour, minute=minute)
     if text.isdigit() and len(text) in (3, 4, 5, 6):
         padded = text.zfill(4)
-        hour, minute = int(padded[:2]), int(padded[2:4])
+        hour, minute = _adjust_hour(int(padded[:2])), int(padded[2:4])
         if 0 <= hour < 24 and 0 <= minute < 60:
             return time(hour=hour, minute=minute)
     return None
@@ -613,7 +628,7 @@ def _parse_age_class(value: Any) -> AgeClass | None:
     text = _text(value)
     if not text:
         return None
-    normalized = unicodedata.normalize("NFKC", text)
+    normalized = unicodedata.normalize("NFKC", text).replace("才", "歳")
     years = _parse_int(normalized, None)
     if years is not None and not re.search(r"[^\d\.\-]", normalized):
         return AgeClass.from_years(years)
@@ -925,7 +940,7 @@ def load_staff(df: pd.DataFrame) -> tuple[list[StaffMember], list[LoadIssue]]:
         skills = frozenset(
             s.strip() for s in re.split(r"[|、,，/／\n\r]+", view.text("能力タグ")) if s.strip()
         )
-        has_36 = parse_bool(view.get("36協定"), default=True)
+        has_36 = parse_bool(view.get("36協定"), default=False)
         variable_hours = parse_bool(view.get("変形労働制"), default=False)
         try:
             contract = Contract(
@@ -1160,7 +1175,7 @@ def read_table(source: Any, kind: str = "children") -> pd.DataFrame:
             raise ValueError(f"JSON を解釈できません: {exc}") from exc
 
     text = _decode(data)
-    frame = pd.read_csv(io.StringIO(text))
+    frame = pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False)
     return frame
 
 

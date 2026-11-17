@@ -435,8 +435,7 @@ def _daily_cap_minutes(contract: Any) -> int:
 
 
 def _early_indices(slots: Sequence[Slot], standard: StaffingStandard | None) -> set[int]:
-    """早朝保育時間帯の添字集合（基準が無くても動くよう境界時刻で判定）。"""
+    """早朝保育時間帯の添字集合。"""
     if standard is None:
         return set()
-    boundary = to_minutes(standard.early_care_window[0])
-    return {i for i, slot in enumerate(slots) if slot.start_minutes <= boundary}
+    return {i for i, slot in enumerate(slots) if slot.overlaps(*standard.early_care_window)}

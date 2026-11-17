@@ -270,6 +270,12 @@ def test_reprにURLが出る(config):
     assert "attendance" in text
 
 
+def test_gas_config_repr_secret非表示():
+    """GasConfig の repr に secret の値が含まれないこと（ログへの漏えい防止）。"""
+    cfg = GasConfig(base_url="https://script.google.com/test", secret="SUPER_SECRET_KEY")
+    assert "SUPER_SECRET_KEY" not in repr(cfg)
+
+
 def test_push_tableの不正モード(config):
     """``mode`` が replace/append 以外は ``GasConfigError`` にすること。"""
     client = GoogleAppsScriptClient(config)

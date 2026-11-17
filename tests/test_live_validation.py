@@ -320,3 +320,20 @@ def test_深刻度のラベルは日本語():
     issue = live_validation.LiveIssue("error", "X", "本文")
     assert issue.level_label == "配置基準・契約違反"
     assert issue.is_error
+
+
+def test_early_indices_早朝時間帯の正しい判定():
+    """early_care_window (7:00〜8:30) と重なるスロットが正しくインデックスとして返ること。"""
+    from shiftai import local_rules
+    from shiftai.domain import build_slots
+    from shiftai.live_validation import _early_indices
+
+    slots = build_slots(time(7, 0), time(19, 0), granularity_min=30)
+    std = local_rules.get_standard("全国基準（厚労省）")
+    indices = _early_indices(slots, std)
+    # 7:00-7:30 (idx 0), 7:30-8:00 (idx 1), 8:00-8:30 (idx 2)
+    assert 0 in indices
+    assert 1 in indices
+    assert 2 in indices
+    # 8:30-9:00 (idx 3) は早朝帯外
+    assert 3 not in indices
