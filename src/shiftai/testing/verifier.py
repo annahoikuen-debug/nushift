@@ -109,30 +109,34 @@ class _SingleConstraintAssertion:
         prefs = {member.staff_id: preference} if preference else {}
         return self.given([member], shift_days, requirements, prefs)
 
-    def triggers_violation(self, expected_code: str | None = None, expected_count: int = 1) -> _SingleConstraintAssertion:
+    def triggers_violation(
+        self, expected_code: str | None = None, expected_count: int = 1
+    ) -> _SingleConstraintAssertion:
         """期待される違反コードと件数をアサートする。"""
         code = expected_code or self.constraint_id
         matched = [v for v in self._violations if v.code == code]
-        assert (
-            len(matched) == expected_count
-        ), f"制約 {code} の違反件数が期待と異なります: 期待={expected_count}, 実際={len(matched)} (全違反: {[v.code for v in self._violations]})"
+        assert len(matched) == expected_count, (
+            f"制約 {code} の違反件数が期待と異なります: 期待={expected_count}, 実際={len(matched)} (全違反: {[v.code for v in self._violations]})"
+        )
         return self
 
     def has_no_violations(self, constraint_code: str | None = None) -> _SingleConstraintAssertion:
         """違反が発生していないことをアサートする。"""
         code = constraint_code or self.constraint_id
         matched = [v for v in self._violations if v.code == code]
-        assert (
-            len(matched) == 0
-        ), f"制約 {code} の違反が発生してはなりませんが、{len(matched)} 件検出されました: {[v.message for v in matched]}"
+        assert len(matched) == 0, (
+            f"制約 {code} の違反が発生してはなりませんが、{len(matched)} 件検出されました: {[v.message for v in matched]}"
+        )
         return self
 
-    def penalizes_by(self, expected_penalty: float, tol: float = 1e-2) -> _SingleConstraintAssertion:
+    def penalizes_by(
+        self, expected_penalty: float, tol: float = 1e-2
+    ) -> _SingleConstraintAssertion:
         """期待されるスコア減点と一致するかアサートする。"""
         assert self._score is not None, "given() が先に呼ばれていません"
         match = self._score.matches.get(self.constraint_id)
         actual_impact = abs(match.score_impact) if match else 0.0
-        assert (
-            abs(actual_impact - expected_penalty) <= tol
-        ), f"制約 {self.constraint_id} の減点が期待と異なります: 期待={expected_penalty}, 実際={actual_impact}"
+        assert abs(actual_impact - expected_penalty) <= tol, (
+            f"制約 {self.constraint_id} の減点が期待と異なります: 期待={expected_penalty}, 実際={actual_impact}"
+        )
         return self

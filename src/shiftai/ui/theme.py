@@ -688,13 +688,13 @@ def format_day(day: Any, month: int | None = None, d: int | None = None) -> str:
 
 def format_ratio(value: float) -> str:
     """Ratio formatting for UI display.
-    
+
     Formats ratios for display, showing infinity as ∞ symbol.
     Used in requirements and solve tabs for staff-to-child ratios.
-    
+
     Args:
         value: The ratio value to format
-        
+
     Returns:
         Formatted string representation of the ratio
     """

@@ -1,13 +1,13 @@
-# ⚡ NuShift (shiftai v0.5.0)
+# ⚡ NuShift (shiftai v0.7.0)
 
 > **保育のすべてをつなぎ、先生の時間をこどもたちへ**  
 > 職員配置基準連動型 数理最適化シフト自動作成エンジン（NuShift）と、直感的な Streamlit UI による保育園・こども園向け勤務シフト自動生成システム。
 
-[![Version](https://img.shields.io/badge/version-v0.5.0-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-v0.7.0-blue.svg)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.13-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](pyproject.toml)
-[![Solver: HiGHS & CBC](https://img.shields.io/badge/Solver-HiGHS%20%7C%20CBC-orange.svg)](src/shiftai/solver.py)
+[![Solver: HiGHS 推奨](https://img.shields.io/badge/Solver-HiGHS%20推奨-blue.svg)](src/shiftai/solver.py)
 [![CI](https://img.shields.io/badge/CI-Tests%20%7C%20Lint-blueviolet.svg)](.github/workflows/tests.yml)
 [![Community](https://img.shields.io/badge/Community-Discussions-9cf.svg)](https://github.com/hoikuict/nushift/discussions)
 
@@ -31,6 +31,7 @@
    - 厚生労働省告示第49号（全国基準: 0歳3:1, 1・2歳6:1, 3歳15:1/20:1, 4・5歳25:1/30:1）および各自治体の独自基準に完全対応。
    - 保育所における**年度基準（4月1日時点の満年齢）**による学年・配置比率の自動適用。
    - 高速オープンソースソルバー **HiGHS** および **COIN-OR CBC** による高速求解。
+   - ⚠️ **適用範囲**: 本プリセットは **認可保育所（児童福祉法第32条の認可）** の配置基準に限定する。**認可外保育施設**（企業主導型・小規模・事業所内等）は配置基準・算出手法・資格要件が異なるため非対応。別途要綱に基づく検証が必要。
    - 貪欲法（Greedy）や外部初期解を用いた**ウォームスタート**により、大規模求解時間を大幅に短縮。
 2. **🛡️ 違反激減エンジン ＆ 法定義務最優先最適化 (Phase A〜G 統合)**
    - **罰則序列の根本是正**: 法定休憩不足（労基法第34条）ペナルティ（6,000）＞ 配置不足（3,000）＞ 分断勤務（2,500）の序列を確立。「人員を充足させるために休憩を削る」本末転倒な挙動を撲滅。
@@ -70,7 +71,7 @@
 | :--- | :--- | :--- |
 | **形態** | 総合保育ICTプラットフォーム (FastAPI Webアプリ) | シフト自動作成エンジン (Streamlit デスクトップUI) |
 | **ライセンス** | 商用プロプライエタリ (全権利保持) | **MIT License (オープンソース)** |
-| **バージョン** | v0.4.0 (nusoft v0.6.0) | **v0.5.0 (nusoft v0.6.0)** |
+| **バージョン** | v0.4.0 (nusoft v0.6.0) | **v0.7.0 (nusoft v0.7.0)** |
 | **主な用途** | 園児台帳・登降園・連絡帳・請求・シフト・監査ログ | シフト自動作成・労基法チェック・給与シミュレーション |
 | **ブランド** | nusoft | nusoft (NuShift) |
 
@@ -124,7 +125,20 @@ nushift/
 | **Python** | 3.11 または 3.12 | 公式サポート |
 | **メモリ** | 4 GB 以上推奨 | 大規模シフト求解時は 8 GB 推奨 |
 | **ディスク空き容量** | 2 GB 以上 | サンプルデータ・出力ファイルを含む |
-| **ソルバー** | HiGHS (推奨, `pip install highspy`) / COIN-OR CBC (PuLP同梱) | MILP 最適化用 |
+| **ソルバー** | **HiGHS（推奨, `pip install highspy`）** / COIN-OR CBC (PuLP同梱) | MILP 最適化用。30日一括モデルでは HiGHS を強く推奨（CBC は 60秒経過しても初期解が出せないことあり） |
+
+### HiGHS 推奨と CBC の制限事項
+
+NuShift では **HiGHS を既定ソルバーとして推奨** します。`src/shiftai/config.py` の `DEFAULT_SOLVER = "HiGHS"` で HiGHS が既定となっており、別途指定がない限り HiGHS が使用されます。
+
+**HiGHS を推奨する理由**:
+- **高速求解**: 30日一括モデル（66,396変数 / 75,358制約）で HiGHS は数秒〜数十秒で最適解を出せることが多い。
+- **初期解の安定性**: CBC は大規模モデルで 60秒を経過しても初期解すら出せないことが確認されている。
+- **メモリ効率**: 大規模モデルでも安定して動作し、タイムアウトのリスクが低い。
+
+**CBC の使用について**:
+COIN-OR CBC は PuLP に同梱されており、追加インストール不要です。ただし、30日一括などの大規模モデルでは解が出にくいため、小規模モデル（短期間・少人数）に限定して使用してください。大規模求解では必ず `pip install highspy` で HiGHS をインストールし、HiGHS を使用してください。
+
 | **ブラウザ** | Chrome / Edge / Safari 最新版 | Streamlit UI 表示用 |
 
 ### 4.2 インストール手順

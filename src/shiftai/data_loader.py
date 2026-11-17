@@ -298,7 +298,14 @@ _COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
     "勤務分数": ("勤務分数", "分数", "workminutes", "worked", "workmin"),
     "休憩分数": ("休憩分数", "休息分数", "breakminutes", "breakmin", "休憩分"),
     "36協定": ("36協定", "36協定締結", "36協定あり", "has_36_agreement", "has36agreement", "36"),
-    "変形労働制": ("変形労働制", "変形労働", "変形労働時間制", "variable_working_hours", "variableworkinghours", "1か月変形"),
+    "変形労働制": (
+        "変形労働制",
+        "変形労働",
+        "変形労働時間制",
+        "variable_working_hours",
+        "variableworkinghours",
+        "1か月変形",
+    ),
     "施設名": ("施設名", "園名", "facility", "facilityname"),
 }
 

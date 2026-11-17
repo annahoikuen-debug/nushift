@@ -107,8 +107,13 @@ def ruin_and_recreate(
 
             # この日の非勤務（OFF）職員を探す
             off_staff = [
-                s for s in placeable_staff
-                if all(sd.assignments.get(s.staff_id, {}).get(slot.label, CellState.OFF) == CellState.OFF for slot in slots)
+                s
+                for s in placeable_staff
+                if all(
+                    sd.assignments.get(s.staff_id, {}).get(slot.label, CellState.OFF)
+                    == CellState.OFF
+                    for slot in slots
+                )
             ]
 
             for sm in off_staff:
@@ -138,7 +143,9 @@ def ruin_and_recreate(
                         if d.day == target_day:
                             trial_sd = ShiftDay(
                                 day=d.day,
-                                assignments={sid: dict(slots_map) for sid, slots_map in d.assignments.items()},
+                                assignments={
+                                    sid: dict(slots_map) for sid, slots_map in d.assignments.items()
+                                },
                             )
                             trial_shift_days.append(trial_sd)
                         else:
@@ -167,9 +174,13 @@ def ruin_and_recreate(
                     for slot in slots:
                         if p_start <= slot.start_minutes and slot.end_minutes <= p_end:
                             if has_break and (break_start <= slot.start_minutes < break_end):
-                                trial_sd.assignments.setdefault(sm.staff_id, {})[slot.label] = CellState.BREAK
+                                trial_sd.assignments.setdefault(sm.staff_id, {})[slot.label] = (
+                                    CellState.BREAK
+                                )
                             else:
-                                trial_sd.assignments.setdefault(sm.staff_id, {})[slot.label] = CellState.WORK
+                                trial_sd.assignments.setdefault(sm.staff_id, {})[slot.label] = (
+                                    CellState.WORK
+                                )
 
                     # 評価
                     trial_result = SolveResult(
@@ -198,7 +209,10 @@ def ruin_and_recreate(
                     is_better = False
                     if trial_score.hard_score > best_score.hard_score:
                         is_better = True
-                    elif trial_score.hard_score == best_score.hard_score and trial_score.soft_score > best_score.soft_score:
+                    elif (
+                        trial_score.hard_score == best_score.hard_score
+                        and trial_score.soft_score > best_score.soft_score
+                    ):
                         is_better = True
 
                     if is_better:

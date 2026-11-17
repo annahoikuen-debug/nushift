@@ -44,8 +44,12 @@ def test_opening_closing_skill_requirements():
     # S3 has no special skill
     contract = Contract(weekly_hours=40.0, daily_hours=8.0)
     staff = [
-        StaffMember("S1", "早番リーダー", (Role.HOIKUSHI,), contract, skills=frozenset({SKILL_OPENING})),
-        StaffMember("S2", "遅番担当", (Role.HOIKUSHI,), contract, skills=frozenset({SKILL_CLOSING})),
+        StaffMember(
+            "S1", "早番リーダー", (Role.HOIKUSHI,), contract, skills=frozenset({SKILL_OPENING})
+        ),
+        StaffMember(
+            "S2", "遅番担当", (Role.HOIKUSHI,), contract, skills=frozenset({SKILL_CLOSING})
+        ),
         StaffMember("S3", "一般保育士", (Role.HOIKUSHI,), contract, skills=frozenset()),
     ]
 
@@ -67,7 +71,9 @@ def test_opening_closing_skill_requirements():
         for a in res.assignments
         if a.day == day and a.slot == first_slot and a.state in (CellState.WORK, CellState.BREAK)
     ]
-    assert "S1" in early_workers, f"Expected S1 with opening skill on first slot, got: {early_workers}"
+    assert "S1" in early_workers, (
+        f"Expected S1 with opening skill on first slot, got: {early_workers}"
+    )
 
     # Verify last slot has S2 (who has closing skill)
     last_slot = reqs.slots[-1]
@@ -128,4 +134,3 @@ def test_classroom_min_staff_assignment():
         if a.day == day and a.slot == core_slot and a.state in (CellState.WORK, CellState.BREAK)
     ]
     assert "S1" in assigned_workers, f"S1 (room_0 assigned) must work core slot: {assigned_workers}"
-

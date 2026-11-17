@@ -1,4 +1,5 @@
 """勤務3分割禁止・休憩時間45〜120分・正社員4〜8時間勤務柔軟化のテスト。"""
+
 from datetime import date, time
 
 import pytest
@@ -72,6 +73,7 @@ def test_gap_analysis_detects_3_split_shift_as_split_shift():
 
     # 3分割勤務: 勤務(0..1) -> 休み(2..3) -> 勤務(4..5) -> 休み(6..7) -> 勤務(8..9) -> 残り休み
     from shiftai.domain import ShiftDay, SolveResult
+
     row_s1: dict[str, CellState] = {}
     for i in range(16):
         if i in (0, 1, 4, 5, 8, 9):
@@ -112,6 +114,7 @@ def test_gap_analysis_fulltime_short_daily_hours():
 
     # 2時間（4スロット）のみ勤務
     from shiftai.domain import ShiftDay, SolveResult
+
     row_s1 = {slots[i].label: CellState.WORK if i < 4 else CellState.OFF for i in range(8)}
     shift_day = ShiftDay(day=d, assignments={"s1": row_s1})
     result = SolveResult(status=SolveStatus.FEASIBLE, shift_days=[shift_day])
@@ -146,6 +149,7 @@ def test_gap_analysis_fulltime_exceeded_daily_hours():
 
     # 7.5時間（15スロット）勤務
     from shiftai.domain import ShiftDay, SolveResult
+
     row_s1 = {slots[i].label: CellState.WORK if i < 15 else CellState.OFF for i in range(16)}
     shift_day = ShiftDay(day=d, assignments={"s1": row_s1})
     result = SolveResult(status=SolveStatus.FEASIBLE, shift_days=[shift_day])
@@ -174,6 +178,7 @@ def test_solver_respects_break_minutes_and_fulltime_hours():
         for i in range(20)  # 7:00 - 17:00
     ]
     from shiftai.domain import Requirement
+
     req_row = [
         Requirement(
             day=d,
@@ -225,6 +230,7 @@ def test_facility_settings_applied_to_solver():
         for i in range(20)  # 7:00 - 17:00
     ]
     from shiftai.domain import Requirement
+
     req_row = [
         Requirement(
             day=d,

@@ -45,7 +45,9 @@ __all__ = ["__version__", "compliance", "demand", "domain", "local_rules", "mont
 #: 以前は ``__all__`` に名前だけがあり、他のコードが先に
 #: ``import shiftai.compliance`` していない限り ``shiftai.compliance`` が
 #: 存在せず、``from shiftai import *`` も ``AttributeError`` で落ちていた。
-_LAZY_SUBMODULES = frozenset({"compliance", "demand", "domain", "local_rules", "monthly", "standards"})
+_LAZY_SUBMODULES = frozenset(
+    {"compliance", "demand", "domain", "local_rules", "monthly", "standards"}
+)
 
 
 def __getattr__(name: str):

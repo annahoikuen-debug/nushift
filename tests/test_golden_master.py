@@ -59,7 +59,9 @@ def _serialize_result(res: SolveResult) -> dict:
     return {
         "status": res.status.value,
         "is_feasible": is_feasible,
-        "objective_value": round(res.objective_value, 2) if res.objective_value is not None else None,
+        "objective_value": round(res.objective_value, 2)
+        if res.objective_value is not None
+        else None,
         "total_assignments": len(res.assignments),
         "work_count": sum(1 for a in res.assignments if a.state.value == "勤務"),
         "break_count": sum(1 for a in res.assignments if a.state.value == "休憩"),

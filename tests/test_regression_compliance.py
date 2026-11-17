@@ -79,9 +79,7 @@ def test_基準を満たす構成は適合になる() -> None:
         regulation=Regulation.CORPORATE_LED,
         capacity=20,
         monthly_children={AgeClass.INFANT: 12},
-        staff=tuple(
-            StaffRecord(f"H{i}", f"職員{i}", (Role.HOIKUSHI,), 40.0) for i in range(1, 6)
-        ),
+        staff=tuple(StaffRecord(f"H{i}", f"職員{i}", (Role.HOIKUSHI,), 40.0) for i in range(1, 6)),
         standard=None,
     )
     report = audit_facility(spec)

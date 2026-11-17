@@ -139,6 +139,7 @@ def test_early_and_late_care_ratio_deterministic():
     )
     early_kids = [c for c in children if c.uses_early_care]
     late_kids = [c for c in children if c.uses_late_care]
-    assert len(early_kids) == 3  # round(20 * 0.15) == 3 (以前の int(0.15*10)==1 では2人になっていた)
-    assert len(late_kids) == 4   # round(20 * 0.20) == 4
-
+    assert (
+        len(early_kids) == 3
+    )  # round(20 * 0.15) == 3 (以前の int(0.15*10)==1 では2人になっていた)
+    assert len(late_kids) == 4  # round(20 * 0.20) == 4

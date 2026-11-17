@@ -869,4 +869,3 @@ def test_36協定の既定値は安全側False():
     frame = _cap_staff_frame()
     members, _ = load_staff(frame)
     assert members[0].contract.has_36_agreement is False
-

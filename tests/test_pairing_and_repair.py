@@ -185,18 +185,14 @@ def test_solve_result_has_shortfall_property():
 
     partial = SolveResult(
         status=SolveStatus.PARTIAL,
-        violations=[
-            Violation(ViolationSeverity.BLOCKER, "SHORTFALL_STAFF", "不足")
-        ],
+        violations=[Violation(ViolationSeverity.BLOCKER, "SHORTFALL_STAFF", "不足")],
     )
     assert partial.ok is True
     assert partial.has_shortfall is True
 
     warned = SolveResult(
         status=SolveStatus.FEASIBLE,
-        violations=[
-            Violation(ViolationSeverity.WARNING, "DAILY_HOURS_EXCEEDED", "超過")
-        ],
+        violations=[Violation(ViolationSeverity.WARNING, "DAILY_HOURS_EXCEEDED", "超過")],
     )
     assert warned.ok is True
     assert warned.has_shortfall is False

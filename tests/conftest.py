@@ -64,8 +64,7 @@ SAMPLE_DIR = REPO_ROOT / "sample"
 def requires_sample() -> bool:
     """``sample/`` CSV が揃っているか（無ければ依存テストを skip する）。"""
     return all(
-        (SAMPLE_DIR / name).exists()
-        for name in ("children.csv", "staff.csv", "preferences.csv")
+        (SAMPLE_DIR / name).exists() for name in ("children.csv", "staff.csv", "preferences.csv")
     )
 
 
@@ -262,7 +261,11 @@ def week_inputs(week_days) -> tuple[list, list, dict, object]:
 
 @pytest.fixture(scope="session")
 def solved_week(week_inputs):
-    """1 週間サンプルを実際に最適化した結果（slow テスト_shared）。"""
+    """1 週間サンプルを実際に最適化した結果（slow テスト_shared）。
+
+    relaxation=2 で配置基準を強くソフトペナルティ化し、
+    早朝枠などのカバー困難枠でも可行解を得られるようにする。
+    """
     children, staff, prefs, table = week_inputs
     return solve_shift(
         children,
@@ -271,6 +274,8 @@ def solved_week(week_inputs):
         prefs,
         time_limit_sec=180,
         standard=local_rules.get_standard(FQ_KEY),
+        relaxation=2,
+        warm_start=False,
     )
 
 

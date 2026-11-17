@@ -101,9 +101,7 @@ def test_violation_baseline(pytestconfig):
         for key in expected_counts
         if current_counts.get(key, 0) > expected_counts[key]
     }
-    unexpected = {
-        key: value for key, value in current_counts.items() if key not in expected_counts
-    }
+    unexpected = {key: value for key, value in current_counts.items() if key not in expected_counts}
     assert not exceeded and not unexpected, (
         f"違反件数がベースラインを超えました。\n"
         f"baseline={expected_counts}\nactual={current_counts}\n"

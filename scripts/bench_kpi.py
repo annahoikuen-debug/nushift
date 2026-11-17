@@ -9,6 +9,7 @@ K4: MIPギャップ ≤ 3% 表示（7日×28名）
     cd /home/annahoikuen/nushift/nushift
     PYTHONPATH=src python3 scripts/bench_kpi.py
 """
+
 from __future__ import annotations
 
 import math
@@ -35,7 +36,17 @@ def run_bench(days_count: int, time_limit: int = 60) -> dict:
     # 特定日のみ希望休を解除し、それ以外は維持する。
     _RELIEF_DAYS = {date(2026, 11, 16), date(2026, 11, 19), date(2026, 11, 20)}
     _RELIEF_STAFF = {
-        "S01", "S02", "S03", "S08", "S09", "S10", "S11", "S12", "S13", "S15", "S16",
+        "S01",
+        "S02",
+        "S03",
+        "S08",
+        "S09",
+        "S10",
+        "S11",
+        "S12",
+        "S13",
+        "S15",
+        "S16",
     }
     for _sid in _RELIEF_STAFF:
         if _sid in prefs:
@@ -46,16 +57,25 @@ def run_bench(days_count: int, time_limit: int = 60) -> dict:
 
     settings = FacilitySettings()
     table = build_requirements(
-        children, days, STANDARD,
-        day_open=DEFAULT_DAY_OPEN, day_close=DEFAULT_DAY_CLOSE,
+        children,
+        days,
+        STANDARD,
+        day_open=DEFAULT_DAY_OPEN,
+        day_close=DEFAULT_DAY_CLOSE,
         granularity_min=DEFAULT_GRANULARITY_MIN,
     )
 
     t0 = time.perf_counter()
     res = solve_weekly(
-        children, staff, table, preferences=prefs, settings=settings,
-        time_limit_sec=time_limit, standard=STANDARD,
-        engine="hierarchical", parallel_workers=4,
+        children,
+        staff,
+        table,
+        preferences=prefs,
+        settings=settings,
+        time_limit_sec=time_limit,
+        standard=STANDARD,
+        engine="hierarchical",
+        parallel_workers=4,
     )
     wall = time.perf_counter() - t0
 
@@ -69,7 +89,8 @@ def run_bench(days_count: int, time_limit: int = 60) -> dict:
     gap = s.get("mip_gap")
     if gap is None or not (math.isfinite(float(gap)) and float(gap) < 1e29):
         finite_gaps = [
-            float(g) for g in (s.get("chunk_gaps") or [])
+            float(g)
+            for g in (s.get("chunk_gaps") or [])
             if g is not None and math.isfinite(float(g)) and float(g) < 1e29
         ]
         gap = max(finite_gaps) if finite_gaps else None
@@ -111,8 +132,16 @@ def main():
     print(f"  K3(solver≠greedy): {r30['K3']}  K4(gap≤3%): {r30['K4']}")
     print()
 
-    all_k = all([r7["K1"] == "✅", r7["K2"] == "✅", r7["K3"] == "✅",
-                 r30["K1"] == "✅", r30["K2"] == "✅", r30["K3"] == "✅"])
+    all_k = all(
+        [
+            r7["K1"] == "✅",
+            r7["K2"] == "✅",
+            r7["K3"] == "✅",
+            r30["K1"] == "✅",
+            r30["K2"] == "✅",
+            r30["K3"] == "✅",
+        ]
+    )
     print("総合判定:", "✅ 全 KPI 達成" if all_k else "⚠ 未達あり（ステップ32〜33を参照）")
 
 

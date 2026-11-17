@@ -10,6 +10,7 @@
 ``setInitialValue`` は ``varValue`` に格納されるため、``apply_warm_start``
 が設定した値がそのまま初期解になる。
 """
+
 from __future__ import annotations
 
 import pulp

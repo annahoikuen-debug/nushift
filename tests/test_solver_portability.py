@@ -54,4 +54,3 @@ def test_solver_diagnostic_info():
     assert "cbc_available" in info
     assert "available_solvers" in info
     assert isinstance(info["available_solvers"], list)
-

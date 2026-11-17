@@ -208,11 +208,11 @@ def _get_solver(
         try:
             num_threads = min(4, os.cpu_count() or 1)
             return (
-                HiGHSWithStart(                                    # ★変更（旧: pulp.HiGHS(）
+                HiGHSWithStart(  # ★変更（旧: pulp.HiGHS(）
                     msg=msg,
                     timeLimit=limit,
                     threads=num_threads,
-                    gapRel=config.HIGHS_GAP_REL,                   # ★変更（旧: 0.03）
+                    gapRel=config.HIGHS_GAP_REL,  # ★変更（旧: 0.03）
                     mip_heuristic_effort=config.HIGHS_MIP_HEURISTIC_EFFORT,  # ★変更（旧: 0.2）
                 ),
                 "HiGHS",
@@ -538,8 +538,14 @@ def _add_block(
     limit_blocks = max_blocks if max_blocks is not None else 1
     if not terms:
         if fixed_sum > limit_blocks:
-            if obj is None or weights is None or (max_blocks is not None and fixed_sum > max_blocks):
-                ctx.conflicts.append(f"{tag}: 勤務が {fixed_sum} ブロックに分かれており上限 {limit_blocks} を超過しています")
+            if (
+                obj is None
+                or weights is None
+                or (max_blocks is not None and fixed_sum > max_blocks)
+            ):
+                ctx.conflicts.append(
+                    f"{tag}: 勤務が {fixed_sum} ブロックに分かれており上限 {limit_blocks} を超過しています"
+                )
             else:
                 gap = pulp.LpVariable(f"{tag}_split", lowBound=0)
                 ctx.prob += gap >= fixed_sum - 1
@@ -878,7 +884,11 @@ def _build_cells(
             for i, slot in enumerate(slots):
                 key = (sid, day, i)
                 forced = fixed.get((sid, day, slot.label))
-                allowed = day_ok and ("contract" in drop_groups or _slot_is_contractible(st, slot)) and st.is_placeable
+                allowed = (
+                    day_ok
+                    and ("contract" in drop_groups or _slot_is_contractible(st, slot))
+                    and st.is_placeable
+                )
                 if allowed and _is_unavailable(prefs_st, day, slot):
                     allowed = False
                 if forced is CellState.WORK:
@@ -938,13 +948,18 @@ def _build_cells(
                 if st.contract.break_minutes is not None
                 else getattr(settings, "break_minutes", None) or break_minutes
             )
-            is_part_short = (
-                st.contract.daily_hours is not None and st.contract.daily_hours <= 6.0
-            )
-            if (st.contract.break_minutes is not None and st.contract.break_minutes == 0) or is_part_short or cap_min <= 6 * 60:
+            is_part_short = st.contract.daily_hours is not None and st.contract.daily_hours <= 6.0
+            if (
+                (st.contract.break_minutes is not None and st.contract.break_minutes == 0)
+                or is_part_short
+                or cap_min <= 6 * 60
+            ):
                 eff_break = 0
             else:
-                eff_break = min(max(raw_break, config.MIN_ALLOWABLE_BREAK_MINUTES), config.MAX_ALLOWABLE_BREAK_MINUTES)
+                eff_break = min(
+                    max(raw_break, config.MIN_ALLOWABLE_BREAK_MINUTES),
+                    config.MAX_ALLOWABLE_BREAK_MINUTES,
+                )
             max_blocks = (
                 st.contract.max_work_blocks_per_day
                 if st.contract.max_work_blocks_per_day is not None
@@ -955,7 +970,9 @@ def _build_cells(
                 # 案1: 1職員1日の在勤は1連続ブロック・休息は1回だけにする。
                 # allow_split=True（緩和 L3 ``RELAX_HOURS``）ならソフトに戻る。
                 _gran = max(1, int(requirements.granularity_min or slots[0].minutes))
-                _brk_slots = _break_slots(cap_min, eff_break, _gran, daily_hours=st.contract.daily_hours)
+                _brk_slots = _break_slots(
+                    cap_min, eff_break, _gran, daily_hours=st.contract.daily_hours
+                )
                 _add_duty_block(
                     ctx,
                     duty,
@@ -996,13 +1013,20 @@ def _build_cells(
                 _hard_le(ctx, yvar, _linear([(v, 1) for v in w_only]))
 
                 # 正社員の勤務時間は 4〜8時間の間で調整可能とする
-                if st.contract.employment_type == EmploymentType.SEI and "daily_cap" not in drop_groups:
+                if (
+                    st.contract.employment_type == EmploymentType.SEI
+                    and "daily_cap" not in drop_groups
+                ):
                     sei_min_h = (
                         st.contract.min_daily_hours
                         if st.contract.min_daily_hours is not None
-                        else getattr(settings, "sei_min_daily_hours", config.DEFAULT_SEI_MIN_DAILY_HOURS)
+                        else getattr(
+                            settings, "sei_min_daily_hours", config.DEFAULT_SEI_MIN_DAILY_HOURS
+                        )
                     )
-                    fac_sei_max_h = getattr(settings, "sei_max_daily_hours", config.DEFAULT_SEI_MAX_DAILY_HOURS)
+                    fac_sei_max_h = getattr(
+                        settings, "sei_max_daily_hours", config.DEFAULT_SEI_MAX_DAILY_HOURS
+                    )
                     if st.contract.max_daily_hours is not None:
                         sei_max_h = st.contract.max_daily_hours
                     elif st.contract.daily_hours is not None:
@@ -1175,7 +1199,9 @@ def _add_workload(
             obj.append(weights.break_conflict_penalty * excess)
 
 
-def _break_slots(cap_min: int, break_minutes: int, gran: int, daily_hours: float | None = None) -> int:
+def _break_slots(
+    cap_min: int, break_minutes: int, gran: int, daily_hours: float | None = None
+) -> int:
     """必要休憩スロット数を算出する（0 以上、日上限スロット数以下）。
 
     休憩不要の 6 時間以下は「契約上限」ではなく契約の標準勤務時間
@@ -1209,13 +1235,18 @@ def _add_breaks(
             else getattr(settings, "break_minutes", None) or break_minutes
         )
         cap_min = _daily_cap_minutes(st.contract)
-        is_part_short = (
-            st.contract.daily_hours is not None and st.contract.daily_hours <= 6.0
-        )
-        if (st.contract.break_minutes is not None and st.contract.break_minutes == 0) or is_part_short or cap_min <= 6 * 60:
+        is_part_short = st.contract.daily_hours is not None and st.contract.daily_hours <= 6.0
+        if (
+            (st.contract.break_minutes is not None and st.contract.break_minutes == 0)
+            or is_part_short
+            or cap_min <= 6 * 60
+        ):
             eff_break = 0
         else:
-            eff_break = min(max(raw_break, config.MIN_ALLOWABLE_BREAK_MINUTES), config.MAX_ALLOWABLE_BREAK_MINUTES)
+            eff_break = min(
+                max(raw_break, config.MIN_ALLOWABLE_BREAK_MINUTES),
+                config.MAX_ALLOWABLE_BREAK_MINUTES,
+            )
         need_slots = _break_slots(cap_min, eff_break, gran, daily_hours=st.contract.daily_hours)
         if need_slots <= 0:
             continue
@@ -1993,13 +2024,16 @@ def _build_problem(
         _add_consecutive(ctx, staff, requirements, obj, weights)
     _add_preferences(ctx, staff, requirements, prefs, kinds, obj, weights)
     _add_hours_objective(ctx, staff, requirements, obj, weights, prefs, fixed=fixed)
-    _add_pattern_alignment(ctx, staff, requirements, obj, weights, patterns or (), pattern_mode=pattern_mode)
+    _add_pattern_alignment(
+        ctx, staff, requirements, obj, weights, patterns or (), pattern_mode=pattern_mode
+    )
     if "fairness" not in drop_groups:
         _add_fairness(ctx, staff, requirements, obj, weights, standard, patterns or ())
     if pairing_rules:
         _add_pairing_rules(ctx, staff, requirements, pairing_rules, obj)
     if classrooms or require_leader or require_opening_closing_skill:
         from shiftai.solver_core.constraints.classrooms import _add_classroom_and_skill_constraints
+
         _add_classroom_and_skill_constraints(
             ctx=ctx,
             staff=staff,
@@ -2146,7 +2180,7 @@ def solve_shift(
         "num_slots": len(slots),
         "relaxation": level,
         "relaxation_label": RELAX_LEVELS[level].label,
-        "budget_sec": budget,          # ★追加（全体予算の記録）
+        "budget_sec": budget,  # ★追加（全体予算の記録）
         "relaxed_constraints": list(describe_relaxations(level)),
         "patterns": [p.label for p in payload.patterns],
         "pattern_mode": payload.pattern_mode,
@@ -2321,9 +2355,9 @@ def _run_solver(
     except Exception as exc:
         return SolveStatus.ERROR, f"SolveError / {exc}", actual_solver
     if stats is not None:
-        _collect_highs_info(ctx.prob, stats)                    # ★追加（ステップ3で追加済み）
-        if actual_solver == "HiGHS":                            # ★追加
-            stats["mip_start_status"] = "on"                    # ★追加
+        _collect_highs_info(ctx.prob, stats)  # ★追加（ステップ3で追加済み）
+        if actual_solver == "HiGHS":  # ★追加
+            stats["mip_start_status"] = "on"  # ★追加
     status_raw = pulp.LpStatus.get(ctx.prob.status, "Undefined")
     sol_raw = pulp.LpSolution.get(ctx.prob.sol_status, "No Solution Found")
     raw = f"{status_raw} / {sol_raw}"
@@ -2508,11 +2542,7 @@ def _best_effort(
     # オーバーヘッドが探索時間を圧迫する。大規模モデルで時間切れが自明な場合、
     # 初期解を渡しても結果は変わらず wall 時間だけが伸びる（実測: 7日28名で
     # wall 89s → 178s）。残り時間が十分なときだけ初期解を渡す。
-    warm_start = (
-        payload.warm_start
-        and bool(payload.warm_start_assignments)
-        and left >= 10
-    )
+    warm_start = payload.warm_start and bool(payload.warm_start_assignments) and left >= 10
     status, raw, actual_solver = _run_solver(
         soft,
         max(1, int(left)),
@@ -2578,8 +2608,8 @@ def _greedy(
     # （``PULP_CBC_CMD`` 固定だと HiGHS 環境で診断が誤解される）。
     result.stats["solver"] = "greedy"
     result.stats["fallback"] = "greedy"
-    result.stats["elapsed_sec"] = round(perf_counter() - started, 3)   # ★追加
-    result.stats["pass"] = 0                                            # ★追加（貪欲法パス）
+    result.stats["elapsed_sec"] = round(perf_counter() - started, 3)  # ★追加
+    result.stats["pass"] = 0  # ★追加（貪欲法パス）
     return result
 
 
@@ -3574,4 +3604,3 @@ def repair_shift_absence(
         require_opening_closing_skill=require_opening_closing_skill,
         time_limit_sec=time_limit_sec,
     )
-

@@ -398,20 +398,48 @@ class Contract:
     def __post_init__(self) -> None:
         if self.daily_hours <= 0 or self.weekly_hours <= 0:
             raise ValueError("契約時間は正である必要があります")
-        if self.min_daily_hours is not None and (self.min_daily_hours <= 0 or self.min_daily_hours > self.daily_hours):
+        if self.min_daily_hours is not None and (
+            self.min_daily_hours <= 0 or self.min_daily_hours > self.daily_hours
+        ):
             raise ValueError("min_daily_hours は 0 より大きく daily_hours 以下にしてください")
-        if self.max_daily_hours is not None and (self.max_daily_hours <= 0 or self.max_daily_hours > config.STATUTORY_DAILY_WORK_HOURS):
-            raise ValueError(f"max_daily_hours は 0 より大きく {config.STATUTORY_DAILY_WORK_HOURS} 以下にしてください")
-        if self.min_daily_hours is not None and self.max_daily_hours is not None and self.min_daily_hours > self.max_daily_hours:
+        if self.max_daily_hours is not None and (
+            self.max_daily_hours <= 0 or self.max_daily_hours > config.STATUTORY_DAILY_WORK_HOURS
+        ):
+            raise ValueError(
+                f"max_daily_hours は 0 より大きく {config.STATUTORY_DAILY_WORK_HOURS} 以下にしてください"
+            )
+        if (
+            self.min_daily_hours is not None
+            and self.max_daily_hours is not None
+            and self.min_daily_hours > self.max_daily_hours
+        ):
             raise ValueError("min_daily_hours は max_daily_hours 以下にしてください")
         if self.employment_type is EmploymentType.SEI:
-            if self.min_daily_hours is not None and self.min_daily_hours < config.DEFAULT_SEI_MIN_DAILY_HOURS:
-                raise ValueError(f"正社員の min_daily_hours は {config.DEFAULT_SEI_MIN_DAILY_HOURS}時間以上にしてください")
-            if self.max_daily_hours is not None and self.max_daily_hours > config.DEFAULT_SEI_MAX_DAILY_HOURS:
-                raise ValueError(f"正社員の max_daily_hours は {config.DEFAULT_SEI_MAX_DAILY_HOURS}時間以下にしてください")
-        if self.break_minutes is not None and not (config.MIN_ALLOWABLE_BREAK_MINUTES <= self.break_minutes <= config.MAX_ALLOWABLE_BREAK_MINUTES):
-            raise ValueError(f"break_minutes は {config.MIN_ALLOWABLE_BREAK_MINUTES}〜{config.MAX_ALLOWABLE_BREAK_MINUTES}分の範囲にしてください")
-        if self.max_work_blocks_per_day is not None and not (1 <= self.max_work_blocks_per_day <= 4):
+            if (
+                self.min_daily_hours is not None
+                and self.min_daily_hours < config.DEFAULT_SEI_MIN_DAILY_HOURS
+            ):
+                raise ValueError(
+                    f"正社員の min_daily_hours は {config.DEFAULT_SEI_MIN_DAILY_HOURS}時間以上にしてください"
+                )
+            if (
+                self.max_daily_hours is not None
+                and self.max_daily_hours > config.DEFAULT_SEI_MAX_DAILY_HOURS
+            ):
+                raise ValueError(
+                    f"正社員の max_daily_hours は {config.DEFAULT_SEI_MAX_DAILY_HOURS}時間以下にしてください"
+                )
+        if self.break_minutes is not None and not (
+            config.MIN_ALLOWABLE_BREAK_MINUTES
+            <= self.break_minutes
+            <= config.MAX_ALLOWABLE_BREAK_MINUTES
+        ):
+            raise ValueError(
+                f"break_minutes は {config.MIN_ALLOWABLE_BREAK_MINUTES}〜{config.MAX_ALLOWABLE_BREAK_MINUTES}分の範囲にしてください"
+            )
+        if self.max_work_blocks_per_day is not None and not (
+            1 <= self.max_work_blocks_per_day <= 4
+        ):
             raise ValueError("max_work_blocks_per_day は 1〜4 の範囲にしてください")
         if self.max_monthly_hours < self.min_monthly_hours:
             raise ValueError("max_monthly_hours は min_monthly_hours 以上にしてください")
@@ -950,7 +978,9 @@ class StaffingStandard:
         s_start = slot.start_minutes
         s_end = 24 * 60 if slot.is_midnight_end else to_minutes(slot.end)
         std_start = to_minutes(self.standard_time[0])
-        std_end = 24 * 60 if to_minutes(self.standard_time[1]) == 0 else to_minutes(self.standard_time[1])
+        std_end = (
+            24 * 60 if to_minutes(self.standard_time[1]) == 0 else to_minutes(self.standard_time[1])
+        )
         return std_start <= s_start and s_end <= std_end
 
     def slot_kind(self, slot: Slot) -> SlotKind:
@@ -1383,12 +1413,30 @@ class FacilitySettings:
     """正社員の1日最高勤務時間（時間）。"""
 
     def __post_init__(self) -> None:
-        if not (config.MIN_ALLOWABLE_BREAK_MINUTES <= self.break_minutes <= config.MAX_ALLOWABLE_BREAK_MINUTES):
-            raise ValueError(f"break_minutes は {config.MIN_ALLOWABLE_BREAK_MINUTES}〜{config.MAX_ALLOWABLE_BREAK_MINUTES}分の範囲にしてください")
-        if not (config.DEFAULT_SEI_MIN_DAILY_HOURS <= self.sei_min_daily_hours <= config.DEFAULT_SEI_MAX_DAILY_HOURS):
-            raise ValueError(f"sei_min_daily_hours は {config.DEFAULT_SEI_MIN_DAILY_HOURS}〜{config.DEFAULT_SEI_MAX_DAILY_HOURS}時間の範囲にしてください")
-        if not (config.DEFAULT_SEI_MIN_DAILY_HOURS <= self.sei_max_daily_hours <= config.DEFAULT_SEI_MAX_DAILY_HOURS):
-            raise ValueError(f"sei_max_daily_hours は {config.DEFAULT_SEI_MIN_DAILY_HOURS}〜{config.DEFAULT_SEI_MAX_DAILY_HOURS}時間の範囲にしてください")
+        if not (
+            config.MIN_ALLOWABLE_BREAK_MINUTES
+            <= self.break_minutes
+            <= config.MAX_ALLOWABLE_BREAK_MINUTES
+        ):
+            raise ValueError(
+                f"break_minutes は {config.MIN_ALLOWABLE_BREAK_MINUTES}〜{config.MAX_ALLOWABLE_BREAK_MINUTES}分の範囲にしてください"
+            )
+        if not (
+            config.DEFAULT_SEI_MIN_DAILY_HOURS
+            <= self.sei_min_daily_hours
+            <= config.DEFAULT_SEI_MAX_DAILY_HOURS
+        ):
+            raise ValueError(
+                f"sei_min_daily_hours は {config.DEFAULT_SEI_MIN_DAILY_HOURS}〜{config.DEFAULT_SEI_MAX_DAILY_HOURS}時間の範囲にしてください"
+            )
+        if not (
+            config.DEFAULT_SEI_MIN_DAILY_HOURS
+            <= self.sei_max_daily_hours
+            <= config.DEFAULT_SEI_MAX_DAILY_HOURS
+        ):
+            raise ValueError(
+                f"sei_max_daily_hours は {config.DEFAULT_SEI_MIN_DAILY_HOURS}〜{config.DEFAULT_SEI_MAX_DAILY_HOURS}時間の範囲にしてください"
+            )
         if self.sei_min_daily_hours > self.sei_max_daily_hours:
             raise ValueError("sei_min_daily_hours は sei_max_daily_hours 以下にしてください")
         if not (1 <= self.max_work_blocks_per_day <= 4):
@@ -1463,6 +1511,7 @@ class CancellationToken:
 
     def __init__(self) -> None:
         import threading
+
         self._event = threading.Event()
 
     def cancel(self) -> None:
@@ -1476,4 +1525,3 @@ class CancellationToken:
     def reset(self) -> None:
         """フラグをリセットする。"""
         self._event.clear()
-

@@ -266,7 +266,6 @@ def init_state() -> None:
         st.session_state[KEY_SOLVER_NAMES] = solver.available_solvers()
 
 
-
 def get(key: str, default: Any = None) -> Any:
     """session_state から値を返す。未設定なら既定値（コピー）を返す。"""
     value = st.session_state.get(key, None)

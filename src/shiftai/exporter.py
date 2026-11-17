@@ -284,11 +284,15 @@ def symbol_matrix_dataframe(
 
                 matched = match_pattern(start_m, end_m, active_patterns)
                 if matched is not None:
-                    symbol = getattr(matched, "effective_symbol", matched.symbol or matched.label[:2])
+                    symbol = getattr(
+                        matched, "effective_symbol", matched.symbol or matched.label[:2]
+                    )
                 else:
                     nearest = nearest_pattern_window(start_m, end_m, active_patterns)
                     if nearest is not None:
-                        symbol = getattr(nearest, "effective_symbol", nearest.symbol or nearest.label[:2])
+                        symbol = getattr(
+                            nearest, "effective_symbol", nearest.symbol or nearest.label[:2]
+                        )
                     else:
                         symbol = "出"
                 st_row[day_label] = symbol
@@ -366,7 +370,10 @@ def payroll_dataframe(
             is_holiday = shift_day.day in closed_days or shift_day.day in holiday_dates
             for slot in slots:
                 state = shift_day.get(member.staff_id, slot)
-                if state is CellState.OFF and (member.staff_id, shift_day.day, slot.label) in assign_map:
+                if (
+                    state is CellState.OFF
+                    and (member.staff_id, shift_day.day, slot.label) in assign_map
+                ):
                     state = assign_map[(member.staff_id, shift_day.day, slot.label)]
 
                 if state is CellState.WORK:
@@ -382,13 +389,13 @@ def payroll_dataframe(
                     s_end = 24 * 60 if slot.is_midnight_end else to_minutes(slot.end)
                     late_overlap = max(0, min(s_end, 24 * 60) - max(s_start, 22 * 60))
                     early_overlap = max(0, min(s_end, 5 * 60) - max(s_start, 0))
-                    night_min += (late_overlap + early_overlap)
+                    night_min += late_overlap + early_overlap
                     if is_holiday:
                         holiday_min += slot.minutes
                 elif state is CellState.BREAK:
                     break_min += slot.minutes
             if not is_holiday and day_work_min > 8 * 60:
-                overtime_min += (day_work_min - 8 * 60)
+                overtime_min += day_work_min - 8 * 60
 
         is_variable = member.contract.variable_working_hours or (
             settings is not None and settings.use_variable_working_hours

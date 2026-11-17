@@ -46,7 +46,9 @@ def test_app_state_init_creates_default_state():
     # None を許すキーと、値を持つキーを区別して検査する
     assert st.session_state[state.KEY_STANDARD_KEY] == state.DEFAULT_KEYS[state.KEY_STANDARD_KEY]
     assert st.session_state[state.KEY_DAYS] == []
-    assert st.session_state[state.KEY_TIME_LIMIT_SEC] == state.DEFAULT_KEYS[state.KEY_TIME_LIMIT_SEC]
+    assert (
+        st.session_state[state.KEY_TIME_LIMIT_SEC] == state.DEFAULT_KEYS[state.KEY_TIME_LIMIT_SEC]
+    )
 
 
 def test_state_init_function_runs():

@@ -59,10 +59,12 @@ def test_inject_cssとlegendが例外を投げない() -> None:
 
     def run_inject():
         from shiftai.ui import theme
+
         theme.inject_css()
 
     def run_legend():
         from shiftai.ui import theme
+
         theme.legend([("テスト", "#ffffff")])
 
     at = AppTest.from_function(run_inject)

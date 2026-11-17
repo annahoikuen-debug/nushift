@@ -397,7 +397,9 @@ def test_solver_commute_penalty_uses_prior_var() -> None:
 def test_data_loader_preserves_string_types() -> None:
     """CSV読み込みでゼロ落ち（001 -> 1）を防ぐため dtype=str が指定されていること。"""
     loader_py = (SRC / "data_loader.py").read_text(encoding="utf-8")
-    assert "dtype=str" in loader_py, "data_loader.py の read_table に dtype=str が指定されていません"
+    assert "dtype=str" in loader_py, (
+        "data_loader.py の read_table に dtype=str が指定されていません"
+    )
 
 
 def test_sidebar_sei_sliders_bounded_by_config() -> None:
@@ -409,4 +411,3 @@ def test_sidebar_sei_sliders_bounded_by_config() -> None:
     assert "DEFAULT_SEI_MAX_DAILY_HOURS" in sidebar_py, (
         "sidebar.py に DEFAULT_SEI_MAX_DAILY_HOURS の参照がありません"
     )
-

@@ -33,4 +33,3 @@ def test_data_loader_missing_required_column_fails_gracefully():
     # Missing mandatory columns like 園児ID, 登園日, 登園時刻, 降園時刻 must produce issues
     assert len(children) == 0
     assert len(issues) > 0
-

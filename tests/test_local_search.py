@@ -29,30 +29,46 @@ def test_ruin_and_recreate_repairs_coverage():
             staff_id="s1",
             name="正規1",
             roles=[Role.HOIKUSHI],
-            contract=Contract(weekly_hours=40.0, daily_hours=8.0, employment_type=EmploymentType.SEI),
+            contract=Contract(
+                weekly_hours=40.0, daily_hours=8.0, employment_type=EmploymentType.SEI
+            ),
         ),
         StaffMember(
             staff_id="s2",
             name="正規2",
             roles=[Role.HOIKUSHI],
-            contract=Contract(weekly_hours=40.0, daily_hours=8.0, employment_type=EmploymentType.SEI),
+            contract=Contract(
+                weekly_hours=40.0, daily_hours=8.0, employment_type=EmploymentType.SEI
+            ),
         ),
     ]
 
     children = [
-        ChildPlan(child_id="c1", name="園児1", day=d, age_class=AgeClass.AGE_1, arrive=time(9, 0), depart=time(17, 0))
+        ChildPlan(
+            child_id="c1",
+            name="園児1",
+            day=d,
+            age_class=AgeClass.AGE_1,
+            arrive=time(9, 0),
+            depart=time(17, 0),
+        )
         for d in days
     ]
 
     standard = local_rules.get_standard(local_rules.DEFAULT_PRESET_KEY)
-    reqs = build_requirements(children=children, days=days, standard=standard, day_open=time(9, 0), day_close=time(17, 0))
+    reqs = build_requirements(
+        children=children, days=days, standard=standard, day_open=time(9, 0), day_close=time(17, 0)
+    )
 
     # 全員 OFF の破綻解
     bad_days = [
-        ShiftDay(day=d, assignments={
-            "s1": {s.label: CellState.OFF for s in reqs.slots},
-            "s2": {s.label: CellState.OFF for s in reqs.slots},
-        })
+        ShiftDay(
+            day=d,
+            assignments={
+                "s1": {s.label: CellState.OFF for s in reqs.slots},
+                "s2": {s.label: CellState.OFF for s in reqs.slots},
+            },
+        )
         for d in days
     ]
     initial_res = SolveResult(status=SolveStatus.PARTIAL, shift_days=bad_days, violations=[])
@@ -69,9 +85,11 @@ def test_ruin_and_recreate_repairs_coverage():
     assert improved_res.stats["local_search_improved"] is True
     # 最低限誰かが WORK に割り当てられていること
     worked_count = sum(
-        1 for sd in improved_res.shift_days
+        1
+        for sd in improved_res.shift_days
         for sid, s_dict in sd.assignments.items()
-        for state in s_dict.values() if state == CellState.WORK
+        for state in s_dict.values()
+        if state == CellState.WORK
     )
     assert worked_count > 0
 
@@ -84,19 +102,36 @@ def test_ruin_and_recreate_respects_break_minutes():
             staff_id="s1",
             name="正規1",
             roles=[Role.HOIKUSHI],
-            contract=Contract(weekly_hours=40.0, daily_hours=8.0, employment_type=EmploymentType.SEI, break_minutes=60),
+            contract=Contract(
+                weekly_hours=40.0,
+                daily_hours=8.0,
+                employment_type=EmploymentType.SEI,
+                break_minutes=60,
+            ),
         ),
     ]
     children = [
-        ChildPlan(child_id="c1", name="園児1", day=days[0], age_class=AgeClass.AGE_1, arrive=time(9, 0), depart=time(17, 0))
+        ChildPlan(
+            child_id="c1",
+            name="園児1",
+            day=days[0],
+            age_class=AgeClass.AGE_1,
+            arrive=time(9, 0),
+            depart=time(17, 0),
+        )
     ]
     standard = local_rules.get_standard(local_rules.DEFAULT_PRESET_KEY)
-    reqs = build_requirements(children=children, days=days, standard=standard, day_open=time(9, 0), day_close=time(17, 0))
+    reqs = build_requirements(
+        children=children, days=days, standard=standard, day_open=time(9, 0), day_close=time(17, 0)
+    )
 
     bad_days = [
-        ShiftDay(day=days[0], assignments={
-            "s1": {s.label: CellState.OFF for s in reqs.slots},
-        })
+        ShiftDay(
+            day=days[0],
+            assignments={
+                "s1": {s.label: CellState.OFF for s in reqs.slots},
+            },
+        )
     ]
     initial_res = SolveResult(status=SolveStatus.PARTIAL, shift_days=bad_days, violations=[])
     res = ruin_and_recreate(
@@ -114,4 +149,3 @@ def test_ruin_and_recreate_respects_break_minutes():
     ]
     if work_slots:
         assert len(break_slots) > 0  # 6h超パターン適用時に休憩が割り当てられている
-

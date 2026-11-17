@@ -45,7 +45,7 @@ def generate_standard_children(
         late_count = int(round(c_cap.standard_time_count * late_care_ratio))
         for i in range(c_cap.standard_time_count):
             cid = f"C{child_seq:04d}"
-            name = f"{c_cap.class_name}_{i+1}"
+            name = f"{c_cap.class_name}_{i + 1}"
             child_seq += 1
 
             # 一部園児は早朝保育・延長保育を利用（先頭側と末尾側に分散配置）
@@ -75,7 +75,7 @@ def generate_standard_children(
         # 2. 保育短時間児の生成
         for i in range(c_cap.short_time_count):
             cid = f"C{child_seq:04d}"
-            name = f"{c_cap.class_name}_短_{i+1}"
+            name = f"{c_cap.class_name}_短_{i + 1}"
             child_seq += 1
 
             for day in days:
@@ -130,4 +130,3 @@ def build_requirements_from_capacity(
         holiday_dates=holiday_dates,
         enforce_min_two=enforce_min_two,
     )
-

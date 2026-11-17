@@ -70,10 +70,9 @@ def test_3分割勤務制約の単体検証():
         slots[5].label: CellState.OFF,
         slots[6].label: CellState.OFF,
     }
-    verifier.verify_that("SPLIT_SHIFT") \
-        .given_single_staff(member, {d: three_blocks}, table) \
-        .triggers_violation("SPLIT_SHIFT", expected_count=1) \
-        .penalizes_by(5000.0)
+    verifier.verify_that("SPLIT_SHIFT").given_single_staff(
+        member, {d: three_blocks}, table
+    ).triggers_violation("SPLIT_SHIFT", expected_count=1).penalizes_by(5000.0)
 
     # 2. 正常（連続1ブロック）: 9:00-10:30 WORK
     continuous = {
@@ -85,9 +84,9 @@ def test_3分割勤務制約の単体検証():
         slots[5].label: CellState.OFF,
         slots[6].label: CellState.OFF,
     }
-    verifier.verify_that("SPLIT_SHIFT") \
-        .given_single_staff(member, {d: continuous}, table) \
-        .has_no_violations()
+    verifier.verify_that("SPLIT_SHIFT").given_single_staff(
+        member, {d: continuous}, table
+    ).has_no_violations()
 
 
 def test_連続勤務日数上限の単体検証():
@@ -110,18 +109,18 @@ def test_連続勤務日数上限の単体検証():
     six_days = {days[i]: {slots[0].label: CellState.WORK} for i in range(6)}
     six_days[days[6]] = {slots[0].label: CellState.OFF}
 
-    verifier.verify_that("CONSECUTIVE_DAYS") \
-        .given_single_staff(member, six_days, table) \
-        .triggers_violation("CONSECUTIVE_DAYS", expected_count=1)
+    verifier.verify_that("CONSECUTIVE_DAYS").given_single_staff(
+        member, six_days, table
+    ).triggers_violation("CONSECUTIVE_DAYS", expected_count=1)
 
     # 2. 5連勤 (11/1 〜 11/5 WORK, 11/6 〜 11/7 OFF)
     five_days = {days[i]: {slots[0].label: CellState.WORK} for i in range(5)}
     five_days[days[5]] = {slots[0].label: CellState.OFF}
     five_days[days[6]] = {slots[0].label: CellState.OFF}
 
-    verifier.verify_that("CONSECUTIVE_DAYS") \
-        .given_single_staff(member, five_days, table) \
-        .has_no_violations()
+    verifier.verify_that("CONSECUTIVE_DAYS").given_single_staff(
+        member, five_days, table
+    ).has_no_violations()
 
 
 def test_希望休違反の単体検証():
@@ -143,13 +142,12 @@ def test_希望休違反の単体検証():
 
     # 不可日に出勤
     bad_work = {d: {slots[0].label: CellState.WORK}}
-    verifier.verify_that("WORK_ON_UNAVAILABLE") \
-        .given_single_staff(member, bad_work, table, preference=pref) \
-        .triggers_violation("WORK_ON_UNAVAILABLE", expected_count=1) \
-        .penalizes_by(50.0)
+    verifier.verify_that("WORK_ON_UNAVAILABLE").given_single_staff(
+        member, bad_work, table, preference=pref
+    ).triggers_violation("WORK_ON_UNAVAILABLE", expected_count=1).penalizes_by(50.0)
 
     # 不可日に公休 (OFF)
     good_off = {d: {slots[0].label: CellState.OFF}}
-    verifier.verify_that("WORK_ON_UNAVAILABLE") \
-        .given_single_staff(member, good_off, table, preference=pref) \
-        .has_no_violations()
+    verifier.verify_that("WORK_ON_UNAVAILABLE").given_single_staff(
+        member, good_off, table, preference=pref
+    ).has_no_violations()

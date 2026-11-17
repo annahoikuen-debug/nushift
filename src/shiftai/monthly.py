@@ -99,7 +99,9 @@ def _ensure_effective_patterns(context: MonthlySolveContext) -> list[ShiftPatter
     ]:
         if start_m >= open_min and start_m + full_span <= close_min:
             cand_patterns.append(
-                ShiftPattern(key, label, _clock_m(start_m), _clock_m(start_m + full_span), symbol=sym)
+                ShiftPattern(
+                    key, label, _clock_m(start_m), _clock_m(start_m + full_span), symbol=sym
+                )
             )
 
     # 2-1. 短時間早朝パート（開所直前〜開所後数時間、2〜3h拘束）
@@ -125,13 +127,25 @@ def _ensure_effective_patterns(context: MonthlySolveContext) -> list[ShiftPatter
         (9 * 60, "part_mid2", "中勤パート2", "中2"),
         (10 * 60, "part_mid3", "中勤パート3", "中3"),
         (13 * 60, "part_pm", "午後パート", "後1"),
-        (14 * 60, "part_ml", "午後夕方パート", "後3"),   # 14:00-19:00（5h、14:15と18:15を同時カバー）
-        (13 * 60 + 30, "part_bridge", "午後夕方ブリッジ", "後4"),   # 13:30-18:30（5h、13:30〜18:30を一括カバー）
+        (
+            14 * 60,
+            "part_ml",
+            "午後夕方パート",
+            "後3",
+        ),  # 14:00-19:00（5h、14:15と18:15を同時カバー）
+        (
+            13 * 60 + 30,
+            "part_bridge",
+            "午後夕方ブリッジ",
+            "後4",
+        ),  # 13:30-18:30（5h、13:30〜18:30を一括カバー）
         (close_min - part_span, "part_late", "遅番パート", "後2"),
     ]:
         if start_m >= open_min and start_m + part_span <= close_min:
             cand_patterns.append(
-                ShiftPattern(key, label, _clock_m(start_m), _clock_m(start_m + part_span), symbol=sym)
+                ShiftPattern(
+                    key, label, _clock_m(start_m), _clock_m(start_m + part_span), symbol=sym
+                )
             )
 
     # 既存パターンで上書き・優先マージ（重複する開始・終了時刻は既存を尊重）
@@ -159,7 +173,7 @@ def solve_monthly_hierarchical(
     cancellation_token: object | None = None,
     parallel_workers: int = 1,
     weights: ObjectiveWeights | None = None,
-    chunk_size: int = 1,                    # ★追加（将来調整用。日単位チャンク幅）
+    chunk_size: int = 1,  # ★追加（将来調整用。日単位チャンク幅）
 ) -> SolveResult:
     """2段階階層的アプローチにより月次一括シフトを求解する。
 
@@ -183,7 +197,9 @@ def solve_monthly_hierarchical(
             return bool(cancellation_token())
         return False
 
-    def _notify(stage: str, progress: int, day: str | None = None, extra: dict | None = None) -> None:
+    def _notify(
+        stage: str, progress: int, day: str | None = None, extra: dict | None = None
+    ) -> None:
         if progress_callback is None:
             return
         payload = {
@@ -222,9 +238,7 @@ def solve_monthly_hierarchical(
 
     # 有効な制約重み（DB または呼び出し元から注入）
     effective_weights = (
-        weights
-        or getattr(context, "weights", None)
-        or ObjectiveWeights(split_duty_penalty=5000.0)
+        weights or getattr(context, "weights", None) or ObjectiveWeights(split_duty_penalty=5000.0)
     )
 
     # ---------------------------------------------------------
@@ -250,7 +264,9 @@ def solve_monthly_hierarchical(
             status=SolveStatus.INFEASIBLE,
             shift_days=[],
             violations=[],
-            messages=["Stage 1 で月間日次パターンの実行可能解が見つかりませんでした（需要過多または制約不整合）。"],
+            messages=[
+                "Stage 1 で月間日次パターンの実行可能解が見つかりませんでした（需要過多または制約不整合）。"
+            ],
             stats={
                 "stage1_status": "INFEASIBLE",
                 "elapsed_sec": round(perf_counter() - started, 3),
@@ -307,10 +323,9 @@ def solve_monthly_hierarchical(
     # ---------------------------------------------------------
     # Stage 2: 日スライス単位の 30分スロット詳細配置 & 休憩スタッガー最適化
     # ---------------------------------------------------------
-    chunk_size = max(1, int(chunk_size))    # ★変更（旧: chunk_size = 1）
+    chunk_size = max(1, int(chunk_size))  # ★変更（旧: chunk_size = 1）
     day_chunks = [
-        context.all_days[i : i + chunk_size]
-        for i in range(0, len(context.all_days), chunk_size)
+        context.all_days[i : i + chunk_size] for i in range(0, len(context.all_days), chunk_size)
     ]
 
     all_shift_days: list[ShiftDay] = []
@@ -340,25 +355,40 @@ def solve_monthly_hierarchical(
 
     total_chunks = len(day_chunks)
     completed_chunks = 0
-    chunk_gaps: list[float] = []    # ★追加（各チャンクの mip_gap を集約）
+    chunk_gaps: list[float] = []  # ★追加（各チャンクの mip_gap を集約）
     progress_lock = threading.Lock()
 
-    def _solve_chunk_task(week_days: list[dt.date]) -> tuple[list[ShiftDay], list[Violation], list[str], SolveStatus, dict] | None:
+    def _solve_chunk_task(
+        week_days: list[dt.date],
+    ) -> tuple[list[ShiftDay], list[Violation], list[str], SolveStatus, dict] | None:
         if _is_cancelled():
             return None
 
         week_days_set = set(week_days)
         closed_days_set = set(getattr(context.facility_settings, "closed_days", None) or [])
         if all(
-            d in closed_days_set or (hasattr(context.requirements, "is_closed") and context.requirements.is_closed(d))
+            d in closed_days_set
+            or (hasattr(context.requirements, "is_closed") and context.requirements.is_closed(d))
             for d in week_days
         ):
             # 休園日は全職員 OFF の ShiftDay を直接生成して即時返却
             closed_sds = [
-                ShiftDay(day=d, assignments={s.staff_id: {slot.label: CellState.OFF for slot in slots} for s in context.staff})
+                ShiftDay(
+                    day=d,
+                    assignments={
+                        s.staff_id: {slot.label: CellState.OFF for slot in slots}
+                        for s in context.staff
+                    },
+                )
                 for d in week_days
             ]
-            return (closed_sds, [], [f"{d.isoformat()} は休園日のため全員 OFF です" for d in week_days], SolveStatus.OPTIMAL, {})
+            return (
+                closed_sds,
+                [],
+                [f"{d.isoformat()} は休園日のため全員 OFF です" for d in week_days],
+                SolveStatus.OPTIMAL,
+                {},
+            )
 
         week_children = [c for c in context.children if c.day in week_days_set]
 
@@ -421,9 +451,13 @@ def solve_monthly_hierarchical(
 
         # Timefold 思想: MILP が解なしまたはタイムアウトで実行不可能解となった場合、
         # 自動的に Ruin & Recreate 局所探索フォールバックを起動して修復する
-        if sub_res.status not in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE) or not sub_res.shift_days:
+        if (
+            sub_res.status not in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE)
+            or not sub_res.shift_days
+        ):
             try:
                 from shiftai.local_search import ruin_and_recreate
+
                 ls_res = ruin_and_recreate(
                     initial_result=sub_res,
                     requirements=week_requirements,
@@ -447,13 +481,21 @@ def solve_monthly_hierarchical(
             # inf / kHighsInf（≈1e30、解なし）は実測値として復元しない。
             sub_res.stats["mip_gap"] = chunk_mip_gap
 
-        return (sub_res.shift_days, sub_res.violations, sub_res.messages, sub_res.status, sub_res.stats)
+        return (
+            sub_res.shift_days,
+            sub_res.violations,
+            sub_res.messages,
+            sub_res.status,
+            sub_res.stats,
+        )
 
     was_cancelled = False
 
     if parallel_workers > 1 and len(day_chunks) > 1:
         # Partitioned Search: 日スライスを並列求解
-        chunk_results: dict[int, tuple[list[ShiftDay], list[Violation], list[str], SolveStatus]] = {}
+        chunk_results: dict[
+            int, tuple[list[ShiftDay], list[Violation], list[str], SolveStatus]
+        ] = {}
         with ThreadPoolExecutor(max_workers=min(parallel_workers, len(day_chunks))) as executor:
             future_to_idx = {
                 executor.submit(_solve_chunk_task, chunk): idx
@@ -480,11 +522,16 @@ def solve_monthly_hierarchical(
                     completed_chunks += 1
                     pct = 20 + int(75 * completed_chunks / total_chunks)
                     day_str = day_chunks[idx][0].isoformat() if day_chunks[idx] else None
-                    _notify("STAGE_2_SLOTS", min(pct, 95), day=day_str, extra={"completed_days": completed_chunks})
+                    _notify(
+                        "STAGE_2_SLOTS",
+                        min(pct, 95),
+                        day=day_str,
+                        extra={"completed_days": completed_chunks},
+                    )
 
         for idx in range(total_chunks):
             if idx in chunk_results:
-                sd_list, v_list, m_list, status, c_stats = chunk_results[idx]    # ★変更（stats 追加）
+                sd_list, v_list, m_list, status, c_stats = chunk_results[idx]  # ★変更（stats 追加）
                 all_shift_days.extend(sd_list)
                 all_violations.extend(v_list)
                 all_messages.extend(m_list)
@@ -512,7 +559,7 @@ def solve_monthly_hierarchical(
                 was_cancelled = True
                 break
 
-            sd_list, v_list, m_list, status, c_stats = res_tuple    # ★変更（stats 追加）
+            sd_list, v_list, m_list, status, c_stats = res_tuple  # ★変更（stats 追加）
             all_shift_days.extend(sd_list)
             all_violations.extend(v_list)
             all_messages.extend(m_list)
@@ -534,7 +581,12 @@ def solve_monthly_hierarchical(
             completed_chunks += 1
             pct = 20 + int(75 * completed_chunks / total_chunks)
             day_str = week_days[0].isoformat() if week_days else None
-            _notify("STAGE_2_SLOTS", min(pct, 95), day=day_str, extra={"completed_days": completed_chunks})
+            _notify(
+                "STAGE_2_SLOTS",
+                min(pct, 95),
+                day=day_str,
+                extra={"completed_days": completed_chunks},
+            )
 
     # 解けた日をソート
     all_shift_days.sort(key=lambda x: x.day)
@@ -568,8 +620,8 @@ def solve_monthly_hierarchical(
             "elapsed_sec": round(perf_counter() - started, 3),
             "stage1_slack_staff": stage1_slack.get("stage1_slack_staff", 0.0),
             "stage1_slack_qual": stage1_slack.get("stage1_slack_qual", 0.0),
-            "chunk_gaps": chunk_gaps,                                   # ★追加
-            "mip_gap_max": max(chunk_gaps) if chunk_gaps else None,     # ★追加
+            "chunk_gaps": chunk_gaps,  # ★追加
+            "mip_gap_max": max(chunk_gaps) if chunk_gaps else None,  # ★追加
         },
     )
     try:
@@ -587,19 +639,21 @@ def solve_monthly_hierarchical(
     except Exception:
         pass
 
-    _notify("DONE", 100, extra={
-        "status": res.status.value,
-        "days": len(res.shift_days),
-        "hard_score": res.score.hard_score if res.score else 0,
-        "soft_score": res.score.soft_score if res.score else 0.0,
-    })
+    _notify(
+        "DONE",
+        100,
+        extra={
+            "status": res.status.value,
+            "days": len(res.shift_days),
+            "hard_score": res.score.hard_score if res.score else 0,
+            "soft_score": res.score.soft_score if res.score else 0.0,
+        },
+    )
 
     return res
 
 
-def _target_holidays(
-    monthly_target: int, days_count: int, contract: Contract | None
-) -> int:
+def _target_holidays(monthly_target: int, days_count: int, contract: Contract | None) -> int:
     """期間日数に応じた公休目標日数を算出する。
 
     月間公休目標（``monthly_holiday_target``、例: 30 日で 8 休）は 1 か月基準の
@@ -696,7 +750,7 @@ def _solve_stage1_daily_patterns(
                 d = u.day
                 u_start = u.start.hour * 60 + u.start.minute
                 u_end = u.end.hour * 60 + u.end.minute
-                is_all_day = (u_start == 0 and u_end >= 23 * 60 + 50)
+                is_all_day = u_start == 0 and u_end >= 23 * 60 + 50
                 for p in patterns:
                     if is_all_day:
                         prob += x_vars[(sid, d, p.key)] == 0
@@ -741,9 +795,7 @@ def _solve_stage1_daily_patterns(
     # 「7日 - 公休8日 = 勤務上限 -1日」による実行不可能を防止する）
     for sid in staff_ids:
         contract = context.contracts.get(sid)
-        target_holidays = _target_holidays(
-            context.monthly_holiday_target, len(days), contract
-        )
+        target_holidays = _target_holidays(context.monthly_holiday_target, len(days), contract)
 
         work_days_target = len(days) - target_holidays
         prob += pulp.lpSum([duty_vars[(sid, d)] for d in days]) <= work_days_target
@@ -767,7 +819,8 @@ def _solve_stage1_daily_patterns(
 
     # 制約5: 日次最低必要人員（大まかな確保）および時間帯別カバー制約（朝・昼・夕の必要人員と有資格者）
     qualified_staff_ids = {
-        s.staff_id for s in placeable_staff
+        s.staff_id
+        for s in placeable_staff
         if getattr(s, "is_qualified", False) or s.has_role(Role.HOIKUSHI)
     }
     slots = tuple(context.requirements.slots)
@@ -776,7 +829,9 @@ def _solve_stage1_daily_patterns(
         req_list = context.requirements.for_day(d)
         max_req = max([r.needed_staff for r in req_list], default=0)
         if max_req > 0:
-            prob += pulp.lpSum([duty_vars[(sid, d)] for sid in staff_ids]) >= min(max_req, len(staff_ids))
+            prob += pulp.lpSum([duty_vars[(sid, d)] for sid in staff_ids]) >= min(
+                max_req, len(staff_ids)
+            )
 
         # スロットごとの時間帯別カバー制約
         for idx, s in enumerate(slots):
@@ -791,34 +846,28 @@ def _solve_stage1_daily_patterns(
                 continue
 
             # 昼休憩帯（11:30〜14:30）は交代休憩があるためバッファ +1
-            is_lunch_peak = (11 * 60 + 30 <= mid_min < 14 * 60 + 30)
+            is_lunch_peak = 11 * 60 + 30 <= mid_min < 14 * 60 + 30
             target_staff = n_staff + (1 if is_lunch_peak else 0)
             target_qual = n_qual + (1 if is_lunch_peak else 0)
 
             if n_staff > 0:
                 v_slack_s = pulp.LpVariable(f"slack_staff_{d.isoformat()}_{idx}", lowBound=0)
-                prob += (
-                    pulp.lpSum([x_vars[(sid, d, pk)] for sid in staff_ids for pk in covering_pats])
-                    + v_slack_s
-                    >= min(target_staff, len(staff_ids))
-                )
+                prob += pulp.lpSum(
+                    [x_vars[(sid, d, pk)] for sid in staff_ids for pk in covering_pats]
+                ) + v_slack_s >= min(target_staff, len(staff_ids))
                 obj_terms.append(v_slack_s * 100000)
 
             if n_qual > 0 and qualified_staff_ids:
                 v_slack_q = pulp.LpVariable(f"slack_qual_{d.isoformat()}_{idx}", lowBound=0)
-                prob += (
-                    pulp.lpSum([x_vars[(sid, d, pk)] for sid in qualified_staff_ids for pk in covering_pats])
-                    + v_slack_q
-                    >= min(target_qual, len(qualified_staff_ids))
-                )
+                prob += pulp.lpSum(
+                    [x_vars[(sid, d, pk)] for sid in qualified_staff_ids for pk in covering_pats]
+                ) + v_slack_q >= min(target_qual, len(qualified_staff_ids))
                 obj_terms.append(v_slack_q * 120000)
 
     # 制約6: 職員の公平な勤務日数平準化（契約別の目標日数に基づく目的関数）
     for sid in staff_ids:
         contract = context.contracts.get(sid)
-        target_holidays = _target_holidays(
-            context.monthly_holiday_target, len(days), contract
-        )
+        target_holidays = _target_holidays(context.monthly_holiday_target, len(days), contract)
 
         target_work_days = max(0, len(days) - target_holidays)
         work_diff = pulp.LpVariable(f"diff_{sid}", lowBound=0)

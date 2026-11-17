@@ -101,9 +101,7 @@ def _widget_key_nodes() -> Iterator[tuple[str, int, str, ast.expr, dict[str, str
                     yield (path.name, node.lineno, func.attr, keyword.value, consts)
 
 
-def _resolve_key(
-    node: ast.expr, consts: dict[str, str]
-) -> tuple[str, str]:
+def _resolve_key(node: ast.expr, consts: dict[str, str]) -> tuple[str, str]:
     """``key=`` の式を ``("literal", 値)`` / ``("prefix", 接頭辞)`` / ``("unresolved", 表現)`` に。"""
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return ("literal", node.value)
@@ -178,7 +176,7 @@ def test_状態保持ウィジェットの動的キーが接頭辞で管理下�
             continue
         if value in managed or value in EXEMPT_PREFIXES:
             continue
-        offenders.append(f"{filename}:{lineno}: {widget}(key=f\"{value}...\") の接頭辞が未管理")
+        offenders.append(f'{filename}:{lineno}: {widget}(key=f"{value}...") の接頭辞が未管理')
     assert not offenders, (
         "reset_all() で消えない動的ウィジェットキーがある"
         "（DYNAMIC_WIDGET_PREFIXES に登録するか、理由付きで EXEMPT_PREFIXES に追加すること）:\n"
@@ -196,8 +194,8 @@ def test_ウィジェットキーの式がすべて解決できる():
         kind, value = _resolve_key(key_node, consts)
         if kind == "unresolved":
             offenders.append(f"{filename}:{lineno}: {widget} の key={value} を解決できない")
-    assert not offenders, "解決できない key= がある（定数化するか EXEMPT に理由付きで追加）:\n" + "\n".join(
-        offenders
+    assert not offenders, (
+        "解決できない key= がある（定数化するか EXEMPT に理由付きで追加）:\n" + "\n".join(offenders)
     )
 
 
@@ -206,13 +204,11 @@ def test_除外リストの接頭辞はリセット経路を持つ():
 
     理由の書かれた消し忘れを防ぐ（書いた理由が嘘だったらテストが赤になる）。
     """
-    sources = {
-        path.name: path.read_text(encoding="utf-8") for path in sorted(UI_DIR.glob("*.py"))
-    }
+    sources = {path.name: path.read_text(encoding="utf-8") for path in sorted(UI_DIR.glob("*.py"))}
     for prefix, reason in EXEMPT_PREFIXES.items():
-        needle = f"pop(f\"{prefix}"
+        needle = f'pop(f"{prefix}'
         found = any(needle in body for body in sources.values())
-        assert found, f"{prefix!r}: {reason} というが pop(f\"{prefix}... がソースに無い"
+        assert found, f'{prefix!r}: {reason} というが pop(f"{prefix}... がソースに無い'
 
 
 # ---------------------------------------------------------------------------
@@ -233,9 +229,7 @@ def test_月次コンテキストがstandardを渡している(filename: str):
     calls = _monthly_context_calls(filename)
     assert calls, f"{filename} に MonthlySolveContext の呼び出しが無い"
     offenders = [
-        f"{filename}:{call.lineno}"
-        for call in calls
-        if "standard" not in _call_keyword_names(call)
+        f"{filename}:{call.lineno}" for call in calls if "standard" not in _call_keyword_names(call)
     ]
     assert not offenders, "standard を渡していない月次コンテキストがある:\n" + "\n".join(offenders)
 
@@ -257,9 +251,7 @@ def test_週モードも引き続きstandardを渡している(filename: str):
     ]
     assert calls, f"{filename} に solve_weekly の呼び出しが無い"
     offenders = [
-        f"{filename}:{call.lineno}"
-        for call in calls
-        if "standard" not in _call_keyword_names(call)
+        f"{filename}:{call.lineno}" for call in calls if "standard" not in _call_keyword_names(call)
     ]
     assert not offenders, "solve_weekly が standard を受け取っていない:\n" + "\n".join(offenders)
 

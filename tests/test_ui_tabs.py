@@ -694,9 +694,7 @@ def test_すべて初期化がウィジェットキーと衝突しない(tmp_pat
     assert any(b.key == "clear_all_confirm" for b in at.button), "確認ダイアログが出ていない"
 
     at.button(key="clear_all_confirm").click().run()
-    assert not at.exception, [
-        str(e.value) for e in at.exception
-    ] or "すべて初期化が例外で失敗した"
+    assert not at.exception, [str(e.value) for e in at.exception] or "すべて初期化が例外で失敗した"
     assert at.session_state[state.KEY_PATTERNS_ENABLED] is False
     assert at.session_state[state.KEY_PATTERNS] == ()
 
@@ -725,7 +723,9 @@ def test_set_patternsが行ウィジェットの旧状態を消す():
         st.session_state.clear()
 
 
-def test_月次モードの求解が基準と重みをコンテキストに渡す(tmp_path, required_payload, solved_day, monkeypatch):
+def test_月次モードの求解が基準と重みをコンテキストに渡す(
+    tmp_path, required_payload, solved_day, monkeypatch
+):
     """UI の月次求解が ``standard`` / ``weights`` を ``MonthlySolveContext`` に渡すこと。
 
     回帰テスト（``docs/18_実装計画_残課題とリグレッション防止.md`` WP-2）。
@@ -771,7 +771,9 @@ def test_月次モードの求解が基準と重みをコンテキストに渡�
     assert ctx is not None, "月次コンテキストが生成されていない（月次モードになっていない）"
     assert ctx.standard is not None, "MonthlySolveContext.standard が None"
     assert ctx.standard.name == local_rules.get_standard(target).name, "選んだ基準が届いていない"
-    assert ctx.weights is not None, "MonthlySolveContext.weights が None（重みスライダーが無視される）"
+    assert ctx.weights is not None, (
+        "MonthlySolveContext.weights が None（重みスライダーが無視される）"
+    )
 
 
 def _expander_labels(at) -> list[str]:
@@ -1027,9 +1029,7 @@ def test_シフト表タブは時間帯を生成できないとエラーにす�
 # --------------------------------------------------------------------------
 
 
-def test_シンプルモードでもシフト表セクションが描画される(
-    tmp_path_factory, solved_payload
-) -> None:
+def test_シンプルモードでもシフト表セクションが描画される(tmp_path_factory, solved_payload) -> None:
     """3 タブ構成の「② シフト作成」の中にシフト表が出ること。
 
     以前は ``tab_shift.render`` の呼び出しが ``else`` 枝の中だけにあり、
@@ -1117,8 +1117,14 @@ def test_すべて初期化は園設定も消す(tmp_path):
 
 
 def test_実アプリのシンプルモードでシフト表が出る(
-    solved_payload, one_day, small_children, small_staff, small_preferences,
-    small_requirements, solved_day, standard,
+    solved_payload,
+    one_day,
+    small_children,
+    small_staff,
+    small_preferences,
+    small_requirements,
+    solved_day,
+    standard,
 ) -> None:
     """``streamlit_app.py`` を 1 フレーム流して、シフト表がタブ②に出ること。
 
@@ -1139,9 +1145,7 @@ def test_実アプリのシンプルモードでシフト表が出る(
         "standard_key": STANDARD_KEY,
     }.items():
         at.session_state[key] = value
-    at.session_state[state.KEY_LOAD_RESULT] = solved_payload["state"][
-        state.KEY_LOAD_RESULT
-    ]
+    at.session_state[state.KEY_LOAD_RESULT] = solved_payload["state"][state.KEY_LOAD_RESULT]
     at.session_state[state.KEY_CHILDREN] = list(small_children)
     at.session_state[state.KEY_STAFF] = list(small_staff)
     at.session_state[state.KEY_PREFERENCES] = dict(small_preferences)
@@ -1158,8 +1162,13 @@ def test_実アプリのシンプルモードでシフト表が出る(
 
 
 def test_計画期間を変えると再計算を訴える(
-    solved_payload, one_day, small_children, small_staff, small_preferences,
-    small_requirements, solved_day,
+    solved_payload,
+    one_day,
+    small_children,
+    small_staff,
+    small_preferences,
+    small_requirements,
+    solved_day,
 ) -> None:
     """日数を変えると上部の状態が「再計算が必要」に変わり、計算結果も消えること。
 
@@ -1180,9 +1189,7 @@ def test_計画期間を変えると再計算を訴える(
         "standard_key": STANDARD_KEY,
     }.items():
         at.session_state[key] = value
-    at.session_state[state.KEY_LOAD_RESULT] = solved_payload["state"][
-        state.KEY_LOAD_RESULT
-    ]
+    at.session_state[state.KEY_LOAD_RESULT] = solved_payload["state"][state.KEY_LOAD_RESULT]
     at.session_state[state.KEY_CHILDREN] = list(small_children)
     at.session_state[state.KEY_STAFF] = list(small_staff)
     at.session_state[state.KEY_PREFERENCES] = dict(small_preferences)
@@ -1203,9 +1210,7 @@ def test_計画期間を変えると再計算を訴える(
     at.number_input(key="range_days").set_value(3).run()
     assert not at.exception, [str(e.value) for e in at.exception]
     captions = [c.value for c in at.caption]
-    assert any("再計算が必要です" in c for c in captions), (
-        f"状態が更新されていない: {captions}"
-    )
+    assert any("再計算が必要です" in c for c in captions), f"状態が更新されていない: {captions}"
     assert at.session_state[state.KEY_STALE_REASON] == "計画期間を変更しました"
     assert at.session_state[state.KEY_SOLVE_RESULT] is None, "古い解が残っている"
     # シンプルモードの「② シフト作成」は ``auto_requirements=True`` なので、
@@ -1214,9 +1219,7 @@ def test_計画期間を変えると再計算を訴える(
     # を確認する。
     table = at.session_state[state.KEY_REQUIREMENTS]
     if table is not None:
-        assert len(table.all_days()) == 3, (
-            f"古い必要人員が残っている: {table.all_days()}"
-        )
+        assert len(table.all_days()) == 3, f"古い必要人員が残っている: {table.all_days()}"
 
 
 def test_シフト表セクションは例外なく描画される(tmp_path, solved_payload):
@@ -1228,9 +1231,7 @@ def test_シフト表セクションは例外なく描画される(tmp_path, sol
     assert len(at.dataframe) >= 4
 
 
-def test_シフト表セクションは埋め込み時は小見出しだけを出す(
-    tmp_path, solved_payload
-) -> None:
+def test_シフト表セクションは埋め込み時は小見出しだけを出す(tmp_path, solved_payload) -> None:
     """``in_simple=True`` のときは番号つき大見出しを出さず、小見出しだけを出す。
 
     シンプルモードに「4」は存在しないため。``render()`` は上級者モード用の
@@ -1243,9 +1244,7 @@ def test_シフト表セクションは埋め込み時は小見出しだけを�
     blob.write_bytes(pickle.dumps(solved_payload))
     script = path / "embedded_app.py"
     script.write_text(
-        DRIVER_HEAD.format(
-            src=str(SRC), root=str(ROOT), tab_imports="tab_shift", blob=str(blob)
-        )
+        DRIVER_HEAD.format(src=str(SRC), root=str(ROOT), tab_imports="tab_shift", blob=str(blob))
         + "tab_shift.render_section(in_simple=True)\n",
         encoding="utf-8",
     )
@@ -1434,9 +1433,7 @@ def test_未達なら手順と移動ボタンが出る(tmp_path, solved_payload,
     assert "export_help_fix" in {b.key for b in at.button}, "シフト表へ移るボタンが無い"
 
 
-def test_未達手順のメッセージはダウンロード不能を明示する(
-    tmp_path, solved_payload, one_day, slots
-):
+def test_未達手順のメッセージはダウンロード不能を明示する(tmp_path, solved_payload, one_day, slots):
     """手順の説明に、ダウンロードできないことと手順名があること。"""
     payload = {key: dict(value) for key, value in solved_payload.items()}
     payload["state"][state.KEY_VIOLATIONS] = [_warning_violation(one_day[0], slots[0])]
@@ -1467,9 +1464,7 @@ def test_解除手順の出し分けは確認リストに一致する(export_app
     assert ("ダウンロードを解除する手順" in body) is unmet
 
 
-def test_修正ボタンはシフト表のタブへ移動する(
-    tmp_path, solved_payload, one_day, slots
-):
+def test_修正ボタンはシフト表のタブへ移動する(tmp_path, solved_payload, one_day, slots):
     """出力タブの修正ボタンで、シフト表のタブが選択されること。
 
     以前は「上の修正ボタンを押してください」とだけ言ってタブを移動しなかったため、
@@ -1483,9 +1478,7 @@ def test_修正ボタンはシフト表のタブへ移動する(
     assert at.session_state[theme.MAIN_TABS_KEY] == theme.tab_position("shift")
 
 
-def test_セルで直せない違反は理由と件数を示す(
-    tmp_path, solved_payload, one_day, slots
-):
+def test_セルで直せない違反は理由と件数を示す(tmp_path, solved_payload, one_day, slots):
     """日や職員を特定できない違反には修正ボタンを作らず、理由を示すこと。
 
     以前は修正ボタンが 1 つも出ないままダウンロードだけが無効化され、
@@ -1768,7 +1761,6 @@ def test_固定セル一覧は本日のみ解除と全解除を出し分ける(t
     assert day_clear, "本日の確定のみ解除ボタンが無い"
     assert all_clear, "すべての確定を全解除するボタンが無い"
     assert "本日" in day_clear[0].label
-
 
 
 def _run_widget_script(tmp_path: Path, body: str, *, payload: Any = None) -> Any:

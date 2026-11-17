@@ -110,7 +110,9 @@ def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveRes
                 days_list = table.all_days()
                 contracts_map = {s.staff_id: s.contract for s in staff if s.contract}
                 m_ctx = MonthlySolveContext(
-                    target_month=f"{days_list[0].year:04d}-{days_list[0].month:02d}" if days_list else "",
+                    target_month=f"{days_list[0].year:04d}-{days_list[0].month:02d}"
+                    if days_list
+                    else "",
                     all_days=days_list,
                     staff=staff,
                     contracts=contracts_map,
@@ -135,6 +137,7 @@ def run_solve(*, force: bool = False, relaxation: int | None = None) -> SolveRes
                 )
             else:
                 from shiftai.weekly import solve_weekly
+
                 result = solve_weekly(
                     children,
                     staff,
@@ -201,9 +204,6 @@ def _clear_solve_outputs() -> None:
         state.KEY_PATTERN_SNAP_REPORT,
     ):
         state.reset(key)
-
-
-
 
 
 def _render_diagnosis(table: Any, result: SolveResult | None) -> None:
@@ -420,7 +420,7 @@ def _render_precheck(table: Any) -> None:
     supply = state.contract_hours()
     ratio = state.supply_demand_ratio(required)
     shown = theme.format_ratio(ratio)
-    
+
     # 画面上部には1行の要約ステータスのみを表示して情報量をスリム化
     if required <= 0:
         st.info("登降園予定が登録されていません。")
@@ -594,7 +594,9 @@ def _render_staffing_curve(result: SolveResult) -> None:
     if table is None or not days:
         st.info("比較できるデータがありません。")
         return
-    with st.expander("人員配置グラフ・詳細数値表・職員別勤務時間（クリックで展開）", expanded=False):
+    with st.expander(
+        "人員配置グラフ・詳細数値表・職員別勤務時間（クリックで展開）", expanded=False
+    ):
         day = st.selectbox(
             "表示する日",
             options=days,
@@ -719,7 +721,9 @@ def render(*, auto_requirements: bool = False, embed_shift: bool = False) -> Non
         st.radio(
             "最適化モード",
             options=["weekly", "monthly"],
-            format_func=lambda m: "週単位 (7日間)" if m == "weekly" else "月次一括 (2段階階層的最適化)",
+            format_func=lambda m: (
+                "週単位 (7日間)" if m == "weekly" else "月次一括 (2段階階層的最適化)"
+            ),
             key="solve_mode",
             horizontal=True,
             help="1ヶ月などの長期シフトを作成する場合は「月次一括」を選択すると、公休目標や連勤制限を守りながら高速に解けます。",
@@ -729,7 +733,9 @@ def render(*, auto_requirements: bool = False, embed_shift: bool = False) -> Non
             st.radio(
                 "週次エンジン",
                 options=["hierarchical", "legacy"],
-                format_func=lambda e: "階層エンジン (推奨)" if e == "hierarchical" else "旧単一モデル",
+                format_func=lambda e: (
+                    "階層エンジン (推奨)" if e == "hierarchical" else "旧単一モデル"
+                ),
                 key="solve_engine",
                 horizontal=True,
                 help="hierarchical: 日単位チャンクで並列求解（高速）/ legacy: 旧単一モデル",
@@ -803,7 +809,11 @@ def render_result_section(*, embed_shift: bool = False) -> None:
     v_title = (
         f"法令・配置基準の抵触詳細（🚨 要修正 {len(blockers)} 件 / 全 {len(violations)} 件）"
         if has_blockers
-        else (f"運用上の確認事項（{len(violations)} 件）" if violations else "法令・配置基準の違反なし（0 件）")
+        else (
+            f"運用上の確認事項（{len(violations)} 件）"
+            if violations
+            else "法令・配置基準の違反なし（0 件）"
+        )
     )
     with st.expander(v_title, expanded=has_blockers):
         components.render_violations(violations)

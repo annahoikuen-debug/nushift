@@ -361,7 +361,8 @@ def coverage_matrix(
             actual = sum(
                 1
                 for s in staff
-                if s.is_placeable and lookup.get((s.staff_id, day, slot.label), CellState.OFF) is CellState.WORK
+                if s.is_placeable
+                and lookup.get((s.staff_id, day, slot.label), CellState.OFF) is CellState.WORK
             )
             row[slot.label] = f"{actual}/{need}"
         records.append(row)
@@ -615,7 +616,10 @@ def check_violations(
                         ),
                         day=day,
                         staff_id=sid,
-                        detail={"hours": round(work_minutes / 60.0, 2), "min_hours": round(min_h, 2)},
+                        detail={
+                            "hours": round(work_minutes / 60.0, 2),
+                            "min_hours": round(min_h, 2),
+                        },
                     )
                 )
 
@@ -634,7 +638,10 @@ def check_violations(
                             ),
                             day=day,
                             staff_id=sid,
-                            detail={"hours": round(work_minutes / 60.0, 2), "max_hours": round(max_h, 2)},
+                            detail={
+                                "hours": round(work_minutes / 60.0, 2),
+                                "max_hours": round(max_h, 2),
+                            },
                         )
                     )
             if work_idx and (work_idx[0] < 0 or work_idx[-1] >= n):
@@ -692,7 +699,10 @@ def check_violations(
             eff_target_break = (
                 c.break_minutes
                 if c and c.break_minutes is not None
-                else (getattr(fac, "break_minutes", None) or (int(standard.break_minutes) if standard is not None else 60))
+                else (
+                    getattr(fac, "break_minutes", None)
+                    or (int(standard.break_minutes) if standard is not None else 60)
+                )
             )
             if work_minutes > config.STATUTORY_LONG_SHIFT_MINUTES:
                 required = max(required, eff_target_break)
@@ -749,7 +759,9 @@ def check_violations(
                 if runs > max_blocks:
                     out.append(
                         Violation(
-                            severity=ViolationSeverity.BLOCKER if runs >= 3 else ViolationSeverity.WARNING,
+                            severity=ViolationSeverity.BLOCKER
+                            if runs >= 3
+                            else ViolationSeverity.WARNING,
                             code="SPLIT_SHIFT",
                             message=(
                                 f"{sid} は {day.isoformat()} の勤務が {runs} ブロックに分かれており、"
@@ -824,7 +836,10 @@ def check_violations(
                                 "36協定の締結がないため違法となります。"
                             ),
                             staff_id=sid,
-                            detail={"total_hours": round(total_hours, 2), "cap": round(statutory_period_cap, 2)},
+                            detail={
+                                "total_hours": round(total_hours, 2),
+                                "cap": round(statutory_period_cap, 2),
+                            },
                         )
                     )
                 else:
@@ -838,7 +853,10 @@ def check_violations(
                                 "36協定に基づく時間外労働として割増賃金の支払いが必要です。"
                             ),
                             staff_id=sid,
-                            detail={"total_hours": round(total_hours, 2), "cap": round(statutory_period_cap, 2)},
+                            detail={
+                                "total_hours": round(total_hours, 2),
+                                "cap": round(statutory_period_cap, 2),
+                            },
                         )
                     )
             else:
@@ -982,11 +1000,13 @@ def check_violations(
 
         for a, b in zip(days, days[1:], strict=False):
             prev = [
-                i for i in range(n)
+                i
+                for i in range(n)
                 if lookup.get((sid, a, slots[i].label)) in (CellState.WORK, CellState.BREAK)
             ]
             cur = [
-                i for i in range(n)
+                i
+                for i in range(n)
                 if lookup.get((sid, b, slots[i].label)) in (CellState.WORK, CellState.BREAK)
             ]
             if not prev or not cur:
@@ -1127,7 +1147,7 @@ def check_violations(
         roles_seen: set[str] = set()
         for _sid, _roles in not_placeable_staff:
             roles_seen.update(_roles)
-        role_label = '・'.join(sorted(roles_seen))
+        role_label = "・".join(sorted(roles_seen))
         out.append(
             Violation(
                 severity=ViolationSeverity.INFO,
@@ -1218,9 +1238,7 @@ def aggregate_violations(violations: list[Violation]) -> list[Violation]:
         merged_detail["count"] = len(items)
         if slots:
             merged_detail["slots"] = slots
-        merged_message = (
-            first.message + f"（他 {len(items) - 1} 箇所）" if slots else first.message
-        )
+        merged_message = first.message + f"（他 {len(items) - 1} 箇所）" if slots else first.message
         out.append(
             Violation(
                 severity=first.severity,

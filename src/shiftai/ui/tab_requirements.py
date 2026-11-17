@@ -254,7 +254,6 @@ def _render_gap_preview(table: Any) -> None:
     )
 
 
-
 def _render_supply_warning(table: Any) -> float:
     """必要人時と供給可能人時の比による事前警告。戻り値は比率（``inf`` あり）。"""
     required = standards.total_required_hours(table)

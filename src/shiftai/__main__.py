@@ -547,14 +547,19 @@ def cmd_solve(args: argparse.Namespace) -> int:
 
     gaps = shortfall_rows(loaded.staff, table, loaded.preferences, settings, standard)
     if gaps:
-        _echo(f"⚠ 需要>供給の時間帯が {len(gaps)} 件あります。結果には不足（BLOCKER）が含まれます。")
+        _echo(
+            f"⚠ 需要>供給の時間帯が {len(gaps)} 件あります。結果には不足（BLOCKER）が含まれます。"
+        )
         for g in gaps[:5]:
             _echo(f"  - {g.describe()}")
 
     if getattr(args, "mode", "weekly") == "monthly":
         from shiftai.monthly import MonthlySolveContext, solve_monthly_hierarchical
+
         contracts_map = {s.staff_id: s.contract for s in loaded.staff if s.contract}
-        effective_patterns = list(patterns or default_patterns(settings.day_open, settings.day_close))
+        effective_patterns = list(
+            patterns or default_patterns(settings.day_open, settings.day_close)
+        )
         monthly_ctx = MonthlySolveContext(
             target_month=f"{days[0].year:04d}-{days[0].month:02d}",
             all_days=days,
@@ -581,6 +586,7 @@ def cmd_solve(args: argparse.Namespace) -> int:
         )
     else:
         from shiftai.weekly import solve_weekly
+
         result = solve_weekly(
             loaded.children,
             loaded.staff,
@@ -600,7 +606,9 @@ def cmd_solve(args: argparse.Namespace) -> int:
     _echo(f"最適化: {result.status.value}（{result.stats.get('elapsed_sec', 0.0)} 秒）")
     gap = result.stats.get("mip_gap")
     if gap is not None:
-        _echo(f"  MIPギャップ: {float(gap) * 100:.2f}% / 双境界: {result.stats.get('mip_dual_bound', '-')}")
+        _echo(
+            f"  MIPギャップ: {float(gap) * 100:.2f}% / 双境界: {result.stats.get('mip_dual_bound', '-')}"
+        )
     if result.stats.get("pass_budget_sec") is not None:
         _echo(
             f"  ⚠ モデルが大きすぎるため（pass 予算 {result.stats['pass_budget_sec']} 秒）、"

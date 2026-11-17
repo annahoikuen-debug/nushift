@@ -90,9 +90,13 @@ def compute_shift_score(
                 for slot in requirements.slots:
                     if code == "SHORTFALL_STAFF":
                         needed = requirements.needed_staff(d, slot)
-                        actual = sum(1 for a in sd.assignments.values() if a.get(slot.label) == CellState.WORK)
+                        actual = sum(
+                            1
+                            for a in sd.assignments.values()
+                            if a.get(slot.label) == CellState.WORK
+                        )
                         if actual < needed:
-                            slot_shortfall += (needed - actual)
+                            slot_shortfall += needed - actual
                     elif code == "SHORTFALL_QUALIFIED":
                         needed_q = requirements.needed_qualified(d, slot)
                         # 有資格者数のカウント
@@ -114,12 +118,14 @@ def compute_shift_score(
                                     getattr(sm, "is_qualified", False)
                                     or sm.has_role(Role.HOIKUSHI)
                                     or sm.has_role("保育士")
-                                    or any(getattr(r, "value", str(r)) == "保育士" for r in sm.roles)
+                                    or any(
+                                        getattr(r, "value", str(r)) == "保育士" for r in sm.roles
+                                    )
                                 )
                                 if is_qual:
                                     actual_q += 1
                         if actual_q < needed_q:
-                            slot_shortfall += (needed_q - actual_q)
+                            slot_shortfall += needed_q - actual_q
             if slot_shortfall > 0:
                 count = slot_shortfall
 

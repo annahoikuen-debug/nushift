@@ -4,6 +4,7 @@
 返す）の regression を検知する。また preferences=None クラッシュと
 legacy フォールバックの挙動を担保する。
 """
+
 from __future__ import annotations
 
 from datetime import date, time, timedelta

@@ -155,7 +155,9 @@ def default_patterns(
         end = min(start + span, late_end)
         if end > start:
             patterns.append(
-                ShiftPattern(key, label, _clock(start), _clock(end), symbol=symbols.get(key, label[:2]))
+                ShiftPattern(
+                    key, label, _clock(start), _clock(end), symbol=symbols.get(key, label[:2])
+                )
             )
     if include_part_time:
         pt_span = max(60, min(int(round(part_time_hours * 60)), window))

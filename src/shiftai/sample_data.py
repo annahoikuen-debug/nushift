@@ -333,6 +333,8 @@ def _contract_for(label: str, rng: random.Random) -> Contract:
             max_monthly_hours=185.0,
             max_weekly_days=5,
             max_consecutive_days=5,
+            earliest_start=time(6, 0),
+            latest_end=time(20, 0),
         )
     if label == "パート 保育士":
         weekly = float(rng.choice([25, 26, 28, 30]))
@@ -345,7 +347,7 @@ def _contract_for(label: str, rng: random.Random) -> Contract:
             max_monthly_hours=110.0,
             max_weekly_days=5,
             max_consecutive_days=5,
-            earliest_start=time(7, 0),
+            earliest_start=time(6, 0),
             latest_end=PART_LATEST_END,
         )
     if label == "パート 子育て支援員":
@@ -359,7 +361,7 @@ def _contract_for(label: str, rng: random.Random) -> Contract:
             max_monthly_hours=100.0,
             max_weekly_days=5,
             max_consecutive_days=5,
-            earliest_start=time(7, 0),
+            earliest_start=time(6, 0),
             latest_end=PART_LATEST_END,
         )
     if label == "正職員 幼稚園教諭":

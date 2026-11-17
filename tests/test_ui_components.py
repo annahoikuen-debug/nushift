@@ -1139,13 +1139,13 @@ def test_violation_dataframeは直し方列を持つ():
 @pytest.mark.parametrize(
     "code,day,slot,staff_id",
     [
-        ("WORK_ON_UNAVAILABLE", FIX_DAY, FIX_SLOT, "S01"),   # cell
-        ("SHORTFALL_STAFF", FIX_DAY, FIX_SLOT, None),        # slot
-        ("SHORTFALL_STAFF", None, FIX_SLOT, None),           # day 欠け
-        ("MONTHLY_HOURS_EXCEEDED", None, None, "S01"),       # staff only
-        ("MONTHLY_HOURS_EXCEEDED", FIX_DAY, None, "S01"),    # staff + day
-        ("HOURS_IMBALANCE", None, None, None),               # guide
-        ("SHORTFALL_STAFF", FIX_DAY, None, "S01"),           # slot 欠け（集約後）
+        ("WORK_ON_UNAVAILABLE", FIX_DAY, FIX_SLOT, "S01"),  # cell
+        ("SHORTFALL_STAFF", FIX_DAY, FIX_SLOT, None),  # slot
+        ("SHORTFALL_STAFF", None, FIX_SLOT, None),  # day 欠け
+        ("MONTHLY_HOURS_EXCEEDED", None, None, "S01"),  # staff only
+        ("MONTHLY_HOURS_EXCEEDED", FIX_DAY, None, "S01"),  # staff + day
+        ("HOURS_IMBALANCE", None, None, None),  # guide
+        ("SHORTFALL_STAFF", FIX_DAY, None, "S01"),  # slot 欠け（集約後）
     ],
 )
 def test_render_violation_actionsは座標の組み合わせでも落ちない(
@@ -1159,7 +1159,7 @@ def test_render_violation_actionsは座標の組み合わせでも落ちない(
         "from shiftai.domain import Violation, ViolationSeverity, Slot\n"
         "from datetime import date, time\n"
         f"v = Violation(\n"
-        f'    severity=ViolationSeverity.WARNING,\n'
+        f"    severity=ViolationSeverity.WARNING,\n"
         f'    code="{code}",\n'
         f'    message="message",\n'
         f"    day={day_expr},\n"
@@ -1205,7 +1205,7 @@ def test_render_violation_actionsは職員単位の違反に調整ボタンを�
     body = (
         "from shiftai.domain import Violation, ViolationSeverity\n"
         "v = Violation(\n"
-        '    severity=ViolationSeverity.WARNING,\n'
+        "    severity=ViolationSeverity.WARNING,\n"
         '    code="MONTHLY_HOURS_EXCEEDED",\n'
         '    message="超過",\n'
         "    day=None,\n"
@@ -1230,7 +1230,7 @@ def test_render_violation_actionsは座標なし違反でガイドを出す(tmp_
     body = (
         "from shiftai.domain import Violation, ViolationSeverity\n"
         "v = Violation(\n"
-        '    severity=ViolationSeverity.INFO,\n'
+        "    severity=ViolationSeverity.INFO,\n"
         '    code="HOURS_IMBALANCE",\n'
         '    message="偏り",\n'
         "    day=None,\n"

@@ -74,4 +74,6 @@ def test_7日間実務月次最適化の高速求解と法令遵守():
     # 4. カバレッジと人員適正化: 不足スロットがごく少数でカバレッジ 99% 以上であること
     report = analyze_gap(table, result, staff, standard=std)
     assert report.coverage_ratio >= 0.99, f"カバレッジが 99% 未満です: {report.coverage_ratio:.2%}"
-    assert report.total_shortfall_slots <= 5, f"不足時間帯数が多すぎます: {report.total_shortfall_slots}"
+    assert report.total_shortfall_slots <= 5, (
+        f"不足時間帯数が多すぎます: {report.total_shortfall_slots}"
+    )

@@ -47,6 +47,7 @@ def _render_grid(result: SolveResult, day: date, slots: Any, staff: list[Any]) -
     )
     if view == "月間記号マトリクス":
         from shiftai.exporter import symbol_matrix_dataframe
+
         patterns = state.current_patterns()
         sym_df = symbol_matrix_dataframe(result, staff, slots=slots, patterns=patterns)
         if sym_df.empty:
@@ -323,7 +324,9 @@ def _render_fixed_list(day: date | None = None) -> None:
         ]
         st.dataframe(records, hide_index=True, width="stretch", key="fixed_list")
         active_day = day or st.session_state.get("active_day")
-        day_fixed_count = sum(1 for (_, d, _) in fixed.keys() if d == active_day) if active_day else 0
+        day_fixed_count = (
+            sum(1 for (_, d, _) in fixed.keys() if d == active_day) if active_day else 0
+        )
         if day_fixed_count > 0 and active_day is not None:
             c1, c2 = st.columns(2)
             if c1.button(
@@ -355,7 +358,9 @@ def _render_weekday_pivot(result: SolveResult, slots: Any) -> None:
         return
     with st.expander("曜日別の集計ピボット表（クリックで展開）", expanded=False):
         st.dataframe(frame, width="stretch", key="weekday_pivot", height=320)
-        st.caption("※ 各曜日の合計時間を、週あたりの法定勤務時間（目安40時間前後）と照らし合わせてご確認ください。")
+        st.caption(
+            "※ 各曜日の合計時間を、週あたりの法定勤務時間（目安40時間前後）と照らし合わせてご確認ください。"
+        )
 
 
 def _render_coverage_matrix(result: SolveResult) -> None:
@@ -456,7 +461,9 @@ def _apply_fix_target() -> None:
                     type="primary",
                     width="stretch",
                 ):
-                    current_fixed = dict(state.normalize_fixed(state.get(state.KEY_FIXED_ASSIGNMENTS)))
+                    current_fixed = dict(
+                        state.normalize_fixed(state.get(state.KEY_FIXED_ASSIGNMENTS))
+                    )
                     current_fixed[(csid, wanted, slot_label)] = CellState.WORK
                     _commit_edits(current_fixed, 1)
     elif staff_id is not None:

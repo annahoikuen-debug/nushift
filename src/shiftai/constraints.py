@@ -15,10 +15,10 @@ class ConstraintCategory(str, Enum):
     """制約のカテゴリ分類。"""
 
     LEGAL_STATUTORY = "LEGAL_STATUTORY"  # 法令・自治体配置基準 (Hard)
-    STAFF_CONTRACT = "STAFF_CONTRACT"    # 雇用契約・労使協定 (Hard)
-    PREFERENCE = "PREFERENCE"            # 職員の希望休・シフト希望 (Soft)
-    FAIRNESS = "FAIRNESS"                # 公平性・平準化 (Soft)
-    OPERATIONAL = "OPERATIONAL"          # 園運用・コスト・勤務パターン (Soft)
+    STAFF_CONTRACT = "STAFF_CONTRACT"  # 雇用契約・労使協定 (Hard)
+    PREFERENCE = "PREFERENCE"  # 職員の希望休・シフト希望 (Soft)
+    FAIRNESS = "FAIRNESS"  # 公平性・平準化 (Soft)
+    OPERATIONAL = "OPERATIONAL"  # 園運用・コスト・勤務パターン (Soft)
 
 
 @dataclass(frozen=True)

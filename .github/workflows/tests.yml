@@ -33,9 +33,7 @@ jobs:
         run: python -m ruff check .
 
       - name: Format check (ruff format)
-        # 情報表示のみ（非ブロッキング）。既存 40 ファイルが未整形のため、
-        # ゲートにするとマージ直前で常に赤になる。整形は make format で個別に。
-        continue-on-error: true
+        # すべてのファイルを整形済みのため、ブロッキングゲートとして運用。
         run: python -m ruff format --check .
 
       - name: Run fast tests

@@ -81,6 +81,7 @@ def test_solve_monthly_hierarchical_success():
 
     settings = FacilitySettings()
     from shiftai import local_rules
+
     standard = local_rules.get_standard(local_rules.DEFAULT_PRESET_KEY)
     req_table = build_requirements(
         children=children,

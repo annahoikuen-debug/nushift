@@ -301,7 +301,8 @@ MUNICIPAL_PRESETS: dict[str, StaffingStandard] = {
         remarks=(
             "定員比は全国基準準拠（0歳児3:1、1・2歳児6:1、3歳児8:1、4・5歳児20:1）。"
             "延長保育は19:00まで「保育士1名＋他資格者」の代替措置を認める。"
-            "出典: 名古屋市「保育所の職員配置基準」名古屋市告示・名古屋市保育振興基本方針" + _DISCLAIM
+            "出典: 名古屋市「保育所の職員配置基準」名古屋市告示・名古屋市保育振興基本方針"
+            + _DISCLAIM
         ),
     ),
     "京都市": StaffingStandard(
@@ -418,7 +419,10 @@ MUNICIPAL_PRESETS: dict[str, StaffingStandard] = {
         break_minutes=config.DEFAULT_BREAK_MINUTES,
         break_stagger_minutes=config.DEFAULT_BREAK_STAGGER_MINUTES,
         work_start_base=_FACILITY_OPEN,
-        standard_time=(_FACILITY_OPEN, _t(_FACILITY_OPEN.hour + _FACILITY_MAIN_HOURS, _FACILITY_OPEN.minute)),
+        standard_time=(
+            _FACILITY_OPEN,
+            _t(_FACILITY_OPEN.hour + _FACILITY_MAIN_HOURS, _FACILITY_OPEN.minute),
+        ),
         early_care_window=(_FACILITY_OPEN, config.DEFAULT_EARLY_CARE_END),
         late_care_window=(_t(18, 15), config.DEFAULT_LATE_CARE_END),
         late_care_relaxed=False,
@@ -456,7 +460,10 @@ MUNICIPAL_PRESETS: dict[str, StaffingStandard] = {
         work_start_base=_FACILITY_OPEN,
         # 認可外保育施設に保育標準時間は無い。開所〜開所+11時間を
         # 「主たる開所時間」として扱う（認可外保育施設指導監督基準 第1(1)）。
-        standard_time=(_FACILITY_OPEN, _t(_FACILITY_OPEN.hour + _FACILITY_MAIN_HOURS, _FACILITY_OPEN.minute)),
+        standard_time=(
+            _FACILITY_OPEN,
+            _t(_FACILITY_OPEN.hour + _FACILITY_MAIN_HOURS, _FACILITY_OPEN.minute),
+        ),
         early_care_window=(_FACILITY_OPEN, config.DEFAULT_EARLY_CARE_END),
         late_care_window=(_t(18, 15), config.DEFAULT_LATE_CARE_END),
         late_care_relaxed=False,
@@ -492,7 +499,10 @@ MUNICIPAL_PRESETS: dict[str, StaffingStandard] = {
         break_minutes=config.DEFAULT_BREAK_MINUTES,
         break_stagger_minutes=config.DEFAULT_BREAK_STAGGER_MINUTES,
         work_start_base=_FACILITY_OPEN,
-        standard_time=(_FACILITY_OPEN, _t(_FACILITY_OPEN.hour + _FACILITY_MAIN_HOURS, _FACILITY_OPEN.minute)),
+        standard_time=(
+            _FACILITY_OPEN,
+            _t(_FACILITY_OPEN.hour + _FACILITY_MAIN_HOURS, _FACILITY_OPEN.minute),
+        ),
         early_care_window=(_FACILITY_OPEN, config.DEFAULT_EARLY_CARE_END),
         late_care_window=(_t(18, 15), config.DEFAULT_LATE_CARE_END),
         late_care_relaxed=False,

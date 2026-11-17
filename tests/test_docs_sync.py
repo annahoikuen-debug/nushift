@@ -59,4 +59,3 @@ def test_license_is_mit():
     assert LICENSE.exists()
     content = LICENSE.read_text(encoding="utf-8")
     assert "MIT License" in content
-

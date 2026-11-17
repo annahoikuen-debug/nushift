@@ -166,7 +166,11 @@ def _render_facility(*, times: bool = True) -> None:
             "1日の最大勤務ブロック数",
             min_value=1,
             max_value=3,
-            value=int(st.session_state.get("max_work_blocks_per_day", DEFAULT_SETTINGS.max_work_blocks_per_day)),
+            value=int(
+                st.session_state.get(
+                    "max_work_blocks_per_day", DEFAULT_SETTINGS.max_work_blocks_per_day
+                )
+            ),
             step=1,
             key="max_work_blocks_per_day",
             help="1日の勤務が分かれる上限（既定2: 休憩1回を挟む2分割まで。3分割以上は原則禁止）。",
@@ -177,7 +181,9 @@ def _render_facility(*, times: bool = True) -> None:
             "正社員 最低勤務時間（h）",
             min_value=float(DEFAULT_SEI_MIN_DAILY_HOURS),
             max_value=float(DEFAULT_SEI_MAX_DAILY_HOURS),
-            value=float(st.session_state.get("sei_min_daily_hours", DEFAULT_SETTINGS.sei_min_daily_hours)),
+            value=float(
+                st.session_state.get("sei_min_daily_hours", DEFAULT_SETTINGS.sei_min_daily_hours)
+            ),
             step=0.5,
             key="sei_min_daily_hours",
             help="正社員が出勤する日の最低勤務時間（既定4.0時間）。",
@@ -187,7 +193,9 @@ def _render_facility(*, times: bool = True) -> None:
             "正社員 最高勤務時間（h）",
             min_value=float(DEFAULT_SEI_MIN_DAILY_HOURS),
             max_value=float(DEFAULT_SEI_MAX_DAILY_HOURS),
-            value=float(st.session_state.get("sei_max_daily_hours", DEFAULT_SETTINGS.sei_max_daily_hours)),
+            value=float(
+                st.session_state.get("sei_max_daily_hours", DEFAULT_SETTINGS.sei_max_daily_hours)
+            ),
             step=0.5,
             key="sei_max_daily_hours",
             help="正社員が出勤する日の最高勤務時間（既定8.0時間）。",

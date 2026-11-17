@@ -33,22 +33,24 @@ DEFAULT_RANGE_DAYS = 7
 
 # 休憩の既定（statutory_rules から再エクスポート）
 DEFAULT_BREAK_STAGGER_MINUTES = 30
-MIN_ALLOWABLE_BREAK_MINUTES = 45     # 労基法最低休憩（6時間超）
-MAX_ALLOWABLE_BREAK_MINUTES = 120    # 許容最大休憩（2時間）
+MIN_ALLOWABLE_BREAK_MINUTES = 45  # 労基法最低休憩（6時間超）
+MAX_ALLOWABLE_BREAK_MINUTES = 120  # 許容最大休憩（2時間）
 
 # 勤務ブロック・勤務時間柔軟化の既定
-DEFAULT_MAX_WORK_BLOCKS = 2          # 1日最大勤務ブロック数（3分割禁止のため既定2）
-DEFAULT_SEI_MIN_DAILY_HOURS = 4.0    # 正社員最低勤務時間（4時間）
-DEFAULT_SEI_MAX_DAILY_HOURS = 8.0    # 正社員最高勤務時間（8時間）
+DEFAULT_MAX_WORK_BLOCKS = 2  # 1日最大勤務ブロック数（3分割禁止のため既定2）
+DEFAULT_SEI_MIN_DAILY_HOURS = 4.0  # 正社員最低勤務時間（4時間）
+DEFAULT_SEI_MAX_DAILY_HOURS = 8.0  # 正社員最高勤務時間（8時間）
 
 # ---------------------------------------------------------------------------
 # 区間列挙・区間制約
 # ---------------------------------------------------------------------------
 
-MAX_INTERVAL_CANDIDATES = 100
+MAX_INTERVAL_CANDIDATES = 400
 """在勤/休憩区間列挙の候補上限（この値を超えた場合はソフトペナルティへフォールバック）。
 
-CBC の既知挙動: 300 で 7日28人は1パス目解なし、150 なら概ね動く。
+v0.70: HiGHS 既定化に合わせ 100 → 400 に引き上げ。HiGHS は大規模区間列挙でも安定し、
+固定長区間列挙により勤務分断（スプリットシフト）を完全抑止できる。
+CBC で使用する場合は 150 前後が保守的な目安（300 では 7日28人で1パス目解なし）。
 """
 
 STATUTORY_DAILY_LIMIT_HOURS = STATUTORY_DAILY_WORK_HOURS + 0.75
@@ -139,7 +141,10 @@ DEFAULT_SAMPLE_SEED = 42
 DEFAULT_TIME_LIMIT_SEC = 60
 
 #: MILP ソルバの既定エンジン（"auto" | "HiGHS" | "PULP_CBC_CMD"）。
-DEFAULT_SOLVER = "auto"
+#: v0.70 から HiGHS を既定推奨とする。CBC は 30日一括モデル（66,396変数 / 75,358制約）で
+#: 60秒を経過しても初期解を出せないことが確認されており、大規模求解では HiGHS を強く推奨する。
+#: "auto" を指定すると HiGHS 優先で選択される（HiGHS unavailable なら CBC にフォールバック）。
+DEFAULT_SOLVER = "HiGHS"
 
 #: CBC に渡せるモデルの最大変数数。これを超えるモデルは CBC を起動せず
 #: 早期に INFEASIBLE を返す（60 秒を無駄にしないため）。

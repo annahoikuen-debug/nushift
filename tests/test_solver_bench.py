@@ -56,4 +56,3 @@ def test_benchmark_sample_solve_time():
     assert result.status.value in ("最適解", "実行可能解")
     # Regression threshold: sample solve for 2 days should complete within 25 seconds
     assert elapsed < 25.0, f"Solver regression detected: took {elapsed:.2f}s"
-

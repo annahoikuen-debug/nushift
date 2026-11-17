@@ -66,9 +66,7 @@ def test_obsolete_legal_citations_absent(pattern: re.Pattern[str], reason: str) 
         for lineno, line in enumerate(text.splitlines(), 1):
             if pattern.search(line):
                 offenders.append(f"{path.relative_to(ROOT).as_posix()}:{lineno}: {line.strip()}")
-    assert not offenders, (
-        f"誤った法令引用を検出（{reason}）:\n" + "\n".join(sorted(offenders))
-    )
+    assert not offenders, f"誤った法令引用を検出（{reason}）:\n" + "\n".join(sorted(offenders))
 
 
 def test_休憩と休息の根拠条項が明記されている() -> None:
@@ -85,4 +83,6 @@ def test_週44時間と月45時間は社内目安である() -> None:
     source = config_source + "\n" + statutory_source
     for name in ("STATUTORY_WEEKLY_WORK_HOURS", "STATUTORY_OVERTIME_LIMIT_HOURS"):
         doc = source.split(f"{name} =", 1)[1]
-        assert "社内目安" in doc.split('"""', 2)[1] or "社内目安" in doc.split("\n", 1)[0], f"{name} に社内目安である旨が無い"
+        assert "社内目安" in doc.split('"""', 2)[1] or "社内目安" in doc.split("\n", 1)[0], (
+            f"{name} に社内目安である旨が無い"
+        )

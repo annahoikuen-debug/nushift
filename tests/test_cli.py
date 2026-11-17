@@ -350,4 +350,3 @@ def test_solve_月次モードが配置基準をコンテキストに渡す(tmp_
     assert ctx is not None, "月次コンテキストが生成されていない"
     assert getattr(ctx, "standard", None) is not None, "MonthlySolveContext.standard が None"
     assert ctx.standard.name == local_rules.get_standard(target).name
-

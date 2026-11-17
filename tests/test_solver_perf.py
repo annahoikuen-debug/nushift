@@ -152,7 +152,9 @@ def _solve(children, staff, requirements, **kwargs):
     return solve_shift(children, staff, requirements, **kwargs)
 
 
-def _build(staff, requirements, *, prefs=None, fixed=None, settings=None, standard=STANDARD, relaxation=0):
+def _build(
+    staff, requirements, *, prefs=None, fixed=None, settings=None, standard=STANDARD, relaxation=0
+):
     return solver_mod._build_problem(
         staff,
         requirements,

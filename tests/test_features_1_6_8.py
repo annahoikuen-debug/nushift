@@ -88,7 +88,9 @@ def test_solver_selection() -> None:
     assert name_cbc == "PULP_CBC_CMD"
 
 
-def test_solve_shift_with_highs_if_available(small_children, small_requirements, small_staff) -> None:
+def test_solve_shift_with_highs_if_available(
+    small_children, small_requirements, small_staff
+) -> None:
     """HiGHS を指定して solve_shift が解を求められること。"""
     if not is_highs_available():
         pytest.skip("HiGHS がインストールされていないためスキップ")
@@ -170,7 +172,9 @@ def test_gap_analysis_36_agreement_blocker(test_requirements) -> None:
     from shiftai.domain import SolveResult, SolveStatus
 
     assign_list = [
-        ShiftAssignment(staff_id="S01", day=day, slot=sl, state=CellState.WORK if i < 17 else CellState.OFF)
+        ShiftAssignment(
+            staff_id="S01", day=day, slot=sl, state=CellState.WORK if i < 17 else CellState.OFF
+        )
         for i, sl in enumerate(slots)
     ]
 
@@ -213,7 +217,9 @@ def test_gap_analysis_variable_working_hours(test_requirements) -> None:
     slots = list(test_requirements.slots)
     # 2日間で各8時間（計16時間 > 法定枠11.43時間）勤務
     assign_list = [
-        ShiftAssignment(staff_id="S_VAR", day=d, slot=sl, state=CellState.WORK if i < 16 else CellState.OFF)
+        ShiftAssignment(
+            staff_id="S_VAR", day=d, slot=sl, state=CellState.WORK if i < 16 else CellState.OFF
+        )
         for d in DAYS
         for i, sl in enumerate(slots)
     ]
@@ -434,7 +440,8 @@ def test_solve_shift_pattern_mode(small_children, small_requirements, small_staf
             if shift_day is None:
                 continue
             work_slots = [
-                sl for sl in slots
+                sl
+                for sl in slots
                 if shift_day.get(st.staff_id, sl) in (CellState.WORK, CellState.BREAK)
             ]
             if not work_slots:
@@ -442,7 +449,9 @@ def test_solve_shift_pattern_mode(small_children, small_requirements, small_staf
             start_m = min(s.start_minutes for s in work_slots)
             end_m = max(s.end_minutes for s in work_slots)
             matched = match_pattern(start_m, end_m, patterns)
-            assert matched is not None, f"{st.staff_id} on {day}: {start_m//60}:{start_m%60} - {end_m//60}:{end_m%60} did not match any pattern"
+            assert matched is not None, (
+                f"{st.staff_id} on {day}: {start_m // 60}:{start_m % 60} - {end_m // 60}:{end_m % 60} did not match any pattern"
+            )
 
 
 def test_export_bundle_zip_contains_symbol_matrix(test_requirements, small_staff) -> None:

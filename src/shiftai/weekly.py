@@ -7,6 +7,7 @@ require_leader / require_opening_closing_skill / drop_groups / relaxation != STR
 を使用する場合、または ``engine="legacy"`` の場合は ``solve_shift`` に
 フォールバックする（既存の高度機能を維持するため）。
 """
+
 from __future__ import annotations
 
 import os
@@ -86,6 +87,7 @@ def solve_weekly(
     empty_input = not list(requirements.all_days()) or not staff
     if engine == "legacy" or has_advanced or empty_input:
         from shiftai.solver import solve_shift
+
         return solve_shift(
             children,
             staff,

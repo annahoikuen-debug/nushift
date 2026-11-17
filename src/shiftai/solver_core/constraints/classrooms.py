@@ -60,7 +60,9 @@ def _add_classroom_and_skill_constraints(
                         and not _is_zero(ctx.work[(s.staff_id, day, idx)])
                     ]
                     if openers:
-                        _hard_ge(ctx, _linear([(v, 1) for v in openers]), 1.0, f"skill_open_{tag}_{idx}")
+                        _hard_ge(
+                            ctx, _linear([(v, 1) for v in openers]), 1.0, f"skill_open_{tag}_{idx}"
+                        )
                     else:
                         # 候補変数が無い（全員確定OFF等）でも要件は破られているので
                         # 無警告で無視せず conflicts に記録する。
@@ -76,7 +78,9 @@ def _add_classroom_and_skill_constraints(
                         and not _is_zero(ctx.work[(s.staff_id, day, idx)])
                     ]
                     if closers:
-                        _hard_ge(ctx, _linear([(v, 1) for v in closers]), 1.0, f"skill_close_{tag}_{idx}")
+                        _hard_ge(
+                            ctx, _linear([(v, 1) for v in closers]), 1.0, f"skill_close_{tag}_{idx}"
+                        )
                     else:
                         ctx.conflicts.append(
                             f"{day.isoformat()} {slots[idx].label} の閉所スキル（can_close）職員を配置できません"
@@ -92,7 +96,9 @@ def _add_classroom_and_skill_constraints(
                 if dvar is not None and not _is_zero(dvar):
                     leader_day_vars.append(dvar)
             if leader_day_vars:
-                _hard_ge(ctx, _linear([(v, 1) for v in leader_day_vars]), 1.0, f"leader_present_{tag}")
+                _hard_ge(
+                    ctx, _linear([(v, 1) for v in leader_day_vars]), 1.0, f"leader_present_{tag}"
+                )
             else:
                 ctx.conflicts.append(
                     f"{day.isoformat()} にリーダー適格者（can_lead）を配置できません"

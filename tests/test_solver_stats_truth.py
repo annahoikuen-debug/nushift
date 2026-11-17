@@ -1,4 +1,5 @@
 """stats の真実性（solver 名・elapsed_sec・pass・ギャップ記録）の回帰テスト。"""
+
 from datetime import date, timedelta
 
 from shiftai import local_rules, sample_data
@@ -15,13 +16,21 @@ def _solve():
     children, staff, prefs = sample_data.make_dataset(days, seed=42)
     settings = FacilitySettings()
     table = build_requirements(
-        children, days, STANDARD,
-        day_open=DEFAULT_DAY_OPEN, day_close=DEFAULT_DAY_CLOSE,
+        children,
+        days,
+        STANDARD,
+        day_open=DEFAULT_DAY_OPEN,
+        day_close=DEFAULT_DAY_CLOSE,
         granularity_min=DEFAULT_GRANULARITY_MIN,
     )
     return solve_shift(
-        children, staff, table, preferences=prefs, settings=settings,
-        time_limit_sec=30, standard=STANDARD,
+        children,
+        staff,
+        table,
+        preferences=prefs,
+        settings=settings,
+        time_limit_sec=30,
+        standard=STANDARD,
     )
 
 

@@ -402,7 +402,7 @@ print(r['blockers'], r['wall'])
 **作業**: 次の1行を追加する。
 
 ```python
-        (14 * 60, "part_ml", "午後夕方パート", "後3"),   # 14:00-19:00
+((14 * 60, "part_ml", "午後夕方パート", "後3"),)  # 14:00-19:00
 ```
 
 追加後のリスト例:
@@ -552,6 +552,7 @@ PYTHONPATH=src python3 -m pytest tests/test_monthly_hierarchical.py -q
 
 ```python
 """Stage 1 単体で slack が 0 になるか確認する。"""
+
 import sys
 from dataclasses import replace
 from datetime import date, timedelta

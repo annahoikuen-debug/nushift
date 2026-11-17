@@ -1,130 +1,46 @@
 {
-  "status": "実行可能解",
-  "is_feasible": true,
-  "objective_value": 474208.1,
+  "status": "部分的なシフト",
+  "is_feasible": false,
+  "objective_value": 83548.61,
   "total_assignments": 1400,
-  "work_count": 355,
-  "break_count": 30,
-  "off_count": 1015,
+  "work_count": 329,
+  "break_count": 66,
+  "off_count": 1005,
   "violations": [
     {
-      "code": "BREAK_INSUFFICIENT",
+      "code": "MAIN_OPENING_COVERAGE",
       "severity": "法令違反",
-      "staff_id": "S03",
+      "staff_id": null,
       "day": "2026-10-02"
     },
     {
-      "code": "BREAK_INSUFFICIENT",
+      "code": "SHORTFALL_QUALIFIED",
       "severity": "法令違反",
-      "staff_id": "S06",
+      "staff_id": null,
       "day": "2026-10-02"
     },
     {
-      "code": "BREAK_INSUFFICIENT",
+      "code": "SHORTFALL_STAFF",
       "severity": "法令違反",
-      "staff_id": "S15",
-      "day": "2026-10-03"
+      "staff_id": null,
+      "day": "2026-10-02"
     },
     {
-      "code": "BREAK_INSUFFICIENT",
+      "code": "MAIN_OPENING_COVERAGE",
       "severity": "法令違反",
-      "staff_id": "S16",
+      "staff_id": null,
       "day": "2026-10-03"
     },
     {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S03",
-      "day": "2026-10-02"
-    },
-    {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S04",
-      "day": "2026-10-02"
-    },
-    {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S05",
-      "day": "2026-10-02"
-    },
-    {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S07",
-      "day": "2026-10-02"
-    },
-    {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S08",
-      "day": "2026-10-02"
-    },
-    {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S10",
-      "day": "2026-10-02"
-    },
-    {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S14",
-      "day": "2026-10-02"
-    },
-    {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S17",
-      "day": "2026-10-02"
-    },
-    {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S18",
-      "day": "2026-10-02"
-    },
-    {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S02",
+      "code": "SHORTFALL_QUALIFIED",
+      "severity": "法令違反",
+      "staff_id": null,
       "day": "2026-10-03"
     },
     {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S05",
-      "day": "2026-10-03"
-    },
-    {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S11",
-      "day": "2026-10-03"
-    },
-    {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S12",
-      "day": "2026-10-03"
-    },
-    {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S15",
-      "day": "2026-10-03"
-    },
-    {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S16",
-      "day": "2026-10-03"
-    },
-    {
-      "code": "SPLIT_SHIFT",
-      "severity": "要調整",
-      "staff_id": "S26",
+      "code": "SHORTFALL_STAFF",
+      "severity": "法令違反",
+      "staff_id": null,
       "day": "2026-10-03"
     },
     {
@@ -134,46 +50,34 @@
       "day": null
     },
     {
-      "code": "OVERTIME_REQUIRES_36AGREEMENT",
+      "code": "MONTHLY_HOURS_EXCEEDED",
       "severity": "参考",
       "staff_id": "S01",
-      "day": "2026-10-02"
+      "day": null
     },
     {
-      "code": "OVERTIME_REQUIRES_36AGREEMENT",
+      "code": "MONTHLY_HOURS_EXCEEDED",
       "severity": "参考",
       "staff_id": "S02",
-      "day": "2026-10-02"
+      "day": null
     },
     {
-      "code": "OVERTIME_REQUIRES_36AGREEMENT",
+      "code": "MONTHLY_HOURS_EXCEEDED",
       "severity": "参考",
       "staff_id": "S03",
-      "day": "2026-10-02"
+      "day": null
     },
     {
-      "code": "OVERTIME_REQUIRES_36AGREEMENT",
-      "severity": "参考",
-      "staff_id": "S04",
-      "day": "2026-10-02"
-    },
-    {
-      "code": "OVERTIME_REQUIRES_36AGREEMENT",
+      "code": "MONTHLY_HOURS_EXCEEDED",
       "severity": "参考",
       "staff_id": "S05",
-      "day": "2026-10-02"
+      "day": null
     },
     {
-      "code": "OVERTIME_REQUIRES_36AGREEMENT",
+      "code": "BREAK_OVERLAP",
       "severity": "参考",
-      "staff_id": "S06",
+      "staff_id": null,
       "day": "2026-10-02"
-    },
-    {
-      "code": "OVERTIME_REQUIRES_36AGREEMENT",
-      "severity": "参考",
-      "staff_id": "S26",
-      "day": "2026-10-03"
     },
     {
       "code": "NOT_PLACED_ROLE",

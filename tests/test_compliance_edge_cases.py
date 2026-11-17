@@ -77,12 +77,24 @@ def test_statutory_daily_hours_blocker_gate():
 
     res = SolveResult(
         status=SolveStatus.FEASIBLE,
-        shift_days=[ShiftDay(day=day, assignments={("S01", s.label): a.state for s, a in zip(slots, assignments, strict=False)})],
+        shift_days=[
+            ShiftDay(
+                day=day,
+                assignments={
+                    ("S01", s.label): a.state for s, a in zip(slots, assignments, strict=False)
+                },
+            )
+        ],
         assignments=assignments,
         objective_value=100.0,
     )
 
     violations = check_violations(table, res, staff)
-    excess_violations = [v for v in violations if v.code in ("DAILY_HOURS_EXCEEDED", "OVERTIME_NOT_ALLOWED")]
+    excess_violations = [
+        v for v in violations if v.code in ("DAILY_HOURS_EXCEEDED", "OVERTIME_NOT_ALLOWED")
+    ]
     assert len(excess_violations) > 0
-    assert any(v.severity in (ViolationSeverity.WARNING, ViolationSeverity.BLOCKER) for v in excess_violations)
+    assert any(
+        v.severity in (ViolationSeverity.WARNING, ViolationSeverity.BLOCKER)
+        for v in excess_violations
+    )

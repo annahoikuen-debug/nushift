@@ -27,4 +27,3 @@ def test_ui_state_reset_and_defaults():
     settings = state.current_settings()
     assert settings.facility_name != ""
     assert settings.day_open < settings.day_close
-

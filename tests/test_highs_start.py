@@ -1,4 +1,5 @@
 """MIP スタート（HiGHSWithStart）の回帰テスト。highspy 未導入環境では skip。"""
+
 import pytest
 
 pulp = pytest.importorskip("pulp")

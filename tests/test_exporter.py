@@ -517,7 +517,7 @@ def test_深夜割増時間の重なり計算が正確である():
     from shiftai.exporter import payroll_dataframe
 
     s1 = Slot(time(21, 0), time(23, 0))  # 120分中、22:00-23:00の60分が深夜
-    s2 = Slot(time(4, 0), time(6, 0))   # 120分中、04:00-05:00の60分が深夜
+    s2 = Slot(time(4, 0), time(6, 0))  # 120分中、04:00-05:00の60分が深夜
     staff = [
         StaffMember(
             staff_id="NIGHT1",
@@ -548,4 +548,3 @@ def test_深夜割増時間の重なり計算が正確である():
     assert row["実働時間"] == 4.0
     # 深夜時間は 60分 + 60分 = 120分 = 2.0 時間
     assert row["深夜時間"] == 2.0
-
