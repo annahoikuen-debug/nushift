@@ -68,6 +68,8 @@ FALLBACK_VIOLATION_FIX_HINTS: dict[str, str] = {
     "SHORTFALL_QUALIFIED": "不足している時間帯の保育士が足りません。"
     "{shift} で保育士資格の職員をその時間帯に配置するか、"
     "{data} の配置基準を見直してください。",
+    "MAIN_OPENING_COVERAGE": "開所11時間超の園では常時2名以上の配置が必要です。"
+    "{shift} で不足時間帯に職員を追加するか、{data} で開園時間・人員配置を見直してください。",
     "BREAK_OVERLAP": "同時刻の休憩が集中しています。"
     "{shift} で休憩の始まる時間帯をずらしてください。",
     "WORK_ON_UNAVAILABLE": "希望休・不在時間帯に勤務が入っています。"
@@ -96,8 +98,10 @@ FALLBACK_VIOLATION_FIX_HINTS: dict[str, str] = {
     "{shift} で該当週の休みを増やしてください。",
     "REST_HOURS_SHORT": "勤務間の休息が 11 時間未満です。"
     "{shift} で翌日の始業を遅らせるか前日の終業を早めてください。",
-    "WEEKLY_HOURS_EXCEEDED": "この職員の週勤務が 44 時間を超えています。"
+    "WEEKLY_HOURS_EXCEEDED": "この職員の週勤務が 40 時間を超えています。"
     "{shift} で該当週の勤務を減らしてください。",
+    "WEEKLY_HOURS_EXCEEDED_NO_36": "36協定がないため週40時間を超えて勤務できません。"
+    "{shift} で勤務を週40時間以内に収めるか、{data} の36協定設定を確認してください。",
     "MONTHLY_HOURS_EXCEEDED": "この職員の勤務時間が契約上限を超えています。"
     "{shift} で休みを増やすか、{data} の職員 CSV（契約時間）を確認してください。",
     "MONTHLY_HOURS_SHORT": "この職員の勤務時間が契約下限に届いていません。"

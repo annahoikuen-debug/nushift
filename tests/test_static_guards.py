@@ -379,3 +379,34 @@ def test_no_statutory_literals_outside_statutory_rules() -> None:
         if pattern.search(path.read_text(encoding="utf-8")):
             hits.append(str(path))
     assert not hits, f"法定値が statutory_rules.py / config.py 以外に直書きされています: {hits}"
+
+
+# ---------------------------------------------------------------------------
+# 回帰防止ガード: RV 指摘項目の静的検査
+# ---------------------------------------------------------------------------
+
+
+def test_solver_commute_penalty_uses_prior_var() -> None:
+    """通勤ペナルティが初回ブロック出勤を誤って罰しないよう prior_ 変数による累積ORが実装されていること。"""
+    solver_py = (SRC / "solver.py").read_text(encoding="utf-8")
+    assert "prior_i = pulp.LpVariable(" in solver_py, (
+        "solver.py の _add_commute_penalty に prior_ 変数による累積OR定式化が見つかりません"
+    )
+
+
+def test_data_loader_preserves_string_types() -> None:
+    """CSV読み込みでゼロ落ち（001 -> 1）を防ぐため dtype=str が指定されていること。"""
+    loader_py = (SRC / "data_loader.py").read_text(encoding="utf-8")
+    assert "dtype=str" in loader_py, "data_loader.py の read_table に dtype=str が指定されていません"
+
+
+def test_sidebar_sei_sliders_bounded_by_config() -> None:
+    """sidebar.py の正社員勤務時間スライダーの範囲が config の DEFAULT_SEI_* と整合していること。"""
+    sidebar_py = (SRC / "ui" / "sidebar.py").read_text(encoding="utf-8")
+    assert "DEFAULT_SEI_MIN_DAILY_HOURS" in sidebar_py, (
+        "sidebar.py に DEFAULT_SEI_MIN_DAILY_HOURS の参照がありません"
+    )
+    assert "DEFAULT_SEI_MAX_DAILY_HOURS" in sidebar_py, (
+        "sidebar.py に DEFAULT_SEI_MAX_DAILY_HOURS の参照がありません"
+    )
+

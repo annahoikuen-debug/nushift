@@ -809,12 +809,12 @@ def _main_hours_check(spec: FacilitySpec) -> ComplianceCheck:
         status=OK if len(present) >= 2 else NG,
         actual=(
             f"{hours:.2f} 時間（11時間を "
-            f"{hours - MAIN_OPENING_HOURS:.2f} 時間超える）／保育従事者 {len(present)} 名"
+            f"{hours - MAIN_OPENING_HOURS:.2f} 時間超える）／在籍保育従事者 {len(present)} 名"
         ),
         required="超過時間帯は常時 2 名以上（保育中の児童が 1 名のときは除く）",
         basis=basis,
         message=(
-            ""
+            "※各スロットの動的実配置はシフトギャップ分析にて検証されます。"
             if len(present) >= 2
             else "11時間を超える時間帯に2名以上を配置できません。"
             "該当時間帯は閉所時間を早めるか、職員を追加してください。"

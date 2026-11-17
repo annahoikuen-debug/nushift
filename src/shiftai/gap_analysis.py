@@ -33,12 +33,14 @@ from shiftai.domain import (
     ViolationSeverity,
     cost_coefficient,
     qualified_ids,
+    to_minutes,
     weekly_periods,
+    weekly_windows,
 )
 from shiftai.solver import staff_work_hours
 from shiftai.statutory_rules import (
     BAND_TOLERANCE_HOURS,
-    STATUTORY_BREAK_MINUTES,
+    STATUTORY_BREAK_MINUTES,  # noqa: F401
     STATUTORY_BREAK_THRESHOLDS,  # noqa: F401  (re-exported for test monkeypatch target)
     STATUTORY_MIN_REST_HOURS,
     STATUTORY_WEEKLY_WORK_HOURS,
@@ -484,6 +486,25 @@ def check_violations(
                 )
             )
 
+    opening_minutes = to_minutes(fac.day_close) - to_minutes(fac.day_open)
+    if opening_minutes > 11 * 60:
+        for gap in report.gaps:
+            if gap.is_binding and gap.needed_staff > 0 and gap.actual_staff < 2:
+                out.append(
+                    Violation(
+                        severity=ViolationSeverity.BLOCKER,
+                        code="MAIN_OPENING_COVERAGE",
+                        message=(
+                            f"{gap.day.isoformat()} {gap.slot.label} は開所11時間超の園ですが、"
+                            f"実配置が {gap.actual_staff} 名（2名未満）です。"
+                            "11時間超開所ルールにより常時2名以上の配置が必要です。"
+                        ),
+                        day=gap.day,
+                        slot=gap.slot,
+                        detail={"actual_staff": gap.actual_staff, "required_min": 2},
+                    )
+                )
+
     worked_days: dict[str, set[date]] = {}
     for (sid, d, _), st_val in lookup.items():
         if st_val is CellState.WORK:
@@ -690,9 +711,9 @@ def check_violations(
                             f"{sid} は {day.isoformat()} の休憩が {break_minutes} 分しかなく、"
                             f"必要な {required} 分に届いていません"
                             + (
-                                f"（労働基準法第34条の法定 {statutory_minutes} 分）。"
+                                f"（労働基準法第34条の法定 {statutory_minutes} 分不足）。"
                                 if is_statutory
-                                else f"（基準 {STATUTORY_BREAK_MINUTES} 分）。"
+                                else f"（園設定・契約基準 {eff_target_break} 分不足）。"
                             )
                         ),
                         day=day,
@@ -823,7 +844,7 @@ def check_violations(
             else:
                 pass
         else:
-            for window in weekly_periods(days):
+            for window in weekly_windows(days):
                 window_hours = sum(daily_hours.get(d, 0.0) for d in window)
                 if window_hours <= STATUTORY_WEEKLY_WORK_HOURS + config.FLOAT_TOLERANCE:
                     continue
@@ -841,34 +862,66 @@ def check_violations(
                     # 実働で超過しているときだけ警告する（挙動を据え置く）。
                     basis = "実働時間"
                     measured = window_hours
-                out.append(
-                    Violation(
-                        severity=ViolationSeverity.WARNING,
-                        code="WEEKLY_HOURS_EXCEEDED",
-                        message=(
-                            f"{sid} は {window[0].isoformat()} から {window[-1].isoformat()} の"
-                            f"1 週間で{basis} {measured:.2f} 時間となり、"
-                            f"週{STATUTORY_WEEKLY_WORK_HOURS:.0f}時間（社内目安）を超えています。"
-                            + (
-                                f"（実働 {window_hours:.2f} 時間・休憩 "
-                                f"{window_bound - window_hours:.2f} 時間）"
-                                if basis.startswith("拘束")
-                                else ""
-                            )
-                        ),
-                        day=window[0],
-                        staff_id=sid,
-                        detail={
-                            "hours": round(measured, 2),
-                            "basis": basis,
-                            "work_hours": round(window_hours, 2),
-                            "bound_hours": round(window_bound, 2),
-                            "window_start": window[0].isoformat(),
-                            "window_end": window[-1].isoformat(),
-                            "window_days": len(window),
-                        },
+
+                if not c.has_36_agreement or not c.overtime_allowed:
+                    out.append(
+                        Violation(
+                            severity=ViolationSeverity.BLOCKER,
+                            code="WEEKLY_HOURS_EXCEEDED_NO_36",
+                            message=(
+                                f"{sid} は {window[0].isoformat()} から {window[-1].isoformat()} の"
+                                f"1 週間で{basis} {measured:.2f} 時間となり、"
+                                f"法定上限（週{STATUTORY_WEEKLY_WORK_HOURS:.0f}時間）を超過していますが、"
+                                "36協定の締結がないため違法となります。"
+                                + (
+                                    f"（実働 {window_hours:.2f} 時間・休憩 "
+                                    f"{window_bound - window_hours:.2f} 時間）"
+                                    if basis.startswith("拘束")
+                                    else ""
+                                )
+                            ),
+                            day=window[0],
+                            staff_id=sid,
+                            detail={
+                                "hours": round(measured, 2),
+                                "basis": basis,
+                                "work_hours": round(window_hours, 2),
+                                "bound_hours": round(window_bound, 2),
+                                "window_start": window[0].isoformat(),
+                                "window_end": window[-1].isoformat(),
+                                "window_days": len(window),
+                            },
+                        )
                     )
-                )
+                else:
+                    out.append(
+                        Violation(
+                            severity=ViolationSeverity.WARNING,
+                            code="WEEKLY_HOURS_EXCEEDED",
+                            message=(
+                                f"{sid} は {window[0].isoformat()} から {window[-1].isoformat()} の"
+                                f"1 週間で{basis} {measured:.2f} 時間となり、"
+                                f"週{STATUTORY_WEEKLY_WORK_HOURS:.0f}時間（社内目安）を超えています。"
+                                + (
+                                    f"（実働 {window_hours:.2f} 時間・休憩 "
+                                    f"{window_bound - window_hours:.2f} 時間）"
+                                    if basis.startswith("拘束")
+                                    else ""
+                                )
+                            ),
+                            day=window[0],
+                            staff_id=sid,
+                            detail={
+                                "hours": round(measured, 2),
+                                "basis": basis,
+                                "work_hours": round(window_hours, 2),
+                                "bound_hours": round(window_bound, 2),
+                                "window_start": window[0].isoformat(),
+                                "window_end": window[-1].isoformat(),
+                                "window_days": len(window),
+                            },
+                        )
+                    )
 
         streak = 0
         worst_streak = 0
@@ -928,8 +981,14 @@ def check_violations(
                     )
 
         for a, b in zip(days, days[1:], strict=False):
-            prev = [i for i in range(n) if lookup.get((sid, a, slots[i].label)) is CellState.WORK]
-            cur = [i for i in range(n) if lookup.get((sid, b, slots[i].label)) is CellState.WORK]
+            prev = [
+                i for i in range(n)
+                if lookup.get((sid, a, slots[i].label)) in (CellState.WORK, CellState.BREAK)
+            ]
+            cur = [
+                i for i in range(n)
+                if lookup.get((sid, b, slots[i].label)) in (CellState.WORK, CellState.BREAK)
+            ]
             if not prev or not cur:
                 continue
             rest = (
@@ -1098,6 +1157,7 @@ VIOLATION_CODE_LABELS: dict[str, str] = {
     ),
     "SHORTFALL_STAFF": "配置基準の必要人員に足りない時間帯があります（法令違反）。",
     "SHORTFALL_QUALIFIED": "配置基準の必要保育士数に足りない時間帯があります（法令違反）。",
+    "MAIN_OPENING_COVERAGE": "開所11時間超の園において、常時2名以上の配置基準を満たしていません（法令違反）。",
     "WORK_ON_UNAVAILABLE": "希望休・不在時間帯に勤務しています（ハード制約違反）。",
     "WORK_ON_CLOSED_DAY": "休園日に勤務しています。",
     "DAILY_HOURS_EXCEEDED": "1日の勤務時間が契約上限を超えています。",
@@ -1107,7 +1167,8 @@ VIOLATION_CODE_LABELS: dict[str, str] = {
     "OUTSIDE_CONTRACT_HOURS": "契約の勤務時間帯外で勤務しています。",
     "MONTHLY_HOURS_EXCEEDED": "対象期間の勤務時間が契約基準の上限を超えています。",
     "MONTHLY_HOURS_SHORT": "対象期間の勤務時間が契約基準の下限に届いていません。",
-    "WEEKLY_HOURS_EXCEEDED": "週の勤務が44時間を超えている週があります。",
+    "WEEKLY_HOURS_EXCEEDED_NO_36": "週の勤務が40時間を超過していますが、36協定が未締結のため違法となります（法令違反）。",
+    "WEEKLY_HOURS_EXCEEDED": "週の勤務が40時間を超えている週があります（36協定に基づく時間外労働）。",
     "VARIABLE_HOURS_EXCEEDED_NO_36": "変形労働時間制の期間総労働時間が法定総枠を超過していますが、36協定が未締結のため違法となります（法令違反）。",
     "VARIABLE_HOURS_EXCEEDED": "変形労働時間制の期間総労働時間が法定総枠を超過しています。36協定に基づく割増賃金が必要です（要調整）。",
     "WEEKLY_DAYS_EXCEEDED": "週の勤務日数が契約の週最大出勤日数を超えている週があります。",

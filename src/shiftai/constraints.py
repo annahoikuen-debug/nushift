@@ -100,6 +100,24 @@ _BUILTIN_CONSTRAINTS = [
         configurable=False,
     ),
     ConstraintDefinition(
+        id="MAIN_OPENING_COVERAGE",
+        name="開所11時間超常時2名基準",
+        description="開所時間が11時間を超える園において、保育時間帯に常時2名以上の保育従事者を配置する",
+        category=ConstraintCategory.LEGAL_STATUTORY,
+        is_hard=True,
+        default_weight=1200.0,
+        configurable=False,
+    ),
+    ConstraintDefinition(
+        id="WEEKLY_HOURS_EXCEEDED_NO_36",
+        name="週40時間上限（36協定未締結）",
+        description="36協定がない職員に対し、労基法第32条で定める週40時間を超える勤務を割り当てない",
+        category=ConstraintCategory.LEGAL_STATUTORY,
+        is_hard=True,
+        default_weight=3000.0,
+        configurable=False,
+    ),
+    ConstraintDefinition(
         id="BREAK_INSUFFICIENT",
         name="法定休憩時間確保",
         description="労働基準法第34条に基づく休憩時間（6h超で45分、8h超で60分）を確保する",
@@ -119,10 +137,10 @@ _BUILTIN_CONSTRAINTS = [
     ),
     ConstraintDefinition(
         id="REST_HOURS_SHORT",
-        name="勤務間インターバル不足",
-        description="前日退勤から翌日出勤までの間に契約で定めた休息時間（例: 11時間）を確保する",
+        name="勤務間インターバル確保",
+        description="前日退勤から翌日出勤までの間に契約で定めた休息時間（例: 11時間）を確保する（努力義務）",
         category=ConstraintCategory.LEGAL_STATUTORY,
-        is_hard=True,
+        is_hard=False,
         default_weight=2000.0,
     ),
     # 2. 雇用契約・労使協定 (Hard)
@@ -157,6 +175,14 @@ _BUILTIN_CONSTRAINTS = [
         description="正社員の1日勤務時間を4〜8時間の間で柔軟に調整する",
         category=ConstraintCategory.STAFF_CONTRACT,
         is_hard=True,
+        default_weight=500.0,
+    ),
+    ConstraintDefinition(
+        id="WEEKLY_HOURS_EXCEEDED",
+        name="週40時間超過（36協定内）",
+        description="36協定に基づく時間外労働の発生を監視し、可能な限り週40時間以内に収める",
+        category=ConstraintCategory.STAFF_CONTRACT,
+        is_hard=False,
         default_weight=500.0,
     ),
     # 3. 職員希望 (Soft)

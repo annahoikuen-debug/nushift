@@ -735,3 +735,170 @@ def test_午後の勤務でも休憩が勤務ブロック内に入る():
         f"勤務ブロック {work[0].label}〜{work[-1].label} に休憩が入っていない"
         f"（休憩スロット: {[s.label for s in brk]}）"
     )
+
+
+def test_11時間超開所時の実配置不足はMAIN_OPENING_COVERAGEになる():
+    """開所11時間超の園で、実配置が2名未満の時間帯があるとき BLOCKER が出ること。"""
+    day = date(2026, 9, 28)
+    children = [
+        ChildPlan(f"C{i:03d}", f"園児{i}", day, AgeClass.INFANT, time(7, 0), time(20, 0))
+        for i in range(1, 3)
+    ]
+    reqs = build_requirements(
+        children,
+        [day],
+        STANDARD,
+        day_open=time(7, 0),
+        day_close=time(20, 0),
+        granularity_min=30,
+    )
+    staff = [
+        StaffMember(
+            staff_id="S01",
+            name="保育士1",
+            roles=(Role.HOIKUSHI,),
+            contract=sei_contract(),
+        )
+    ]
+    result = SolveResult(
+        status=SolveStatus.FEASIBLE,
+        shift_days=[
+            ShiftDay(
+                day=day,
+                assignments={"S01": {s.label: CellState.WORK for s in reqs.slots}},
+            )
+        ],
+        violations=[],
+    )
+    violations = check_violations(
+        reqs,
+        result,
+        staff,
+        standard=STANDARD,
+        settings=FacilitySettings(day_open=time(7, 0), day_close=time(20, 0)),
+    )
+    v_11h = [v for v in violations if v.code == "MAIN_OPENING_COVERAGE"]
+    assert len(v_11h) > 0
+    assert v_11h[0].severity == ViolationSeverity.BLOCKER
+    assert "常時2名以上" in v_11h[0].message
+
+
+def test_週40時間超過は36協定なしならBLOCKERありならWARNING():
+    """36協定なし職員の週40h超はBLOCKER、ありならWARNINGとなること。"""
+    days = [date(2026, 10, d) for d in range(1, 8)]
+    slots = [Slot(time(9, 0), time(12, 30)), Slot(time(13, 0), time(16, 30))]
+    from shiftai.domain import Requirement
+    rows = {
+        d: [
+            Requirement(day=d, slot=s, age_class=AgeClass.INFANT, child_count=1, needed_staff=1, needed_qualified=1)
+            for s in slots
+        ]
+        for d in days
+    }
+    reqs = RequirementTable(day_open=time(9, 0), day_close=time(17, 0), granularity_min=30, slots=tuple(slots), rows=rows)
+
+    staff_no36 = StaffMember(
+        staff_id="S_NO36",
+        name="協定なし",
+        roles=(Role.HOIKUSHI,),
+        contract=sei_contract(has_36_agreement=False, overtime_allowed=False),
+    )
+    staff_with36 = StaffMember(
+        staff_id="S_WITH36",
+        name="協定あり",
+        roles=(Role.HOIKUSHI,),
+        contract=sei_contract(has_36_agreement=True, overtime_allowed=True),
+    )
+
+    res_no36 = SolveResult(
+        status=SolveStatus.FEASIBLE,
+        shift_days=[
+            ShiftDay(day=d, assignments={"S_NO36": {s.label: CellState.WORK for s in slots}})
+            for d in days
+        ],
+        violations=[],
+    )
+    v_no36 = check_violations(reqs, res_no36, [staff_no36], standard=STANDARD)
+    blockers_no36 = [v for v in v_no36 if v.code == "WEEKLY_HOURS_EXCEEDED_NO_36"]
+    assert len(blockers_no36) > 0
+    assert blockers_no36[0].severity == ViolationSeverity.BLOCKER
+
+    res_with36 = SolveResult(
+        status=SolveStatus.FEASIBLE,
+        shift_days=[
+            ShiftDay(day=d, assignments={"S_WITH36": {s.label: CellState.WORK for s in slots}})
+            for d in days
+        ],
+        violations=[],
+    )
+    v_with36 = check_violations(reqs, res_with36, [staff_with36], standard=STANDARD)
+    warns_with36 = [v for v in v_with36 if v.code == "WEEKLY_HOURS_EXCEEDED"]
+    assert len(warns_with36) > 0
+    assert warns_with36[0].severity == ViolationSeverity.WARNING
+
+
+def test_休憩不足メッセージの法定と園基準の分離():
+    """法定不足時は労基法第34条、園基準未達時は園設定・契約基準が表示されること。"""
+    day = date(2026, 9, 28)
+    slots_30m = [
+        Slot(time(9, 0), time(16, 0)),
+        Slot(time(16, 0), time(16, 30)),
+    ]
+    from shiftai.domain import Requirement
+    rows_30m = {
+        day: [
+            Requirement(day=day, slot=s, age_class=AgeClass.INFANT, child_count=1, needed_staff=1, needed_qualified=1)
+            for s in slots_30m
+        ]
+    }
+    reqs_30m = RequirementTable(day_open=time(9, 0), day_close=time(16, 30), granularity_min=30, slots=tuple(slots_30m), rows=rows_30m)
+    staff = StaffMember(
+        staff_id="S01",
+        name="保育士1",
+        roles=(Role.HOIKUSHI,),
+        contract=sei_contract(break_minutes=60),
+    )
+    res_30m = SolveResult(
+        status=SolveStatus.FEASIBLE,
+        shift_days=[
+            ShiftDay(day=day, assignments={"S01": {slots_30m[0].label: CellState.WORK, slots_30m[1].label: CellState.BREAK}})
+        ],
+        violations=[],
+    )
+    v_30m = check_violations(reqs_30m, res_30m, [staff], standard=STANDARD, settings=FacilitySettings(break_minutes=60))
+    b_v30 = [v for v in v_30m if v.code == "BREAK_INSUFFICIENT"][0]
+    assert b_v30.severity == ViolationSeverity.BLOCKER
+    assert "法定 45 分不足" in b_v30.message
+
+
+def test_勤務間インターバルは終端BREAKを拘束として考慮():
+    """前日の終端がBREAKの場合、休憩終了時刻が退勤時刻として扱われること。"""
+    days = [date(2026, 9, 28), date(2026, 9, 29)]
+    slots_d1 = [Slot(time(12, 0), time(20, 0)), Slot(time(20, 0), time(21, 0))]
+    slots_d2 = [Slot(time(7, 0), time(15, 0))]
+    all_slots = tuple(slots_d1 + slots_d2)
+    from shiftai.domain import Requirement
+    rows = {
+        days[0]: [Requirement(day=days[0], slot=s, age_class=AgeClass.INFANT, child_count=1, needed_staff=1, needed_qualified=1) for s in slots_d1],
+        days[1]: [Requirement(day=days[1], slot=s, age_class=AgeClass.INFANT, child_count=1, needed_staff=1, needed_qualified=1) for s in slots_d2],
+    }
+    reqs = RequirementTable(day_open=time(7, 0), day_close=time(21, 0), granularity_min=60, slots=all_slots, rows=rows)
+    staff = StaffMember(
+        staff_id="S01",
+        name="保育士1",
+        roles=(Role.HOIKUSHI,),
+        contract=sei_contract(min_rest_hours=11.0),
+    )
+    result = SolveResult(
+        status=SolveStatus.FEASIBLE,
+        shift_days=[
+            ShiftDay(day=days[0], assignments={"S01": {slots_d1[0].label: CellState.WORK, slots_d1[1].label: CellState.BREAK}}),
+            ShiftDay(day=days[1], assignments={"S01": {slots_d2[0].label: CellState.WORK}}),
+        ],
+        violations=[],
+    )
+    violations = check_violations(reqs, result, [staff], standard=STANDARD)
+    rest_v = [v for v in violations if v.code == "REST_HOURS_SHORT"]
+    assert len(rest_v) > 0
+    assert rest_v[0].detail["rest_hours"] == 10.0
+
