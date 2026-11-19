@@ -1,9 +1,9 @@
-# ⚡ NuShift (shiftai v0.7.0)
+# ⚡ NuShift (shiftai v0.7.1)
 
 > **保育のすべてをつなぎ、先生の時間をこどもたちへ**  
 > 職員配置基準連動型 数理最適化シフト自動作成エンジン（NuShift）と、直感的な Streamlit UI による保育園・こども園向け勤務シフト自動生成システム。
 
-[![Version](https://img.shields.io/badge/version-v0.7.0-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-v0.7.1-blue.svg)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.13-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](pyproject.toml)
@@ -62,6 +62,15 @@
    - ウィザード形式で園児数、職員条件、希望休をステップ順に入力可能。
    - ガントチャート表示、リアルタイムの過不足（ギャップ）可視化、手動セル編集・ピン留め（固定保護）をサポート。
    - PWA Service Worker によるオフライン耐性と高速表示。
+7. **🧬 Timefold 協調数理最適化 & 3階層スコアリング (v0.7.1 新機能)**
+   - **Hard/Medium/Soft 3階層スコアリング (`HardMediumSoftScore`)**: 法令違反ゼロ（Hard）、配置不足ショートフォール最小化（Medium）、職員希望・公平性・人件費最適化（Soft）を厳密な辞書式順序で評価。
+   - **過剰制約計画 (Overconstrained Planning & Shortfall Capture)**: 人員不足時でも求解不能（Infeasible）に陥らず、不足コマ数（Mediumペナルティ）を最小化しながら最大限充足された安全なシフトを生成。
+   - **スコア説明と制約起訴 (Score Explanation & Indictment)**: 各制約がどの職員・日付・時間帯にどれだけのペナルティを与えたかを一覧追跡（UIタブで要因別グラフィカル表示）。
+   - **局所探索の多様化 (LAHC / SwapMove / ChangeMove)**: 遅延受容山登り法（Late Acceptance Hill Climbing）により、局所最適解から脱出して高品質な解を探索。
+   - **差分スコア計算 & 状態追跡 (`shadow_state.py`)**: シフト変更時のインクリメンタル評価により超高速な解の改善を実現。
+   - **リアルタイム最小破壊修復 (`DisruptionReport`)**: 突発欠勤リペア等において、変更人数・変更コマ数を定量レポートし現場の混乱を最小化。
+   - **月間マセヒューリスティクス協調 (LNS ⇄ MIP 協調修復)**: 月間勤務パターン枠（Stage 1）と15分コマ割当（Stage 2）の大規模近傍探索（LNS）による高速協調最適化。
+   - **性能ベンチマークスイート (`shiftai benchmark`)**: 7日間・30日間の実務シナリオに対する回帰防止性能ゲート（15秒以内求解）を標準装備。
 
 ---
 
@@ -71,7 +80,7 @@
 | :--- | :--- | :--- |
 | **形態** | 総合保育ICTプラットフォーム (FastAPI Webアプリ) | シフト自動作成エンジン (Streamlit デスクトップUI) |
 | **ライセンス** | 商用プロプライエタリ (全権利保持) | **MIT License (オープンソース)** |
-| **バージョン** | v0.4.0 (nusoft v0.6.0) | **v0.7.0 (nusoft v0.7.0)** |
+| **バージョン** | **v0.7.1 (nusoft v0.7.1)** | **v0.7.1 (nusoft v0.7.1)** |
 | **主な用途** | 園児台帳・登降園・連絡帳・請求・シフト・監査ログ | シフト自動作成・労基法チェック・給与シミュレーション |
 | **ブランド** | nusoft | nusoft (NuShift) |
 
@@ -89,15 +98,24 @@ nushift/
 │   │   ├── sidebar.py      # サイドバー・モード切替・施設設定
 │   │   ├── tab_data.py     # データ投入・サンプル読込・ウィザード
 │   │   ├── tab_solve.py    # 最適化実行・進捗表示・診断ログ・ショートフォールゲート
-│   │   ├── tab_shift.py    # シフト表・セル編集・ピン留め・アコーディオン
+│   │   ├── tab_shift.py    # シフト表・セル編集・ピン留め・制約起訴インジケータ
 │   │   └── tab_export.py   # Excel/CSV/PDF エクスポート
+│   ├── benchmark.py        # ベンチマークスイート・性能評価
 │   ├── compliance.py       # 労働法規・36協定・変形労働制・割増賃金計算
 │   ├── config.py           # エンジン設定 (区間列挙上限, 求解タイムアウト)
-│   ├── domain.py           # ドメインモデル (ObjectiveWeights, StaffMember, PairingRule等)
+│   ├── domain.py           # ドメインモデル (HardMediumSoftScore, ObjectiveWeights等)
 │   ├── gap_analysis.py     # 配置割れギャップ分析・違反検知・違反集約
-│   ├── local_rules.py      # 自治体別独自基準・全国基準プリセット
-│   ├── shift_patterns.py   # 勤務パターン枠・現場用記号マトリクス定義
 │   ├── greedy.py           # 高速貪欲法ソルバー・初期解生成
+│   ├── local_rules.py      # 自治体別独自基準・全国基準プリセット
+│   ├── local_search.py     # 局所探索 (SwapMove, ChangeMove, LAHC)
+│   ├── model_builder.py    # PuLP MILP数理モデル構築
+│   ├── monthly.py          # 月間シフト2段階求解・LNS協調修復
+│   ├── score.py            # 3階層スコアリング & 制約起訴 (Indictment)
+│   ├── shadow_state.py     # 差分スコア計算・シャドウ変数追跡
+│   ├── shift_patterns.py   # 勤務パターン枠・現場用記号マトリクス定義
+│   ├── solver.py           # MILP最適化モデル (HiGHS / 過剰制約計画 / 最小破壊修復)
+│   ├── standards.py        # 法定配置基準エンジン (認可保育所 / 企業主導型)
+│   └── statutory_rules.py  # 法定閾値・休憩計算の単一ソース定義
 │   ├── solver.py           # MILP最適化モデル (HiGHS / CBC / ウォームスタート / 突発欠勤リペア)
 │   ├── standards.py        # 法定配置基準エンジン (認可保育所 / 企業主導型)
 │   └── statutory_rules.py  # 法定閾値・休憩計算の単一ソース定義

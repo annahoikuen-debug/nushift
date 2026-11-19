@@ -26,7 +26,7 @@
     <div class="container nav-container">
       <a href="#hero" class="logo-wrap" id="brandLogo">
         <span>🧸 nusoft</span>
-        <span class="logo-badge">v0.5.0 (v0.6.0)</span>
+        <span class="logo-badge">v0.7.1</span>
       </a>
 
       <ul class="nav-links" id="navLinks">
@@ -89,7 +89,7 @@
                 <span class="dot dot-green"></span>
               </div>
               <span class="mockup-title">NuShift 勤務割最適化ダッシュボード — あさひ保育園 (2026年10月度)</span>
-              <span class="status-pill success">● 最適化完了 (CBC求解 18.2秒)</span>
+              <span class="status-pill success">● 最適化完了 (HiGHS / Timefold求解 14.8秒)</span>
             </div>
 
             <div class="mockup-body">
@@ -307,30 +307,30 @@
         <!-- Tab Content 1: Shift -->
         <div class="tab-content active" id="tab-shift">
           <div class="tab-text">
-            <h3>違反激減・数理最適化ソルバーで、安心のシフトを瞬時に作成</h3>
+            <h3>Timefold 協調数理最適化で、安心・高精度なシフトを瞬時に作成</h3>
             <p>
-              厚生労働省の配置基準や職員の契約時間、希望休、有給休暇を満たすシフト表を HiGHS / CBC ソルバーが自動計算。法定休憩を最優先する新ペナルティ序列、求解前ショートフォールゲート、当日突発欠勤リペア、新人とベテランのペアリング制約まで完璧にサポートします。
+              厚生労働省の配置基準や職員の契約時間、希望休、有給休暇を満たすシフト表を HiGHS / Timefold 協調数理最適化エンジンが自動計算。法令違反ゼロ（Hard）、配置不足ショートフォール最小化（Medium）、希望・人件費最適化（Soft）の3階層スコアリングと過剰制約計画により、過酷なシフト作成業務を根本から自動化します。
             </p>
             <ul class="feature-bullet-list">
               <li>
                 <span class="bullet-icon">✓</span>
-                <span><strong>法定休憩最優先 ＆ 違反激減:</strong> 配置を埋めるために休憩を削る本末転倒な挙動を撲滅</span>
+                <span><strong>Hard/Medium/Soft 3階層スコアリング:</strong> 法令制約と現場希望を厳密な優先度で評価</span>
               </li>
               <li>
                 <span class="bullet-icon">✓</span>
-                <span><strong>求解前ショートフォールゲート:</strong> 需要過多で解けない場合に無駄な求解を止め処方箋を提示</span>
+                <span><strong>過剰制約計画 (Shortfall Capture):</strong> 人員不足時でも求解不能にならず不足枠を最小化</span>
               </li>
               <li>
                 <span class="bullet-icon">✓</span>
-                <span><strong>当日突発欠勤リペア:</strong> 朝の急な体調不良・忌引に対し既存シフトを崩さず最短修復</span>
+                <span><strong>制約起訴 (Indictment) インジケータ:</strong> どの制約がどの職員・日時にペナルティを与えたか即時可視化</span>
               </li>
               <li>
                 <span class="bullet-icon">✓</span>
-                <span><strong>職員ペアリング制約:</strong> 新人とベテランの同一時間帯配置を数理モデルで強制担保</span>
+                <span><strong>当日突発欠勤リペア & 最小破壊修復:</strong> 既存シフトの変更を最小限に抑えつつ最短で代行配置</span>
               </li>
               <li>
                 <span class="bullet-icon">✓</span>
-                <span><strong>違反集約アコーディオン:</strong> 現場目線の平易な用語で重複警告を1行にスッキリ集約</span>
+                <span><strong>局所探索多様化 (LAHC):</strong> 遅延受容山登り法と近傍探索で高品質なシフトを高速収束</span>
               </li>
             </ul>
           </div>
@@ -338,20 +338,20 @@
             <div
               style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass);">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                <span style="font-weight: 700;">🧩 NuShift 最適化アルゴリズム</span>
-                <span class="status-pill success">MILP / CBC</span>
+                <span style="font-weight: 700;">🧬 NuShift Timefold 協調最適化</span>
+                <span class="status-pill success">HiGHS / LAHC / LNS</span>
               </div>
               <div
                 style="font-family: monospace; font-size: 0.85rem; color: var(--accent-cyan); background: rgba(0,0,0,0.3); padding: 14px; border-radius: 8px; line-height: 1.6;">
-                minimize: TotalLaborCost + Penalty<br>
-                subject to:<br>
-                &nbsp;&nbsp;Coverage[t] &gt;= RequiredStaff[t]<br>
-                &nbsp;&nbsp;DailyHours[s, d] &lt;= MaxDailyContract[s]<br>
-                &nbsp;&nbsp;FixedAssignments[s, t] == 1 (PINNED)<br>
-                &nbsp;&nbsp;ConsecutiveWorkDays[s] &lt;= 6
+                score: [Hard: 0 / Medium: 0 / Soft: -45]<br>
+                hierarchy:<br>
+                &nbsp;&nbsp;Hard: LegalCoverage &amp; Rest &amp; MaxHours<br>
+                &nbsp;&nbsp;Medium: OverconstrainedShortfalls (Min)<br>
+                &nbsp;&nbsp;Soft: Preferences &amp; FairDistribution<br>
+                repair: DisruptionReport(changed_staff=1, changed_slots=4)
               </div>
               <div style="margin-top: 14px; font-size: 0.88rem; color: var(--text-secondary);">
-                数学的に証明された制約処理により、「配置基準を満たしているか」の確認作業が不要になります。
+                数学的に証明された制約処理と局所探索協調により、「配置基準を満たしているか」の確認作業が不要になります。
               </div>
             </div>
           </div>
