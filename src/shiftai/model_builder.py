@@ -766,6 +766,8 @@ def _build_cells(
                     )
                     if st.contract.max_daily_hours is not None:
                         sei_max_h = st.contract.max_daily_hours
+                    elif st.contract.overtime_allowed:
+                        sei_max_h = max(cap_min / 60.0, fac_sei_max_h)
                     elif st.contract.daily_hours is not None:
                         sei_max_h = min(st.contract.daily_hours, fac_sei_max_h)
                     else:

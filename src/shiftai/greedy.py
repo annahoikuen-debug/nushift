@@ -32,6 +32,7 @@ from shiftai.domain import (
     to_minutes,
     weekly_windows,
 )
+from shiftai.model_builder import _break_slots
 
 _DEFAULT_BREAK_MINUTES = config.DEFAULT_BREAK_MINUTES
 _DEFAULT_STAGGER_SLOTS = 1
@@ -149,7 +150,6 @@ def solve_shift_greedy(
         )
 
     break_minutes = int(standard.break_minutes) if standard is not None else _DEFAULT_BREAK_MINUTES
-    break_slots = max(1, -(-break_minutes // gran))
     stagger = (
         max(1, int(round(standard.break_stagger_minutes / gran)))
         if standard is not None
@@ -271,9 +271,32 @@ def solve_shift_greedy(
         return added
 
     def _put_break(sid: str, day: date) -> None:
+        st = by_id[sid]
+        raw_break = (
+            st.contract.break_minutes
+            if st.contract.break_minutes is not None
+            else getattr(settings, "break_minutes", None) or break_minutes
+        )
+        cap_min = _daily_cap_minutes(st.contract)
+        is_part_short = st.contract.daily_hours is not None and st.contract.daily_hours <= 6.0
+        if (
+            (st.contract.break_minutes is not None and st.contract.break_minutes == 0)
+            or is_part_short
+            or cap_min <= 6 * 60
+        ):
+            eff_break = 0
+        else:
+            eff_break = min(
+                max(raw_break, config.MIN_ALLOWABLE_BREAK_MINUTES),
+                config.MAX_ALLOWABLE_BREAK_MINUTES,
+            )
+        eff_slots = _break_slots(cap_min, eff_break, gran, daily_hours=st.contract.daily_hours)
+        if eff_slots <= 0:
+            return
+
         row = cells[(sid, day)]
         duty = [i for i in range(n) if row[i] is CellState.WORK]
-        if len(duty) <= break_slots + 1:
+        if len(duty) <= eff_slots + 1:
             return
         on_duty = sum(
             1
@@ -284,13 +307,13 @@ def solve_shift_greedy(
         concurrent = sum(
             1 for other in order for i in range(n) if cells[(other, day)][i] is CellState.BREAK
         )
-        cap = max(1, int(_BREAK_CONCURRENT_SHARE * on_duty)) + break_slots - 1
+        cap = max(1, int(_BREAK_CONCURRENT_SHARE * on_duty)) + eff_slots - 1
         if concurrent >= cap:
             return
-        span = len(duty) - break_slots
+        span = len(duty) - eff_slots
         pos = 1 + (len(order) + order.index(sid) * stagger) % max(1, span)
-        pos = min(max(0, pos), max(0, len(duty) - break_slots))
-        for j in range(break_slots):
+        pos = min(max(0, pos), max(0, len(duty) - eff_slots))
+        for j in range(eff_slots):
             k = duty[pos + j]
             if row[k] is CellState.WORK:
                 row[k] = CellState.BREAK

@@ -275,7 +275,7 @@ def solved_week(week_inputs):
         time_limit_sec=180,
         standard=local_rules.get_standard(FQ_KEY),
         relaxation=2,
-        warm_start=False,
+        warm_start=True,
     )
 
 
