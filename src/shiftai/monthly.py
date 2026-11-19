@@ -398,15 +398,14 @@ def solve_monthly_hierarchical(
     else:
         waves = chunks_n
 
-    remaining_budget = max(time_limit_sec - stage1_time, 15)
-    budget_per_wave = max(remaining_budget // waves, 10)
+    actual_left = time_limit_sec - stage1_time
+    remaining_budget = max(int(actual_left), 5)
+    budget_per_wave = max(remaining_budget // waves, 5)
     # ステージ2（30分スロット詳細配置）に十分な時間を確保しつつ、全体時間制限内に収める
-    # HiGHS が時間制限を超過して wall 時間が伸びることを考慮し、budget の 90%
-    # を上限として HiGHS に渡す（1チャンクの場合は 54 秒、オーバーヘッド分を確保）。
     if chunks_n == 1:
-        per_chunk_time = min(int(remaining_budget * 0.9), budget_per_wave)
+        per_chunk_time = min(int(remaining_budget * 0.7), budget_per_wave)
     else:
-        per_chunk_time = min(max(remaining_budget // chunks_n, 10), min(20, budget_per_wave))
+        per_chunk_time = min(max(remaining_budget // chunks_n, 5), min(20, budget_per_wave))
 
     total_chunks = len(day_chunks)
     completed_chunks = 0
