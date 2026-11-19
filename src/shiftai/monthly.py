@@ -753,6 +753,7 @@ def _solve_stage1_daily_patterns(
     solver_name: str | None = None,
     weights: ObjectiveWeights | None = None,
     stats_out: dict[str, float] | None = None,
+    messages: list[str] | None = None,
 ) -> dict[tuple[str, dt.date], str]:
     """Stage 1: 日単位のパターン割り当てモデルを PuLP で定式化・求解する。"""
     prob = pulp.LpProblem("Monthly_Stage1_Pattern_Assignment", pulp.LpMinimize)
