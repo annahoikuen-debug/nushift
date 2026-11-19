@@ -322,7 +322,41 @@ def make_children(
     return plans
 
 
-def _contract_for(label: str, rng: random.Random) -> Contract:
+PART_HOIKUSHI_CONFIGS: tuple[tuple[float, float, float, float, time, time, str], ...] = (
+    # 早番パート (3名: 07:00〜16:00枠, 週30h/日6h)
+    (30.0, 6.0, 100.0, 135.0, time(7, 0), time(16, 0), "早番パート（開所・朝受入）"),
+    (30.0, 6.0, 100.0, 135.0, time(7, 0), time(16, 0), "早番パート（開所・朝受入）"),
+    (28.0, 5.5, 90.0, 125.0, time(7, 0), time(15, 0), "早番パート（開所・朝受入）"),
+    # 遅番パート (3名: 11:00〜20:00枠, 週30h/日6h)
+    (30.0, 6.0, 100.0, 135.0, time(11, 0), time(20, 0), "遅番パート（延長保育・夕方引渡）"),
+    (30.0, 6.0, 100.0, 135.0, time(11, 0), time(20, 0), "遅番パート（延長保育・夕方引渡）"),
+    (28.0, 5.5, 90.0, 125.0, time(11, 0), time(20, 0), "遅番パート（延長保育・夕方引渡）"),
+    # 中番・コアパート (4名: 08:30〜17:00枠, 週25〜28h/日5〜5.5h)
+    (28.0, 5.5, 90.0, 125.0, time(8, 30), time(17, 0), "中番パート（コア時間帯保育）"),
+    (28.0, 5.5, 90.0, 125.0, time(8, 30), time(17, 0), "中番パート（コア時間帯保育）"),
+    (25.0, 5.0, 80.0, 115.0, time(8, 30), time(16, 0), "中番パート（コア時間帯保育）"),
+    (25.0, 5.0, 80.0, 115.0, time(8, 30), time(16, 0), "中番パート（コア時間帯保育）"),
+    # 短時間パート (2名: 09:00〜14:00枠, 週20h/日4h)
+    (20.0, 4.0, 60.0, 95.0, time(9, 0), time(14, 0), "短時間パート（午前活動・給食補助）"),
+    (20.0, 4.0, 60.0, 95.0, time(9, 0), time(14, 0), "短時間パート（午前活動・給食補助）"),
+)
+"""パート保育士のシフト区分設定（週契約時間, 1日契約時間, 月間最小時間, 月間最大時間, 最早始業, 最遅終業, 備考）。"""
+
+SHIEN_CONFIGS: tuple[tuple[float, float, float, float, time, time, str], ...] = (
+    # 中番補助 (3名: 08:30〜16:30枠, 週25h/日5h)
+    (25.0, 5.0, 80.0, 115.0, time(8, 30), time(16, 30), "中番補助（預かり保育補助）"),
+    (25.0, 5.0, 80.0, 115.0, time(8, 30), time(16, 30), "中番補助（預かり保育補助）"),
+    (25.0, 5.0, 80.0, 115.0, time(8, 30), time(16, 30), "中番補助（預かり保育補助）"),
+    # 夕方補助 (1名: 13:00〜18:00枠, 週20h/日4h)
+    (20.0, 4.0, 60.0, 95.0, time(13, 0), time(18, 0), "夕方補助（延長保育補助）"),
+    # 短時間補助 (2名: 09:00〜14:00枠, 週20h/日4h)
+    (20.0, 4.0, 60.0, 95.0, time(9, 0), time(14, 0), "短時間補助（保育補助）"),
+    (20.0, 4.0, 60.0, 95.0, time(9, 0), time(14, 0), "短時間補助（保育補助）"),
+)
+"""パート子育て支援員のシフト区分設定（週契約時間, 1日契約時間, 月間最小時間, 月間最大時間, 最早始業, 最遅終業, 備考）。"""
+
+
+def _contract_for(label: str, rng: random.Random, sub_index: int = 0) -> Contract:
     """``STAFF_BLUEPRINT`` の区分名から ``Contract`` を組み立てる。"""
     if label == "正職員 保育士":
         return Contract(
@@ -333,36 +367,36 @@ def _contract_for(label: str, rng: random.Random) -> Contract:
             max_monthly_hours=185.0,
             max_weekly_days=5,
             max_consecutive_days=5,
-            earliest_start=time(6, 0),
+            earliest_start=time(7, 0),
             latest_end=time(20, 0),
         )
     if label == "パート 保育士":
-        weekly = float(rng.choice([25, 26, 28, 30]))
-        daily = min(float(rng.choice([5, 5.5, 6])), weekly / 5.0)
+        conf = PART_HOIKUSHI_CONFIGS[sub_index % len(PART_HOIKUSHI_CONFIGS)]
+        weekly, daily, min_m, max_m, start, end, _ = conf
         return Contract(
             weekly_hours=weekly,
             daily_hours=daily,
             employment_type=EmploymentType.PART,
-            min_monthly_hours=50.0,
-            max_monthly_hours=110.0,
+            min_monthly_hours=min_m,
+            max_monthly_hours=max_m,
             max_weekly_days=5,
             max_consecutive_days=5,
-            earliest_start=time(6, 0),
-            latest_end=PART_LATEST_END,
+            earliest_start=start,
+            latest_end=end,
         )
     if label == "パート 子育て支援員":
-        weekly = float(rng.choice([20, 22, 24, 25, 28]))
-        daily = min(float(rng.choice([4, 4.5, 5, 5.5])), weekly / 5.0)
+        conf = SHIEN_CONFIGS[sub_index % len(SHIEN_CONFIGS)]
+        weekly, daily, min_m, max_m, start, end, _ = conf
         return Contract(
             weekly_hours=weekly,
             daily_hours=daily,
             employment_type=EmploymentType.PART,
-            min_monthly_hours=40.0,
-            max_monthly_hours=100.0,
+            min_monthly_hours=min_m,
+            max_monthly_hours=max_m,
             max_weekly_days=5,
             max_consecutive_days=5,
-            earliest_start=time(6, 0),
-            latest_end=PART_LATEST_END,
+            earliest_start=start,
+            latest_end=end,
         )
     if label == "正職員 幼稚園教諭":
         return Contract(
@@ -373,6 +407,8 @@ def _contract_for(label: str, rng: random.Random) -> Contract:
             max_monthly_hours=185.0,
             max_weekly_days=5,
             max_consecutive_days=5,
+            earliest_start=time(7, 30),
+            latest_end=time(19, 0),
         )
     if label == "正職員 看護師":
         return Contract(
@@ -383,6 +419,8 @@ def _contract_for(label: str, rng: random.Random) -> Contract:
             max_monthly_hours=165.0,
             max_weekly_days=5,
             max_consecutive_days=5,
+            earliest_start=time(8, 30),
+            latest_end=time(17, 30),
         )
     if label == "パート 調理員":
         return Contract(
@@ -405,6 +443,8 @@ def _contract_for(label: str, rng: random.Random) -> Contract:
             max_monthly_hours=185.0,
             max_weekly_days=5,
             max_consecutive_days=5,
+            earliest_start=time(8, 30),
+            latest_end=time(18, 0),
         )
     raise ValueError(f"未登録の職員区分です: {label!r}")
 
@@ -447,22 +487,31 @@ def make_staff(*, seed: int = config.DEFAULT_SAMPLE_SEED) -> list[StaffMember]:
         "正職員 園長": frozenset({"管理職", "幼児教育学修士"}),
     }
     fixed_memo: dict[str, str] = {
-        "正職員 幼稚園教諭": "幼稚園教諭（配置基準上は保育士として計上）",
-        "正職員 園長": "園長（配置基準には計上しない）",
+        "正職員 保育士": "正職員（シフト勤務）",
+        "正職員 幼稚園教諭": "幼稚園教諭（幼児クラス担当・配置基準上保育士計上）",
+        "正職員 看護師": "看護師（衛生管理・0歳児ケア・延長緩和対象）",
+        "パート 調理員": "調理員（給食・おやつ調理）",
+        "正職員 園長": "園長（施設運営統括・配置基準対象外）",
     }
 
     members: list[StaffMember] = []
     for label, role, _employment, count in STAFF_BLUEPRINT:
-        for _ in range(count):
+        for sub_idx in range(count):
             index = len(members) + 1
+            if label == "パート 保育士":
+                conf_memo = PART_HOIKUSHI_CONFIGS[sub_idx % len(PART_HOIKUSHI_CONFIGS)][6]
+            elif label == "パート 子育て支援員":
+                conf_memo = SHIEN_CONFIGS[sub_idx % len(SHIEN_CONFIGS)][6]
+            else:
+                conf_memo = fixed_memo.get(label, "")
             members.append(
                 StaffMember(
                     staff_id=f"S{index:02d}",
                     name=STAFF_NAMES[index - 1],
                     roles=(role,),
-                    contract=_contract_for(label, rng),
+                    contract=_contract_for(label, rng, sub_index=sub_idx),
                     skills=fixed_skills.get(label) or skills_for(role),
-                    memo=fixed_memo.get(label, ""),
+                    memo=conf_memo,
                 )
             )
 
@@ -473,42 +522,80 @@ def make_staff(*, seed: int = config.DEFAULT_SAMPLE_SEED) -> list[StaffMember]:
 def _assign_off_days(
     staff: Sequence[StaffMember], day_list: Sequence[date], rng: random.Random
 ) -> dict[str, list[date]]:
-    """希望休の日付を「1 日あたり職員数の 25% 以下」に収めて割り当てる。
+    """希望休の日付を「1 日あたり職員数の 25% 以下」かつ「保育士は 1 日 2 名以下」に収めて割り当てる。
 
-    1. 職員をシャッフルし、1〜3 日を貪欲に割り当てつつ ``MAX_OFF_DAY_RATIO`` の
-       上限 (``floor(職員数 * 0.25)`` 人) を守る。
-    2. 上限のために 1 日も割り当てられなかった職員が生じた場合は、
-       3 日取った職員から 1 日を振替えて「全員 1 日以上」を保証する。
-       振替えは空きを作るだけなので上限は破られない。
+    多数職員（特に保育士）が同日に重なって休み、配置基準を満たせなくなるのを防ぐため、
+    保育士資格者には日別上限（1 日最大 2 名）を課す。
     """
-    cap = max(1, int(len(staff) * MAX_OFF_DAY_RATIO))
-    per_day: dict[date, int] = {d: 0 for d in day_list}
+    total_cap = max(1, int(len(staff) * MAX_OFF_DAY_RATIO))
+    hoikushi_cap = 2  # 保育士は1日最大2名まで
+
+    per_day_total: dict[date, int] = {d: 0 for d in day_list}
+    per_day_hoikushi: dict[date, int] = {d: 0 for d in day_list}
     taken: dict[str, list[date]] = {m.staff_id: [] for m in staff}
 
     order = list(staff)
     rng.shuffle(order)
     for member in order:
-        free = [d for d in day_list if per_day[d] < cap]
+        is_hoikushi = member.has_role(Role.HOIKUSHI)
+        free = [
+            d
+            for d in day_list
+            if per_day_total[d] < total_cap
+            and (not is_hoikushi or per_day_hoikushi[d] < hoikushi_cap)
+        ]
         free.sort(key=lambda d: d.weekday() >= config.WEEKEND_START_WEEKDAY)
-        want = min(rng.randint(1, 3), len(free), len(day_list))
+        want = min(rng.randint(1, 2 if is_hoikushi else 3), len(free), len(day_list))
         for day in free[:want]:
             taken[member.staff_id].append(day)
-            per_day[day] += 1
+            per_day_total[day] += 1
+            if is_hoikushi:
+                per_day_hoikushi[day] += 1
 
     for member in order:
+        is_hoikushi = member.has_role(Role.HOIKUSHI)
         while not taken[member.staff_id]:
             donor = next(
-                (m for m in order if len(taken[m.staff_id]) > 1 and m.staff_id != member.staff_id),
+                (
+                    m
+                    for m in order
+                    if len(taken[m.staff_id]) > 1
+                    and m.staff_id != member.staff_id
+                    and (not is_hoikushi or m.has_role(Role.HOIKUSHI))
+                ),
                 None,
             )
             if donor is None:
+                donor = next(
+                    (
+                        m
+                        for m in order
+                        if len(taken[m.staff_id]) > 1 and m.staff_id != member.staff_id
+                    ),
+                    None,
+                )
+            if donor is None:
                 break
-            freed = max(taken[donor.staff_id], key=lambda d: (per_day[d], d))
+            freed = max(taken[donor.staff_id], key=lambda d: (per_day_total[d], d))
             taken[donor.staff_id].remove(freed)
-            per_day[freed] -= 1
-            target = min(day_list, key=lambda d: (per_day[d], d))
+            per_day_total[freed] -= 1
+            if donor.has_role(Role.HOIKUSHI):
+                per_day_hoikushi[freed] -= 1
+
+            candidates = [
+                d
+                for d in day_list
+                if per_day_total[d] < total_cap
+                and (not is_hoikushi or per_day_hoikushi[d] < hoikushi_cap)
+            ]
+            if candidates:
+                target = min(candidates, key=lambda d: (per_day_total[d], d))
+            else:
+                target = min(day_list, key=lambda d: (per_day_total[d], d))
             taken[member.staff_id].append(target)
-            per_day[target] += 1
+            per_day_total[target] += 1
+            if is_hoikushi:
+                per_day_hoikushi[target] += 1
 
     return {sid: sorted(days) for sid, days in taken.items()}
 
@@ -529,8 +616,8 @@ def make_preferences(
     off_days = _assign_off_days(staff, day_list, rng)
 
     hoikushi = [m for m in staff if m.has_role(Role.HOIKUSHI)]
-    avoid_early = {m.staff_id for m in hoikushi[:2]}
-    avoid_late = {m.staff_id for m in hoikushi[2:4]}
+    avoid_early = {hoikushi[0].staff_id} if hoikushi else set()
+    avoid_late = {hoikushi[1].staff_id} if len(hoikushi) > 1 else set()
 
     prefs: dict[str, StaffPreferences] = {}
     for member in staff:

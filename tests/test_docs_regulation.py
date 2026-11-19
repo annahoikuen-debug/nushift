@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 
@@ -19,9 +20,10 @@ from shiftai import local_rules
 from shiftai.compliance import FacilitySpec, Regulation, StaffRecord, audit_facility
 from shiftai.domain import AgeClass, Role
 
-DOC = "docs/03_配置基準と自治体ルール.md"
-GUIDE = "docs/05_開発ガイド.md"
-SOURCE = "src/shiftai/local_rules.py"
+ROOT = Path(__file__).resolve().parent.parent
+DOC = ROOT / "docs" / "03_配置基準と自治体ルール.md"
+GUIDE = ROOT / "docs" / "05_開発ガイド.md"
+SOURCE = ROOT / "src" / "shiftai" / "local_rules.py"
 
 LICENSED_KEYS = (
     "全国基準（厚労省）",

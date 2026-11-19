@@ -165,7 +165,8 @@ WEEKLY_PARALLEL_WORKERS = 0
 HIGHS_GAP_REL = 0.03
 
 #: HiGHS の MIP ヒューリスティック努力量。
-HIGHS_MIP_HEURISTIC_EFFORT = 0.2
+#: 0.2 から 0.7 に引き上げ、all-OFF の trivial 解を避け非自明な解を探しやすくする。
+HIGHS_MIP_HEURISTIC_EFFORT = 0.7
 
 #: Streamlit の時刻入力ウィジェットに与える step（秒）。15分刻み。
 #: UI 固有の設定であり法定要件ではないため ``APP_`` 規約で持つ。

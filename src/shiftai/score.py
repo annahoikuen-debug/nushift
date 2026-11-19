@@ -8,10 +8,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 from shiftai.domain import (
     CellState,
     ConstraintMatch,
+    Indictment,
     ObjectiveWeights,
     RequirementTable,
     Role,
@@ -51,33 +53,47 @@ def compute_shift_score(
         violation_groups[v.code].append(v)
 
     hard_penalty_count = 0
+    medium_penalty_total = 0.0
     soft_penalty_total = 0.0
 
-    # 制約ごとのメタ情報（名前、重み、ハード判定）
-    CONSTRAINT_METADATA: dict[str, tuple[str, bool, float]] = {
-        "SHORTFALL_STAFF": ("必要人員配置基準", True, w.shortfall_penalty),
-        "SHORTFALL_QUALIFIED": ("保育士比率配置基準", True, w.shortfall_penalty * 1.2),
-        "BREAK_INSUFFICIENT": ("法定休憩時間確保", True, w.break_deficit_penalty),
-        "SPLIT_SHIFT": ("1日勤務の3分割禁止", True, w.split_duty_penalty),
-        "DAILY_HOURS_EXCEEDED": ("1日法定/契約労働時間上限", True, 2000.0),
-        "CONSECUTIVE_DAYS": ("連続勤務日数上限", True, 1500.0),
-        "REST_HOURS_SHORT": ("勤務間インターバル不足", True, 1500.0),
-        "WORK_ON_UNAVAILABLE": ("希望休の尊重", False, w.preference_miss_penalty * 10),
-        "OVERSTAFF": ("余剰配置抑制", False, w.overstaff_penalty),
-        "BREAK_FRAGMENTED": ("休憩の分割防止", False, w.break_conflict_penalty),
-        "BREAK_OVERLAP": ("同時休憩集中の防止", False, 10.0),
-        "AVOID_EARLY_CONFLICT": ("早番回避希望の尊重", False, 20.0),
-        "AVOID_LATE_CONFLICT": ("遅番回避希望の尊重", False, 20.0),
-        "FAIRNESS_SPREAD": ("早番・遅番・土曜出勤の平準化", False, 10.0),
-        "HOLIDAY_TARGET_DIFF": ("月間公休目標の平準化", False, 15.0),
+    # 特定エンティティ（職員×日付）ごとのペナルティ起因分析データ
+    indictment_accum: dict[tuple[str, Any], dict[str, Any]] = defaultdict(
+        lambda: {"hard": 0, "soft": 0.0, "violations": []}
+    )
+
+    # 制約ごとのメタ情報（名前、スコア階層: HARD/MEDIUM/SOFT、重み）
+    CONSTRAINT_METADATA: dict[str, tuple[str, str, float]] = {
+        # 1. HARD (法令・基準・労基法・配置基準: 絶対遵守)
+        "SHORTFALL_STAFF": ("必要人員配置基準", "HARD", w.shortfall_penalty),
+        "SHORTFALL_QUALIFIED": ("保育士比率配置基準", "HARD", w.shortfall_penalty * 1.2),
+        "BREAK_INSUFFICIENT": ("法定休憩時間確保", "HARD", w.break_deficit_penalty),
+        "SPLIT_SHIFT": ("1日勤務の3分割禁止", "HARD", w.split_duty_penalty),
+        "DAILY_HOURS_EXCEEDED": ("1日法定/契約労働時間上限", "HARD", 2000.0),
+        "CONSECUTIVE_DAYS": ("連続勤務日数上限", "HARD", 1500.0),
+        "REST_HOURS_SHORT": ("勤務間インターバル不足", "HARD", 1500.0),
+        "MAIN_OPENING_COVERAGE": ("11時間開所常時2名基準", "HARD", 3000.0),
+        # 2. MEDIUM (財務・事業運営・余剰・契約枠)
+        "OVERSTAFF": ("余剰配置抑制", "MEDIUM", w.overstaff_penalty),
+        "HOLIDAY_TARGET_DIFF": ("月間公休目標の乖離", "MEDIUM", 15.0),
+        "WEEKLY_HOURS_EXCEEDED": ("週40時間超過", "MEDIUM", 50.0),
+        "OVERCONSTRAINED_SHORTFALL": ("外部応援・欠員枠", "MEDIUM", 10000.0),
+        # 3. SOFT (従業員満足度・希望・公平性・QoL)
+        "WORK_ON_UNAVAILABLE": ("希望休の尊重", "SOFT", w.preference_miss_penalty * 10),
+        "BREAK_FRAGMENTED": ("休憩の分割防止", "SOFT", w.break_conflict_penalty),
+        "BREAK_OVERLAP": ("同時休憩集中の防止", "SOFT", 10.0),
+        "AVOID_EARLY_CONFLICT": ("早番回避希望の尊重", "SOFT", 20.0),
+        "AVOID_LATE_CONFLICT": ("遅番回避希望の尊重", "SOFT", 20.0),
+        "FAIRNESS_SPREAD": ("早番・遅番・土曜出勤の平準化", "SOFT", 10.0),
     }
 
     for code, v_list in violation_groups.items():
         meta = CONSTRAINT_METADATA.get(code)
         if meta:
-            c_name, is_hard, weight = meta
+            c_name, level_str, weight = meta
+            is_hard = level_str == "HARD"
         else:
             is_hard = any(v.severity is ViolationSeverity.BLOCKER for v in v_list)
+            level_str = "HARD" if is_hard else "SOFT"
             c_name = v_list[0].message.split(" ")[0] if v_list else code
             weight = w.shortfall_penalty if is_hard else 5.0
 
@@ -132,8 +148,22 @@ def compute_shift_score(
         details = [f"{v.day} {v.slot.label if v.slot else ''}: {v.message}" for v in v_list]
         impact = count * weight
 
+        # 各違反についてエンティティ（職員×日付）へ起因（Indictment）を振り分け
+        for v in v_list:
+            ent_staff = v.staff_id if v.staff_id else "__FACILITY__"
+            ent_key = (ent_staff, v.day)
+            if is_hard:
+                indictment_accum[ent_key]["hard"] += 1
+            else:
+                indictment_accum[ent_key]["soft"] += weight
+            v_desc = f"[{c_name}] {v.message}"
+            if v_desc not in indictment_accum[ent_key]["violations"]:
+                indictment_accum[ent_key]["violations"].append(v_desc)
+
         if is_hard:
             hard_penalty_count += count
+        elif level_str == "MEDIUM":
+            medium_penalty_total += impact
         else:
             soft_penalty_total += impact
 
@@ -147,7 +177,7 @@ def compute_shift_score(
             details=details,
         )
 
-    # 2. 余剰配置 (Overstaff) のソフト評価集計 (RequirementTable とシフト配置がある場合)
+    # 2. 余剰配置 (Overstaff) のミディアム評価集計 (RequirementTable とシフト配置がある場合)
     if requirements and shift_days and "OVERSTAFF" not in matches:
         # violations 由来で matches に OVERSTAFF が既にある場合は再集計をスキップし
         # 二重計上を防ぐ（後方互換のため standard なしでも動作する）。
@@ -172,9 +202,9 @@ def compute_shift_score(
 
         if overstaff_slots > 0:
             c_code = "OVERSTAFF"
-            meta = CONSTRAINT_METADATA.get(c_code, ("余剰配置抑制", False, w.overstaff_penalty))
+            meta = CONSTRAINT_METADATA.get(c_code, ("余剰配置抑制", "MEDIUM", w.overstaff_penalty))
             impact = overstaff_slots * meta[2]
-            soft_penalty_total += impact
+            medium_penalty_total += impact
             matches[c_code] = ConstraintMatch(
                 constraint_id=c_code,
                 constraint_name=meta[0],
@@ -186,10 +216,24 @@ def compute_shift_score(
             )
 
     hard_score = -hard_penalty_count
+    medium_score = -medium_penalty_total
     soft_score = -soft_penalty_total
+
+    # Indictment オブジェクトの構築
+    indictments: dict[tuple[str, Any], Indictment] = {}
+    for (sid, v_day), data in indictment_accum.items():
+        indictments[(sid, v_day)] = Indictment(
+            staff_id=sid,
+            day=v_day,
+            hard_penalty_count=data["hard"],
+            soft_penalty_total=data["soft"],
+            violations=data["violations"],
+        )
 
     return ShiftScore(
         hard_score=hard_score,
+        medium_score=medium_score,
         soft_score=soft_score,
         matches=matches,
+        indictments=indictments,
     )

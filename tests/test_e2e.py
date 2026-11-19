@@ -15,7 +15,7 @@ from openpyxl import load_workbook
 
 from shiftai import local_rules, sample_data
 from shiftai.data_loader import load_bundle
-from shiftai.domain import CellState, FacilitySettings
+from shiftai.domain import FacilitySettings
 from shiftai.exporter import (
     export_bundle_zip,
     payroll_dataframe,

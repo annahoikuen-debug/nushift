@@ -597,10 +597,16 @@ def render_fairness_panel(
 
 
 def staff_day_summary_frame(
-    shift_day: ShiftDay | None, slots: Sequence[Slot], staff: Sequence[Any]
+    shift_day: ShiftDay | None,
+    slots: Sequence[Slot],
+    staff: Sequence[Any],
+    *,
+    result: SolveResult | None = None,
+    day: date | None = None,
 ) -> pd.DataFrame:
-    """職員ごとの当日勤務サマリ（開始/終了/勤務/休憩）。"""
+    """職員ごとの当日勤務サマリ（開始/終了/勤務/休憩・Indictment起因ペナルティ）。"""
     records = []
+    indictments = result.score.indictments if result and result.score else {}
     for member in staff:
         work_minutes = 0
         break_minutes = 0
@@ -617,18 +623,27 @@ def staff_day_summary_frame(
                     last = slot
                 elif state is CellState.BREAK:
                     break_minutes += slot.minutes
-        records.append(
-            {
-                "職員ID": member.staff_id,
-                "氏名": member.name,
-                "資格": member.primary_role.value,
-                "勤務開始": first.start.strftime("%H:%M") if first else "—",
-                "勤務終了": last.end.strftime("%H:%M") if last else "—",
-                "勤務分数": work_minutes,
-                "休憩分数": break_minutes,
-                "実働時間": round(work_minutes / 60.0, 2),
-            }
-        )
+
+        ind = indictments.get((member.staff_id, day)) if day else None
+        penalty_desc = "適法 (0)"
+        if ind and ind.total_penalty > 0:
+            penalty_desc = f"⚠️ {int(ind.total_penalty)}"
+        reasons = "; ".join(ind.violations[:2]) if ind and ind.violations else "—"
+
+        rec = {
+            "職員ID": member.staff_id,
+            "氏名": member.name,
+            "資格": member.primary_role.value,
+            "勤務開始": first.start.strftime("%H:%M") if first else "—",
+            "勤務終了": last.end.strftime("%H:%M") if last else "—",
+            "勤務分数": work_minutes,
+            "休憩分数": break_minutes,
+            "実働時間": round(work_minutes / 60.0, 2),
+        }
+        if result is not None:
+            rec["制約状況"] = penalty_desc
+            rec["理由・指摘"] = reasons
+        records.append(rec)
     return pd.DataFrame.from_records(records)
 
 

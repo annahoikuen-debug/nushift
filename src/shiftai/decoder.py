@@ -14,37 +14,30 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 
-import pulp
-
 from shiftai import config
 from shiftai.domain import (
     CellState,
-    ChildPlan,
-    ClassRoom,
     FacilitySettings,
-    ObjectiveWeights,
-    PairingRule,
     RequirementTable,
+    ShiftAssignment,
+    ShiftDay,
     Slot,
     SolveResult,
-    ShiftDay,
-    ShiftAssignment,
+    StaffingStandard,
     StaffMember,
     StaffPreferences,
-    StaffingStandard,
+)
+from shiftai.model_builder import (
+    _day_is_workable,
+    _is_unavailable,
+    _slot_is_contractible,
+    _var_value,
 )
 from shiftai.shift_patterns import (
     ShiftPattern,
     describe_pattern,
     match_pattern,
     normalize_patterns,
-)
-from shiftai.model_builder import (
-    _day_is_workable,
-    _is_unavailable,
-    _slot_is_contractible,
-    _linear,
-    _var_value,
 )
 from shiftai.statutory_rules import daily_cap_minutes
 
@@ -311,7 +304,7 @@ def snap_to_patterns(
             if any(_is_unavailable(prefs.get(sid), day, slots[i]) for i in target):
                 reason = "希望休と重なる"
                 continue
-            if sum(slots[i].minutes for i in target) > _daily_cap_minutes(member.contract):
+            if sum(slots[i].minutes for i in target) > daily_cap_minutes(member.contract):
                 reason = "1日の上限時間を超える"
                 continue
             new_states = [CellState.OFF] * n

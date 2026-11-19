@@ -14,7 +14,6 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date
-from typing import Any
 
 import pulp
 
@@ -22,18 +21,11 @@ from shiftai import config
 from shiftai.config import (
     STATUTORY_DAILY_WORK_HOURS,
     STATUTORY_WEEKLY_WORK_HOURS,
-    STATUTORY_MAX_DAILY_WORK_HOURS,
-    STATUTORY_OVERTIME_MULTIPLIER,
-    INTERNAL_DAILY_LONG_HOURS,
-    BREAK_CONCURRENT_SHARE,
-    DEFAULT_BREAK_MINUTES,
-    FLOAT_TOLERANCE,
 )
 from shiftai.domain import (
     CellState,
-    ChildPlan,
     ClassRoom,
-    Contract,
+    EmploymentType,
     FacilitySettings,
     ObjectiveWeights,
     PairingRule,
@@ -41,12 +33,9 @@ from shiftai.domain import (
     Role,
     Slot,
     SlotKind,
-    SolveStatus,
     StaffingStandard,
     StaffMember,
     StaffPreferences,
-    Violation,
-    ViolationSeverity,
     daily_cap_minutes,
     to_minutes,
     weekly_periods,
@@ -605,7 +594,7 @@ def _build_cells(
     for st in staff:
         sid = st.staff_id
         prefs_st = None if ignore_unavailable or "unavailable" in drop_groups else prefs.get(sid)
-        cap_min = _daily_cap_minutes(st.contract)
+        cap_min = daily_cap_minutes(st.contract)
         if "daily_cap" in drop_groups:
             cap_min = max(cap_min, STATUTORY_DAILY_WORK_HOURS * 60)
         hours = pulp.LpVariable(f"H_{sid}", lowBound=0)
@@ -982,7 +971,7 @@ def _add_breaks(
             if st.contract.break_minutes is not None
             else getattr(settings, "break_minutes", None) or break_minutes
         )
-        cap_min = _daily_cap_minutes(st.contract)
+        cap_min = daily_cap_minutes(st.contract)
         is_part_short = st.contract.daily_hours is not None and st.contract.daily_hours <= 6.0
         if (
             (st.contract.break_minutes is not None and st.contract.break_minutes == 0)
@@ -1312,7 +1301,7 @@ def _add_hours_objective(
         hvar = ctx.hours[sid]
         lo = st.contract.min_monthly_hours * weeks
         hi = st.contract.max_monthly_hours * weeks
-        reachable = len(days) * _daily_cap_minutes(st.contract) / 60.0
+        reachable = len(days) * daily_cap_minutes(st.contract) / 60.0
         if lo > 0:
             short = pulp.LpVariable(f"mshort_{sid}", lowBound=0)
             ctx.prob += hvar + short >= lo
@@ -1705,7 +1694,7 @@ def _build_problem(
     standard: StaffingStandard | None,
     soft_coverage: bool = False,
     patterns: Sequence[ShiftPattern] | None = None,
-    relaxation: int = int(0),
+    relaxation: int = 0,
     drop_groups: frozenset[str] = frozenset(),
     pattern_mode: bool = False,
     pairing_rules: Sequence[PairingRule] | None = None,

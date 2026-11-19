@@ -80,8 +80,10 @@ def _render_grid(result: SolveResult, day: date, slots: Any, staff: list[Any]) -
                     key=f"shift_grid_{day.isoformat()}",
                 )
     with right:
-        summary = components.staff_day_summary_frame(shift_day, slots, staff)
-        st.markdown("##### 職員別サマリ")
+        summary = components.staff_day_summary_frame(
+            shift_day, slots, staff, result=result, day=day
+        )
+        st.markdown("##### 職員別サマリ & 制約状況")
         st.dataframe(
             summary,
             hide_index=True,
@@ -93,6 +95,8 @@ def _render_grid(result: SolveResult, day: date, slots: Any, staff: list[Any]) -
                 "勤務分数": st.column_config.NumberColumn("勤務分数", format="%d"),
                 "休憩分数": st.column_config.NumberColumn("休憩分数", format="%d"),
                 "実働時間": st.column_config.NumberColumn("実働時間", format="%.2f"),
+                "制約状況": st.column_config.TextColumn("制約状況", width="small"),
+                "理由・指摘": st.column_config.TextColumn("理由・指摘", width="medium"),
             },
         )
 
@@ -389,6 +393,81 @@ def _render_coverage_matrix(result: SolveResult) -> None:
         st.caption("赤＝配置数が必要数に届いていない時間帯（法令・基準の未達）。")
 
 
+def _render_score_explanation(result: SolveResult, day: date) -> None:
+    """Timefold 思想に基づくスコア説明・制約起因分析 (Score Explanation & Indictment)。"""
+    st.markdown("#### 🎯 AIスコア説明・制約起因分析 (Timefold Score Explanation)")
+    score = result.score
+    if score is None:
+        st.info("スコア詳細情報がありません。")
+        return
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric(
+        "Hard スコア (適法性)",
+        f"{score.hard_score}",
+        delta="完全適法 (BLOCKER 0)" if score.hard_score == 0 else f"{abs(score.hard_score)} 件違反",
+        delta_color="normal" if score.hard_score == 0 else "inverse",
+    )
+    c2.metric(
+        "Medium スコア (事業・余剰)",
+        f"{score.medium_score:.1f}",
+        help="余剰配置・パート契約時間差異・欠員枠のペナルティ。0に近いほど効率的です。",
+    )
+    c3.metric(
+        "Soft スコア (満足度ペナルティ)",
+        f"{score.soft_score:.1f}",
+        help="0に近いほど希望休・公平性・休憩が理想的に組まれています。",
+    )
+    c4.metric(
+        "総合判定",
+        "適法 (Feasible)" if score.is_feasible else "警告あり (Violations)",
+    )
+
+    # 過剰制約（Overconstrained Shortfall）の明示
+    shortfalls = result.overconstrained_shortfalls or result.stats.get("overconstrained_shortfalls", [])
+    if shortfalls:
+        st.error(
+            f"⚠️ 【要ヘルプ・外部派遣】人員・有資格者が不足しているスロットが {len(shortfalls)} 件あります。"
+            "現状の配置枠では法令配置基準を満たせないため、外部応援または契約時間の延長を検討してください。"
+        )
+        with st.expander(f"📋 不足スロット一覧（{len(shortfalls)} 件）", expanded=True):
+            st.dataframe(
+                pd.DataFrame(shortfalls),
+                hide_index=True,
+                width="stretch",
+                key="overconstrained_shortfalls_table",
+            )
+
+    # 当日の Indictment（職員×日付のペナルティ起因）
+    day_indictments = [
+        {
+            "職員ID": ind.staff_id,
+            "ハード違反数": ind.hard_penalty_count,
+            "ソフトペナルティ": round(ind.soft_penalty_total, 1),
+            "ペナルティ合計": round(ind.total_penalty, 1),
+            "起因制約・理由": "; ".join(ind.violations),
+        }
+        for (sid, d), ind in score.indictments.items()
+        if d == day and ind.total_penalty > 0
+    ]
+    with st.expander(
+        f"🔍 {theme.format_day(day)} の制約ペナルティ起因分析 (Constraint Indictments)",
+        expanded=bool(day_indictments),
+    ):
+        if not day_indictments:
+            st.success(f"{theme.format_day(day)} はすべての制約に適合しています（ペナルティ 0）。")
+        else:
+            st.dataframe(
+                pd.DataFrame(day_indictments),
+                hide_index=True,
+                width="stretch",
+                key=f"indictments_day_{day.isoformat()}",
+            )
+            st.caption(
+                "※ なぜこのシフトになったのか、各職員のシフトがどのルールに起因してペナルティを受けているかを逆引き表示しています。"
+            )
+
+
 def _apply_fix_target() -> None:
     """違反一覧の「修正」ボタンで指定された対象を反映する。
 
@@ -536,6 +615,8 @@ def render_section(*, in_simple: bool = False) -> None:
     _render_weekday_pivot(result, slots)
     st.divider()
     _render_coverage_matrix(result)
+    st.divider()
+    _render_score_explanation(result, day)
     st.divider()
     components.render_fairness_panel(
         result,
