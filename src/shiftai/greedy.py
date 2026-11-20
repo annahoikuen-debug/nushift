@@ -39,9 +39,31 @@ _DEFAULT_STAGGER_SLOTS = 1
 _BREAK_CONCURRENT_SHARE = config.BREAK_CONCURRENT_SHARE
 
 
-def _daily_cap_minutes(contract: Contract) -> int:
-    """職員の1日あたり勤務時間の上限（domain.daily_cap_minutes に委譲）。"""
-    return daily_cap_minutes(contract)
+def _daily_cap_minutes(
+    contract: Contract,
+    settings: FacilitySettings | None = None,
+    break_minutes: int = 60,
+) -> int:
+    """職員の1日あたり勤務時間の上限（休憩0分時は法令遵守のため最大6時間に制限）。"""
+    cap_min = daily_cap_minutes(contract)
+    raw_break = (
+        contract.break_minutes
+        if contract.break_minutes is not None
+        else getattr(settings, "break_minutes", None) or break_minutes
+    )
+    is_part_short = contract.daily_hours is not None and contract.daily_hours <= 6.0
+    if (
+        (contract.break_minutes is not None and contract.break_minutes == 0)
+        or is_part_short
+        or cap_min <= 6 * 60
+    ):
+        eff_break = 0
+    else:
+        eff_break = min(
+            max(raw_break, config.MIN_ALLOWABLE_BREAK_MINUTES),
+            config.MAX_ALLOWABLE_BREAK_MINUTES,
+        )
+    return min(cap_min, 6 * 60) if eff_break == 0 else cap_min
 
 
 def _day_is_workable(st: StaffMember, day: date, settings: FacilitySettings) -> bool:

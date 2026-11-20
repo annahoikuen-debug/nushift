@@ -18,10 +18,6 @@ _FALLBACK = "0+unknown"
 
 def _resolve_version() -> str:
     try:
-        return _dist_version("shiftai")
-    except PackageNotFoundError:
-        pass
-    try:
         import tomllib
         from pathlib import Path
 
@@ -31,7 +27,11 @@ def _resolve_version() -> str:
             found = data.get("project", {}).get("version")
             if isinstance(found, str) and found:
                 return found
-    except (OSError, ValueError, ImportError):  # pragma: no cover - 環境依存
+    except (OSError, ValueError, ImportError):
+        pass
+    try:
+        return _dist_version("shiftai")
+    except PackageNotFoundError:
         pass
     return _FALLBACK
 

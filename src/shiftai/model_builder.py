@@ -697,6 +697,7 @@ def _build_cells(
                     max(raw_break, config.MIN_ALLOWABLE_BREAK_MINUTES),
                     config.MAX_ALLOWABLE_BREAK_MINUTES,
                 )
+            effective_cap_min = min(cap_min, 6 * 60) if eff_break == 0 else cap_min
             max_blocks = (
                 st.contract.max_work_blocks_per_day
                 if st.contract.max_work_blocks_per_day is not None
@@ -729,7 +730,7 @@ def _build_cells(
                 _hard_le(
                     ctx,
                     _linear(day_items),
-                    cap_min,
+                    effective_cap_min,
                     f"dailycap_{sid}_{day.isoformat()}",
                 )
             ctx.day_work[(sid, day)] = _linear(day_items)
@@ -761,6 +762,10 @@ def _build_cells(
                             settings, "sei_min_daily_hours", config.DEFAULT_SEI_MIN_DAILY_HOURS
                         )
                     )
+                    if st.contract.daily_hours is not None:
+                        sei_min_h = min(sei_min_h, st.contract.daily_hours)
+                    if cap_min < sei_min_h * 60:
+                        sei_min_h = cap_min / 60.0
                     fac_sei_max_h = getattr(
                         settings, "sei_max_daily_hours", config.DEFAULT_SEI_MAX_DAILY_HOURS
                     )
@@ -772,7 +777,7 @@ def _build_cells(
                         sei_max_h = min(st.contract.daily_hours, fac_sei_max_h)
                     else:
                         sei_max_h = fac_sei_max_h
-                    min_work_min = int(round(sei_min_h * 60))
+                    min_work_min = min(int(round(sei_min_h * 60)), sum(s.minutes for s in slots))
                     max_work_min = int(round(sei_max_h * 60))
                     _hard_ge(ctx, _linear(day_items), min_work_min * yvar, f"seimin_{sid}_{tag}")
                     _hard_le(ctx, _linear(day_items), max_work_min * yvar, f"seimax_{sid}_{tag}")
@@ -871,6 +876,11 @@ def _add_coverage(
                     ctx.conflicts.append(
                         f"{day.isoformat()} {slot.label} の{label} {need} 名を配置できる職員がいません"
                     )
+                    if soft:
+                        gap = pulp.LpVariable(f"gap_{name}", lowBound=0)
+                        ctx.prob += gap >= need
+                        obj.append(weights.shortfall_penalty * gap)
+                        ctx.shortfall[name] = (gap, need, day, slot, label)
                     continue
                 expr = _linear([(v, 1) for v in items])
                 if soft:
@@ -962,6 +972,7 @@ def _add_breaks(
     weights: ObjectiveWeights,
     break_minutes: int,
     settings: FacilitySettings | None = None,
+    allow_deficit: bool = False,
 ) -> None:
     """勤務日ごとに連続した休憩が取れるようにする（不足分はソフトペナルティ）。"""
     slots = tuple(requirements.slots)

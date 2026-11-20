@@ -268,7 +268,7 @@ def solve_monthly_hierarchical(
     # ---------------------------------------------------------
     stage1_res: dict[tuple[str, dt.date], str] = {}
     stage1_slack: dict[str, float] = {}
-    stage1_time: int = 0  # ステージ1をスキップ（Stage 2 が soft coverage で全て処理）
+    stage1_time: int = min(max(time_limit_sec // 6, 3), 8)
     all_messages: list[str] = []
 
     _notify("STAGE_1_PATTERNS", 10, extra={"stage1_patterns": len(effective_patterns)})
@@ -297,6 +297,15 @@ def solve_monthly_hierarchical(
             stats_out=stage1_slack,
         )
 
+    if stage1_slack.get("stage1_status") == SolveStatus.INFEASIBLE.value:
+        return SolveResult(
+            status=SolveStatus.INFEASIBLE,
+            shift_days=[],
+            violations=[],
+            messages=["Stage 1 is infeasible"],
+            stats=stage1_slack,
+        )
+
     # Stage 1 の結果を Stage 2 の fixed_assignments / warm_starts に反映
     combined_fixed = dict(context.fixed_assignments)
     warm_starts: dict[tuple[str, dt.date, str], CellState] = {}
@@ -304,16 +313,31 @@ def solve_monthly_hierarchical(
 
     slots = tuple(context.requirements.slots)
 
+    granularity = context.requirements.granularity_min or 30
+
     for (sid, d), pattern_key in stage1_res.items():
         p = pattern_by_key.get(pattern_key)
         if p and pattern_key != "OFF":
-            # Stage 1 の勤務パターンを warm_start としてのみ活用し、
-            # fixed_assignments として固定しない。
-            # パターン内の休憩スロットまで WORK に固定すると休憩制約と
-            # 競合して INFEASIBLE になるため、warm_start のみで初期ヒント
-            # を与え、Stage 2 のソルバーに自由に最適化させる。
-            for s in slots:
-                if p.start_minutes <= s.start_minutes < p.end_minutes:
+            # Stage 1 の勤務パターンを warm_start として活用する。
+            # 拘束時間が 6時間超（360分超）の勤務パターンは労働基準法第34条に基づき
+            # 60分の休憩が必要となるため、中央付近の 2スロット（30分粒度の場合）を
+            # CellState.BREAK として warm_start に登録する。
+            # 全スロットを CellState.WORK にすると HiGHS が「休憩なし」の初期解から抜け出せず
+            # 法令違反（BREAK_INSUFFICIENT）を招くのを防ぐ。
+            pat_slots = [s for s in slots if p.start_minutes <= s.start_minutes < p.end_minutes]
+            span = p.end_minutes - p.start_minutes
+            need_break_slots = max(1, 60 // granularity) if span > 6 * 60 else 0
+
+            break_indices: set[int] = set()
+            if need_break_slots > 0 and len(pat_slots) > need_break_slots:
+                # パターンの中央付近に休憩スロットを配置
+                break_start = (len(pat_slots) - need_break_slots) // 2
+                break_indices = set(range(break_start, break_start + need_break_slots))
+
+            for idx, s in enumerate(pat_slots):
+                if idx in break_indices:
+                    warm_starts[(sid, d, s.label)] = CellState.BREAK
+                else:
                     warm_starts[(sid, d, s.label)] = CellState.WORK
         # Stage 1 の OFF 結果も固定しない。
         # OFF を固定すると残る職員でのカバーが困難になり Stage 2 が
@@ -398,12 +422,13 @@ def solve_monthly_hierarchical(
     else:
         waves = chunks_n
 
-    actual_left = time_limit_sec - stage1_time
+    elapsed_so_far = perf_counter() - started
+    actual_left = max(5.0, time_limit_sec - elapsed_so_far)
     remaining_budget = max(int(actual_left), 5)
     budget_per_wave = max(remaining_budget // waves, 5)
-    # ステージ2（30分スロット詳細配置）に十分な時間を確保しつつ、全体時間制限内に収める
+    # ステージ2（30分スロット詳細配置）に十分な時間を確保しつつ、事後評価（score/violations）の時間を残して全体時間制限内に収める
     if chunks_n == 1:
-        per_chunk_time = min(int(remaining_budget * 0.7), budget_per_wave)
+        per_chunk_time = min(max(5, int(remaining_budget * 0.45)), budget_per_wave)
     else:
         per_chunk_time = min(max(remaining_budget // chunks_n, 5), min(20, budget_per_wave))
 
@@ -856,9 +881,20 @@ def _solve_stage1_daily_patterns(
         elif contract and contract.min_daily_hours is not None:
             min_daily_h = contract.min_daily_hours
 
+        is_fulltime = contract and (
+            contract.employment_type == EmploymentType.SEI
+            or (contract.daily_hours is not None and contract.daily_hours >= 7.0)
+        )
+
         for p in patterns:
             pat_h = (to_minutes(p.end) - to_minutes(p.start)) / 60.0
             work_h = pat_h - 1.0 if pat_h > 6.0 else pat_h
+            # 正職員・フルタイム職員にはパート用短時間パターン（6h以下）を割り当てない
+            # （正職員に休憩なしの短時間シフトが入ると、Stage 2 での延長時に休憩不足を招くため）
+            if is_fulltime and pat_h <= 6.0:
+                for d in days:
+                    prob += x_vars[(sid, d, p.key)] == 0
+                continue
             if work_h > max_daily_h + 0.1 or (min_daily_h > 0 and work_h < min_daily_h - 0.1):
                 # この職員の 1日上限超過または最低勤務時間未満のパターンは禁止
                 for d in days:

@@ -90,4 +90,4 @@ def test_render_score_explanation_smoke():
         _render_score_explanation(result, d)
     except Exception as exc:
         # Streamlit のコンテキスト外エラー（NoSessionContext等）は許容
-        assert "ScriptRunContext" in str(type(exc)) or "streamlit" in str(type(exc)).lower() or True
+        assert "ScriptRunContext" in str(type(exc)) or "streamlit" in str(type(exc)).lower()

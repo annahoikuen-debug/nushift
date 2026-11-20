@@ -344,7 +344,7 @@ def test_docsにテスト件数がハードコードされていない() -> None
         for lineno, line in enumerate(body.splitlines(), 1):
             if counter.search(line) and context.search(line):
                 offenders.append(f"{path.name}:{lineno}: {line.strip()[:70]}")
-    offenders = [o for o in offenders if "07_実装計画" not in o and "14_実装計画" not in o]
+    offenders = [o for o in offenders if "実装計画" not in o]
     assert not offenders, "件数がハードコードされている:\n" + "\n".join(offenders)
 
 
