@@ -298,13 +298,7 @@ def solve_monthly_hierarchical(
         )
 
     if stage1_slack.get("stage1_status") == SolveStatus.INFEASIBLE.value:
-        return SolveResult(
-            status=SolveStatus.INFEASIBLE,
-            shift_days=[],
-            violations=[],
-            messages=["Stage 1 is infeasible"],
-            stats=stage1_slack,
-        )
+        all_messages.append("Stage 1 daily patterns solve was infeasible; proceeding to Stage 2 with unguided warm starts.")
 
     # Stage 1 の結果を Stage 2 の fixed_assignments / warm_starts に反映
     combined_fixed = dict(context.fixed_assignments)
@@ -765,7 +759,7 @@ def _target_holidays(monthly_target: int, days_count: int, contract: Contract | 
     # 勤務日数上限が 0/負にならないよう保証
     target = min(target, max(0, days_count - 1))
     max_wd = getattr(contract, "max_weekly_days", None) if contract else None
-    if max_wd:
+    if max_wd and days_count > max_wd:
         est_work_days = round(max_wd * days_count / 7.0)
         target = max(target, max(0, days_count - est_work_days))
     return max(0, target)

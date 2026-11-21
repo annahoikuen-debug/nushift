@@ -63,6 +63,7 @@ def _make_simple_context(days_count: int = 2) -> MonthlySolveContext:
     ]
     patterns = [
         ShiftPattern(key="NORMAL", label="日勤", start=time(8, 30), end=time(17, 30)),
+        ShiftPattern(key="PART", label="短時間", start=time(8, 30), end=time(12, 30)),
     ]
     settings = FacilitySettings()
     standard = local_rules.get_standard(local_rules.DEFAULT_PRESET_KEY)
@@ -84,7 +85,7 @@ def _make_simple_context(days_count: int = 2) -> MonthlySolveContext:
         facility_settings=settings,
         fixed_assignments={},
         prior_duty_history={},
-        monthly_holiday_target=1,
+        monthly_holiday_target=0,
         children=children,
         standard=standard,
     )
