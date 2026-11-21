@@ -298,7 +298,17 @@ def solve_monthly_hierarchical(
         )
 
     if stage1_slack.get("stage1_status") == SolveStatus.INFEASIBLE.value:
-        all_messages.append("Stage 1 daily patterns solve was infeasible; proceeding to Stage 2 with unguided warm starts.")
+        all_messages.append("Stage 1 daily patterns solve was infeasible; returning INFEASIBLE.")
+        return SolveResult(
+            status=SolveStatus.INFEASIBLE,
+            shift_days=[],
+            violations=[],
+            messages=all_messages,
+            stats={
+                "stage1_infeasible": True,
+                "elapsed_sec": round(perf_counter() - started, 3),
+            },
+        )
 
     # Stage 1 の結果を Stage 2 の fixed_assignments / warm_starts に反映
     combined_fixed = dict(context.fixed_assignments)

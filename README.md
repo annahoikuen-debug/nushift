@@ -1,9 +1,9 @@
-# ⚡ NuShift (shiftai v0.8.0)
+# ⚡ NuShift (shiftai v0.8.1)
 
 > **保育のすべてをつなぎ、先生の時間をこどもたちへ**  
 > 職員配置基準連動型 数理最適化シフト自動作成エンジン（NuShift）と、直感的な Streamlit UI による保育園・こども園向け勤務シフト自動生成システム。
 
-[![Version](https://img.shields.io/badge/version-v0.8.0-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-v0.8.1-blue.svg)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.13-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](pyproject.toml)
@@ -71,7 +71,7 @@
    - **リアルタイム最小破壊修復 (`DisruptionReport`)**: 突発欠勤リペア等において、変更人数・変更コマ数を定量レポートし現場の混乱を最小化。
    - **月間マセヒューリスティクス協調 (LNS ⇄ MIP 協調修復)**: 月間勤務パターン枠（Stage 1）と15分コマ割当（Stage 2）の大規模近傍探索（LNS）による高速協調最適化。
    - **性能ベンチマークスイート (`shiftai benchmark`)**: 7日間・30日間の実務シナリオに対する回帰防止性能ゲート（15秒以内求解）を標準装備。
-8. **🚀 SaaS Micro Engine & 分散オートスケール連携 (v0.8.0 新機能)**
+8. **🚀 SaaS Micro Engine & 分散オートスケール連携 (v0.8.1 新機能)**
    - **サブセカンド即時 Re-plan (Micro Engine)**: 朝7時の突発病欠に対し、MILP起動をスキップして局所探索を直結（0.2〜0.5秒応答）し、確定シフト・ピン留めを完全保護。
    - **過剰制約自動診断サジェスト**: 不足コマの自動特定と「パート勤務延長」「希望休出勤打診」などの自然言語処方箋レポートを生成。
    - **分散ステートレスワーカー & KEDA オートスケーリング**: Web本体から重い数理最適化を完全分離し、Redisキュー長に応じた弾力的な 0〜20 Pods 自動スケール（Spot VM対応）をサポート。
@@ -84,7 +84,7 @@
 | :--- | :--- | :--- |
 | **形態** | 総合保育ICTプラットフォーム (FastAPI Webアプリ) | シフト自動作成エンジン (Streamlit デスクトップUI) |
 | **ライセンス** | 商用プロプライエタリ (全権利保持) | **MIT License (オープンソース)** |
-| **バージョン** | **v0.8.0 (nusoft v0.8.0)** | **v0.8.0 (nusoft v0.8.0)** |
+| **バージョン** | **v0.8.1 (nusoft v0.8.1)** | **v0.8.1 (nusoft v0.8.1)** |
 | **主な用途** | 園児台帳・登降園・連絡帳・請求・シフト・監査ログ | シフト自動作成・労基法チェック・給与シミュレーション |
 | **ブランド** | nusoft | nusoft (NuShift) |
 
