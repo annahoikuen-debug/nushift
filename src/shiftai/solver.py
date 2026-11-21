@@ -3668,54 +3668,98 @@ def repair_shift_absence(
 ) -> SolveResult:
     """当日の急な突発欠勤に対する局所安定リアルタイム穴埋め（動的リペア）。
 
-    確定済みシフト（``existing_result``）のうち、欠勤日以外のすべて、および
-    当日に出勤予定のない職員の勤務状態を手動固定（fixed_assignments）として維持し、
-    「欠勤者のみ OFF」に変更した上で、
-    1. 当日すでに出勤している職員の勤務時間延長（残業・枠拡大）を優先
-    2. それでも不足する場合に公休職員の応援出勤（ヘルプ）を開放
-    3. 別日への波及再編（カスケード変動）を100%防止（局所ピン留め）
-    して配置基準の不足を最小の変更手数で埋める。
+    Tier 0 ルールエンジン（決定論・<1ms）により数理最適化をバイパスし、
+    未充足時のみ Tier 2（既存の MILP 2パス求解）へフォールバックする。
     """
-    fixed: dict[tuple[str, date, str], CellState] = {}
+    from .repair_engine import repair_shift_absence_fast
 
-    # 当日に出勤予定だった職員と公休だった職員を把握
-    on_duty_staff_ids = set()
-    off_duty_staff_ids = set()
+    def _milp_fallback() -> SolveResult:
+        fixed: dict[tuple[str, date, str], CellState] = {}
 
-    for a in existing_result.assignments:
-        if a.day == target_date:
-            if a.state in (CellState.WORK, CellState.BREAK):
-                on_duty_staff_ids.add(a.staff_id)
-            else:
-                off_duty_staff_ids.add(a.staff_id)
+        # 当日に出勤予定だった職員と公休だった職員を把握
+        on_duty_staff_ids = set()
+        off_duty_staff_ids = set()
 
-    # 1. 別日のシフトは完全に維持固定（局所ピン留め: 他の日には一切波及させない）
-    for a in existing_result.assignments:
-        sid = a.staff_id
-        d = a.day
-        slot_label = a.slot.label
-        if d != target_date:
-            fixed[(sid, d, slot_label)] = a.state
-
-    # 2. 欠勤者は公休(OFF)に固定
-    for slot in requirements.slots:
-        fixed[(absent_staff_id, target_date, slot.label)] = CellState.OFF
-
-    # 3. 当日の他職員の固定戦略
-    if prefer_on_duty_extension:
-        # パス1: 出勤中職員の勤務枠をベースに延長（公休職員はOFF固定）
         for a in existing_result.assignments:
-            if a.day != target_date:
-                continue
-            sid = a.staff_id
-            if sid == absent_staff_id:
-                continue
-            if a.state in (CellState.WORK, CellState.BREAK):
-                fixed[(sid, target_date, a.slot.label)] = a.state
-            elif sid in off_duty_staff_ids:
-                fixed[(sid, target_date, a.slot.label)] = CellState.OFF
+            if a.day == target_date:
+                if a.state in (CellState.WORK, CellState.BREAK):
+                    on_duty_staff_ids.add(a.staff_id)
+                else:
+                    off_duty_staff_ids.add(a.staff_id)
 
-        # まず出勤中職員の延長のみで解けるか試行
+        # 1. 別日のシフトは完全に維持固定（局所ピン留め: 他の日には一切波及させない）
+        for a in existing_result.assignments:
+            sid = a.staff_id
+            d = a.day
+            slot_label = a.slot.label
+            if d != target_date:
+                fixed[(sid, d, slot_label)] = a.state
+
+        # 2. 欠勤者は公休(OFF)に固定
+        for slot in requirements.slots:
+            fixed[(absent_staff_id, target_date, slot.label)] = CellState.OFF
+
+        # 3. 当日の他職員の固定戦略
+        if prefer_on_duty_extension:
+            # パス1: 出勤中職員の勤務枠をベースに延長（公休職員はOFF固定）
+            for a in existing_result.assignments:
+                if a.day != target_date:
+                    continue
+                sid = a.staff_id
+                if sid == absent_staff_id:
+                    continue
+                if a.state in (CellState.WORK, CellState.BREAK):
+                    fixed[(sid, target_date, a.slot.label)] = a.state
+                elif sid in off_duty_staff_ids:
+                    fixed[(sid, target_date, a.slot.label)] = CellState.OFF
+
+            # まず出勤中職員の延長のみで解けるか試行
+            res = solve_shift(
+                children=children,
+                staff=staff,
+                requirements=requirements,
+                preferences=preferences,
+                weights=weights,
+                fixed_assignments=fixed,
+                settings=settings,
+                standard=standard,
+                patterns=patterns,
+                pattern_mode=True,
+                pairing_rules=pairing_rules,
+                classrooms=classrooms,
+                require_leader=require_leader,
+                require_opening_closing_skill=require_opening_closing_skill,
+                time_limit_sec=max(3, time_limit_sec // 2),
+            )
+            if res.ok and not res.has_shortfall:
+                d_rep = _compute_disruption_report(
+                    existing_result, res, absent_staff_id, target_date, requirements.slots
+                )
+                res.stats["disruption_report"] = d_rep
+                res.messages = [
+                    f"突発欠勤リペア完了（変更破壊サマリ: {d_rep.summary()}）",
+                    *res.messages,
+                ]
+                return res
+
+            # パス2: 出勤中職員の延長だけでは足りない場合、公休職員のOFF固定を解除してヘルプ出勤を開放
+            for sid in off_duty_staff_ids:
+                if sid == absent_staff_id:
+                    continue
+                for slot in requirements.slots:
+                    fixed.pop((sid, target_date, slot.label), None)
+
+        else:
+            # 従来動作: 出勤中職員の勤務枠は維持し、公休職員をすべて調整弁として開放
+            for a in existing_result.assignments:
+                if a.day != target_date:
+                    continue
+                sid = a.staff_id
+                if sid == absent_staff_id:
+                    continue
+                if a.state in (CellState.WORK, CellState.BREAK):
+                    fixed[(sid, target_date, a.slot.label)] = a.state
+
         res = solve_shift(
             children=children,
             staff=staff,
@@ -3731,63 +3775,35 @@ def repair_shift_absence(
             classrooms=classrooms,
             require_leader=require_leader,
             require_opening_closing_skill=require_opening_closing_skill,
-            time_limit_sec=max(3, time_limit_sec // 2),
+            time_limit_sec=time_limit_sec,
         )
-        # ``ok`` は PARTIAL も含むため、不足が残っていれば pass 2
-        # （公休職員のヘルプ出勤開放）に進む。ショートフォールが
-        # 解消された完全解のときだけここで返す。
-        if res.ok and not res.has_shortfall:
-            d_rep = _compute_disruption_report(
-                existing_result, res, absent_staff_id, target_date, requirements.slots
-            )
-            res.stats["disruption_report"] = d_rep
-            res.messages = [
-                f"突発欠勤リペア完了（変更破壊サマリ: {d_rep.summary()}）",
-                *res.messages,
-            ]
-            return res
+        d_rep = _compute_disruption_report(
+            existing_result, res, absent_staff_id, target_date, requirements.slots
+        )
+        res.stats["disruption_report"] = d_rep
+        res.messages = [
+            f"突発欠勤リペア完了（変更破壊サマリ: {d_rep.summary()}）",
+            *res.messages,
+        ]
+        return res
 
-        # パス2: 出勤中職員の延長だけでは足りない場合、公休職員のOFF固定を解除してヘルプ出勤を開放
-        for sid in off_duty_staff_ids:
-            if sid == absent_staff_id:
-                continue
-            for slot in requirements.slots:
-                fixed.pop((sid, target_date, slot.label), None)
-
-    else:
-        # 従来動作: 出勤中職員の勤務枠は維持し、公休職員をすべて調整弁として開放
-        for a in existing_result.assignments:
-            if a.day != target_date:
-                continue
-            sid = a.staff_id
-            if sid == absent_staff_id:
-                continue
-            if a.state in (CellState.WORK, CellState.BREAK):
-                fixed[(sid, target_date, a.slot.label)] = a.state
-
-    res = solve_shift(
+    return repair_shift_absence_fast(
+        existing_result=existing_result,
+        absent_staff_id=absent_staff_id,
+        target_date=target_date,
         children=children,
         staff=staff,
         requirements=requirements,
         preferences=preferences,
         weights=weights,
-        fixed_assignments=fixed,
         settings=settings,
         standard=standard,
         patterns=patterns,
-        pattern_mode=True,
         pairing_rules=pairing_rules,
         classrooms=classrooms,
         require_leader=require_leader,
         require_opening_closing_skill=require_opening_closing_skill,
         time_limit_sec=time_limit_sec,
+        prefer_on_duty_extension=prefer_on_duty_extension,
+        fallback_milp_fn=_milp_fallback,
     )
-    d_rep = _compute_disruption_report(
-        existing_result, res, absent_staff_id, target_date, requirements.slots
-    )
-    res.stats["disruption_report"] = d_rep
-    res.messages = [
-        f"突発欠勤リペア完了（変更破壊サマリ: {d_rep.summary()}）",
-        *res.messages,
-    ]
-    return res
