@@ -953,9 +953,15 @@ def _solve_stage1_daily_patterns(
         req_list = context.requirements.for_day(d)
         max_req = max([r.needed_staff for r in req_list], default=0)
         if max_req > 0:
-            prob += pulp.lpSum([duty_vars[(sid, d)] for sid in staff_ids]) >= min(
-                max_req, len(staff_ids)
+            day_slack_key = (d, "daily_max_req")
+            stage1_slack_vars[day_slack_key] = pulp.LpVariable(
+                f"slack_day_{d.isoformat()}", lowBound=0, cat=pulp.LpContinuous
             )
+            prob += (
+                pulp.lpSum([duty_vars[(sid, d)] for sid in staff_ids])
+                + stage1_slack_vars[day_slack_key]
+            ) >= min(max_req, len(staff_ids))
+            obj_terms.append(stage1_slack_vars[day_slack_key] * 1000.0)
 
         # スロットごとの時間帯別カバー制約（スラック付き：実行可能性を確保）
         for s in slots:

@@ -148,3 +148,88 @@ def test_solve_monthly_hierarchical_stage1_infeasible(monkeypatch):
     res = solve_monthly_hierarchical(ctx, time_limit_sec=5)
     assert res.status == SolveStatus.INFEASIBLE
     assert res.shift_days == []
+
+
+def test_stage1_daily_max_req_slack_avoids_false_infeasible() -> None:
+    """日次最大必要人員 >= 職員数・公休目標ありの過少体制でも Stage 1 が INFEASIBLE にならないこと。"""
+    import datetime as dt
+
+    from shiftai.domain import (
+        AgeClass,
+        ChildPlan,
+        Contract,
+        EmploymentType,
+        FacilitySettings,
+        Role,
+        StaffMember,
+    )
+    from shiftai.local_rules import build_standard
+    from shiftai.monthly import MonthlySolveContext, _solve_stage1_daily_patterns
+    from shiftai.shift_patterns import default_patterns
+    from shiftai.standards import build_requirements
+
+    standard = build_standard("全国基準（厚労省）")
+    days = [dt.date(2026, 11, d) for d in range(1, 31)]
+    contract = Contract(
+        weekly_hours=40.0,
+        daily_hours=8.0,
+        employment_type=EmploymentType.SEI,
+        earliest_start=dt.time(6, 0),
+        latest_end=dt.time(22, 0),
+    )
+    staff = [
+        StaffMember("S1", "保育士1", frozenset({Role.HOIKUSHI}), contract),
+        StaffMember("S2", "保育士2", frozenset({Role.HOIKUSHI}), contract),
+    ]
+    prefs = {}
+    children = [
+        ChildPlan(
+            child_id="C1",
+            name="園児1",
+            day=d,
+            age_class=AgeClass.AGE_1,
+            arrive=dt.time(8, 30),
+            depart=dt.time(16, 30),
+        )
+        for d in days
+    ]
+    reqs = build_requirements(
+        children,
+        days,
+        standard,
+        day_open=dt.time(8, 0),
+        day_close=dt.time(18, 0),
+        granularity_min=30,
+    )
+    fset = FacilitySettings(
+        facility_name="テスト園",
+        day_open=dt.time(8, 0),
+        day_close=dt.time(18, 0),
+        granularity_min=30,
+        capacity=20,
+    )
+    pats = default_patterns(dt.time(8, 0), dt.time(18, 0))
+    ctx = MonthlySolveContext(
+        target_month="2026-11",
+        all_days=days,
+        staff=staff,
+        contracts={s.staff_id: contract for s in staff},
+        preferences=prefs,
+        patterns=pats,
+        requirements=reqs,
+        facility_settings=fset,
+        fixed_assignments={},
+        prior_duty_history={},
+        monthly_holiday_target=8,
+        children=children,
+        standard=standard,
+    )
+    stats: dict[str, float] = {}
+    stage1_res = _solve_stage1_daily_patterns(
+        ctx,
+        time_limit_sec=5,
+        solver_name="HiGHS",
+        stats_out=stats,
+    )
+    assert stats.get("stage1_status") != SolveStatus.INFEASIBLE.value
+    assert len(stage1_res) == len(staff) * len(days)
