@@ -26,7 +26,7 @@
     <div class="container nav-container">
       <a href="#hero" class="logo-wrap" id="brandLogo">
         <span>🧸 nusoft</span>
-        <span class="logo-badge">v0.7.1</span>
+        <span class="logo-badge">v0.8.1</span>
       </a>
 
       <ul class="nav-links" id="navLinks">
@@ -89,7 +89,7 @@
                 <span class="dot dot-green"></span>
               </div>
               <span class="mockup-title">NuShift 勤務割最適化ダッシュボード — あさひ保育園 (2026年10月度)</span>
-              <span class="status-pill success">● 最適化完了 (HiGHS / Timefold求解 14.8秒)</span>
+              <span class="status-pill success">● 最適化完了 (HiGHS / LNS 求解 14.8秒)</span>
             </div>
 
             <div class="mockup-body">
@@ -307,9 +307,9 @@
         <!-- Tab Content 1: Shift -->
         <div class="tab-content active" id="tab-shift">
           <div class="tab-text">
-            <h3>Timefold 協調数理最適化で、安心・高精度なシフトを瞬時に作成</h3>
+            <h3>HiGHS MILP と 3階層スコアリングで、安心・高精度なシフトを瞬時に作成</h3>
             <p>
-              厚生労働省の配置基準や職員の契約時間、希望休、有給休暇を満たすシフト表を HiGHS / Timefold 協調数理最適化エンジンが自動計算。法令違反ゼロ（Hard）、配置不足ショートフォール最小化（Medium）、希望・人件費最適化（Soft）の3階層スコアリングと過剰制約計画により、過酷なシフト作成業務を根本から自動化します。
+              厚生労働省の配置基準や職員の契約時間、希望休、有給休暇を満たすシフト表を HiGHS / CBC MILP と LNS 局所探索のハイブリッドエンジンが自動計算。法令違反ゼロ（Hard）、配置不足ショートフォール最小化（Medium）、希望・人件費最適化（Soft）の3階層スコアリングと過剰制約計画により、過酷なシフト作成業務を根本から自動化します。
             </p>
             <ul class="feature-bullet-list">
               <li>
@@ -338,7 +338,7 @@
             <div
               style="background: var(--bg-secondary); border-radius: 12px; padding: 24px; border: 1px solid var(--border-glass);">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                <span style="font-weight: 700;">🧬 NuShift Timefold 協調最適化</span>
+                <span style="font-weight: 700;">🧬 NuShift 3階層スコアリング最適化</span>
                 <span class="status-pill success">HiGHS / LAHC / LNS</span>
               </div>
               <div
@@ -819,7 +819,7 @@
       </div>
 
       <div class="footer-bottom">
-        &copy; 2026 nusoft (open-hoikuict / NuShift). Released under the MIT License.
+        &copy; 2026 NuShift (shiftai) — Released under the MIT License (open-hoikuict は商用プロプライエタリです).
       </div>
     </div>
   </footer>

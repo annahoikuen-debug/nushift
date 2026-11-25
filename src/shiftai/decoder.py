@@ -48,9 +48,9 @@ def _extract_vars(problem_vars: object) -> tuple[dict, dict]:
         work = problem_vars.get("work", problem_vars.get("w", {}))
         brk = problem_vars.get("break", problem_vars.get("brk", problem_vars.get("b", {})))
         return dict(work), dict(brk)
-    return dict(
-        getattr(problem_vars, "work", {})
-    ), dict(getattr(problem_vars, "brk", getattr(problem_vars, "break", {})))
+    return dict(getattr(problem_vars, "work", {})), dict(
+        getattr(problem_vars, "brk", getattr(problem_vars, "break", {}))
+    )
 
 
 def decode_solution(
@@ -225,9 +225,7 @@ def snap_to_patterns(
         gran = max(1, int(requirements.granularity_min))
     elif slots[0].minutes:
         gran = slots[0].minutes
-    break_slots = (
-        max(1, -(-int(standard.break_minutes) // gran)) if standard is not None else 2
-    )
+    break_slots = max(1, -(-int(standard.break_minutes) // gran)) if standard is not None else 2
 
     base: dict[tuple[str, date], list[CellState]] = {}
     for sd in result.shift_days:

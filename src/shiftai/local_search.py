@@ -281,9 +281,7 @@ def ruin_and_recreate(
 
                     trial_days = _clone_shift_days(current_shift_days, {target_day})
                     target_trial_sd = next(d for d in trial_days if d.day == target_day)
-                    _apply_pattern_to_day(
-                        target_trial_sd.assignments, sm, pat, slots, settings
-                    )
+                    _apply_pattern_to_day(target_trial_sd.assignments, sm, pat, slots, settings)
 
                     trial_res = SolveResult(
                         status=SolveStatus.FEASIBLE,
@@ -349,9 +347,7 @@ def ruin_and_recreate(
 
                     trial_days = _clone_shift_days(current_shift_days, {target_day})
                     target_trial_sd = next(d for d in trial_days if d.day == target_day)
-                    _apply_pattern_to_day(
-                        target_trial_sd.assignments, sm, pat, slots, settings
-                    )
+                    _apply_pattern_to_day(target_trial_sd.assignments, sm, pat, slots, settings)
 
                     trial_res = SolveResult(
                         status=SolveStatus.FEASIBLE,

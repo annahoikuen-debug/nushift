@@ -9,8 +9,9 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import Mapping, Sequence
 from datetime import date
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any
 
 from shiftai.domain import (
     ChildPlan,
@@ -18,18 +19,31 @@ from shiftai.domain import (
     FacilitySettings,
     PairingRule,
     RequirementTable,
+    StaffingStandard,
     StaffMember,
     StaffPreferences,
-    StaffingStandard,
 )
-from shiftai.shift_patterns import ShiftPattern
 from shiftai.monthly import ObjectiveWeights, SolveResult
+from shiftai.shift_patterns import ShiftPattern
 
 from .candidates import ActionType, CandidateAction, CandidateEvaluator
 from .gap_scanner import SlotGap, SlotGapScanner
 from .greedy import GreedyAssigner
 from .outcome import RepairOutcome
 from .snapshot import DaySnapshot, SnapshotIndex
+
+__all__ = [
+    "ActionType",
+    "CandidateAction",
+    "CandidateEvaluator",
+    "DaySnapshot",
+    "GreedyAssigner",
+    "RepairOutcome",
+    "SlotGap",
+    "SlotGapScanner",
+    "SnapshotIndex",
+    "repair_shift_absence_fast",
+]
 
 logger = logging.getLogger("shiftai.repair_engine")
 
@@ -41,18 +55,18 @@ def repair_shift_absence_fast(
     children: Sequence[ChildPlan],
     staff: Sequence[StaffMember],
     requirements: RequirementTable,
-    preferences: Optional[Mapping[str, StaffPreferences]] = None,
-    weights: Optional[ObjectiveWeights] = None,
-    settings: Optional[FacilitySettings] = None,
-    standard: Optional[StaffingStandard] = None,
-    patterns: Optional[Sequence[ShiftPattern]] = None,
-    pairing_rules: Optional[Sequence[PairingRule]] = None,
-    classrooms: Optional[Sequence[ClassRoom]] = None,
+    preferences: Mapping[str, StaffPreferences] | None = None,
+    weights: ObjectiveWeights | None = None,
+    settings: FacilitySettings | None = None,
+    standard: StaffingStandard | None = None,
+    patterns: Sequence[ShiftPattern] | None = None,
+    pairing_rules: Sequence[PairingRule] | None = None,
+    classrooms: Sequence[ClassRoom] | None = None,
     require_leader: bool = False,
     require_opening_closing_skill: bool = False,
     time_limit_sec: int = 10,
     prefer_on_duty_extension: bool = True,
-    fallback_milp_fn: Optional[Any] = None,
+    fallback_milp_fn: Any | None = None,
 ) -> SolveResult:
     """突発欠勤に対する超高速ルールベースリペア（Tier 0）およびフォールバック制御。
 
@@ -73,13 +87,16 @@ def repair_shift_absence_fast(
         raise RuntimeError("MILP fallback function is not provided.")
 
     # 2. Tier 0: ルールエンジンの実行
+    outcome: RepairOutcome | None = None
     try:
+        contracts = {str(s.staff_id): s.contract for s in staff}
         # A. 当日スナップショットの O(1) 構築
         snapshot = SnapshotIndex.build(
             existing_assignments=existing_result.assignments,
             target_date=target_date,
             staff=staff,
             absent_staff_ids=absent_ids,
+            contracts=contracts,
             preferences=preferences,
             granularity_min=getattr(settings, "granularity_min", 30) if settings else 30,
         )
@@ -104,7 +121,7 @@ def repair_shift_absence_fast(
             )
             return outcome.to_solve_result(existing_result, target_date, absent_ids)
 
-        # C. 貪欲割当（延長優先 ＋ 1段バックトラック）
+        # C. 貪欲割当（延長優先 ＋ 複数不足対応）
         assigned_slots, unfilled_gaps, action_logs = GreedyAssigner.assign(
             snapshot=snapshot,
             gaps=gaps,
@@ -143,4 +160,5 @@ def repair_shift_absence_fast(
     if fallback_milp_fn:
         return fallback_milp_fn()
 
+    assert outcome is not None
     return outcome.to_solve_result(existing_result, target_date, absent_ids)

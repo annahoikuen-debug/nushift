@@ -432,7 +432,7 @@ def solve_monthly_hierarchical(
     budget_per_wave = max(remaining_budget // waves, 5)
     # ステージ2（30分スロット詳細配置）に十分な時間を確保しつつ、事後評価（score/violations）の時間を残して全体時間制限内に収める
     if chunks_n == 1:
-        per_chunk_time = min(max(5, int(remaining_budget * 0.45)), budget_per_wave)
+        per_chunk_time = min(max(5, int(remaining_budget * 0.7)), budget_per_wave)
     else:
         per_chunk_time = min(max(remaining_budget // chunks_n, 5), min(20, budget_per_wave))
 
@@ -517,7 +517,11 @@ def solve_monthly_hierarchical(
         # 上書きすると solve_shift の stats（mip_gap 等）が失われるため保持する。
         chunk_mip_gap = sub_res.stats.get("mip_gap")
 
-        if False and context.patterns and sub_res.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE):
+        if (
+            False
+            and context.patterns
+            and sub_res.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE)
+        ):
             sub_res, _ = snap_to_patterns(
                 sub_res,
                 context.patterns,
@@ -731,7 +735,9 @@ def solve_monthly_hierarchical(
                 res.shift_days = repaired_res.shift_days
                 res.violations = repaired_res.violations
                 res.score = repaired_res.score
-                res.messages.append("マセヒューリスティクス (Stage 2 ⇄ LNS 協調) により解を改善しました")
+                res.messages.append(
+                    "マセヒューリスティクス (Stage 2 ⇄ LNS 協調) により解を改善しました"
+                )
                 res.stats.update(orig_stats)
                 res.stats.update(repaired_res.stats)
                 res.stats["matheuristics_improved"] = True
@@ -974,9 +980,7 @@ def _solve_stage1_daily_patterns(
                     f"slack_staff_{d.isoformat()}_{s.label}", lowBound=0, cat=pulp.LpContinuous
                 )
                 prob += (
-                    pulp.lpSum(
-                        [x_vars[(sid, d, pk)] for sid in staff_ids for pk in covering_pats]
-                    )
+                    pulp.lpSum([x_vars[(sid, d, pk)] for sid in staff_ids for pk in covering_pats])
                     + stage1_slack_vars[slack_key]
                 ) >= min(target_staff, len(staff_ids))
                 # スラック変数にペナルティを課す（不足を最小化）
@@ -989,7 +993,11 @@ def _solve_stage1_daily_patterns(
                 )
                 prob += (
                     pulp.lpSum(
-                        [x_vars[(sid, d, pk)] for sid in qualified_staff_ids for pk in covering_pats]
+                        [
+                            x_vars[(sid, d, pk)]
+                            for sid in qualified_staff_ids
+                            for pk in covering_pats
+                        ]
                     )
                     + stage1_slack_vars[slack_key]
                 ) >= min(target_qual, len(qualified_staff_ids))

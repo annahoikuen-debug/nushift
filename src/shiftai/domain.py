@@ -1289,11 +1289,17 @@ class DisruptionReport:
     def summary(self) -> str:
         parts = []
         if self.called_in_from_off:
-            parts.append(f"公休出勤: {len(self.called_in_from_off)}名 ({', '.join(self.called_in_from_off)})")
+            parts.append(
+                f"公休出勤: {len(self.called_in_from_off)}名 ({', '.join(self.called_in_from_off)})"
+            )
         if self.hours_extended_staff:
-            parts.append(f"時間延長: {len(self.hours_extended_staff)}名 ({', '.join(self.hours_extended_staff)})")
+            parts.append(
+                f"時間延長: {len(self.hours_extended_staff)}名 ({', '.join(self.hours_extended_staff)})"
+            )
         if self.pattern_changed_staff:
-            parts.append(f"時間帯変更: {len(self.pattern_changed_staff)}名 ({', '.join(self.pattern_changed_staff)})")
+            parts.append(
+                f"時間帯変更: {len(self.pattern_changed_staff)}名 ({', '.join(self.pattern_changed_staff)})"
+            )
         if not parts:
             return "他職員への変更なし（欠員のみOFF）"
         return " / ".join(parts)

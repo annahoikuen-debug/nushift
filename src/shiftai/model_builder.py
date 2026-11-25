@@ -236,8 +236,7 @@ def _hard_ge(ctx: _ModelCtx, expr: object, rhs: float, name: str | None = None) 
 
 
 def _split_penalty(weights: ObjectiveWeights) -> float:
-    """勤務/休憩ブロックが分かれたときの1ブロックあたりのペナルティ。
-    """
+    """勤務/休憩ブロックが分かれたときの1ブロックあたりのペナルティ。"""
     return max(
         weights.split_duty_penalty,
         weights.break_conflict_penalty,

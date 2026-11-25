@@ -468,3 +468,106 @@ def test_RequirementTableの参照系が未登録日で空(fq_standard):
     assert table.needed_staff(DAY, Slot(OPEN, time(9, 30))) == 0
     assert table.all_days() == []
     assert table.day_slots() == ()
+
+
+# ---------------------------------------------------------------------------
+# 未カバーの内部ヘルパー（カバレッジ向上のため追加）
+# ---------------------------------------------------------------------------
+
+
+def test_hmは文字列入力でもそのまま返す():
+    """``_hm`` は time オブジェクト以外（文字列）をそのまま返すこと。"""
+    from shiftai.standards import _hm
+
+    assert _hm("09:00") == "09:00"
+    assert _hm("") == ""
+
+
+def test_required_qualifiedは必要人員0で0を返す():
+    """``_required_qualified`` は needed_staff <= 0 のとき 0 を返すこと。"""
+    from shiftai.domain import SlotKind, StaffingStandard
+    from shiftai.standards import _required_qualified
+
+    std = StaffingStandard(name="t", ratios={})
+    assert _required_qualified(std, SlotKind.NORMAL, 0) == 0
+    assert _required_qualified(std, SlotKind.NORMAL, -1) == 0
+
+
+def test_slot_requirementsは在園児0で空リスト(fq_standard):
+    """``_slot_requirements`` は在園児が0人のとき空リストを返すこと。"""
+    from shiftai.domain import Slot, SlotKind
+    from shiftai.standards import _slot_requirements
+
+    slot = Slot(time(9, 0), time(9, 30))
+    counts = {AgeClass.INFANT: 0, AgeClass.AGE_1: 0}
+    rows = _slot_requirements(fq_standard, DAY, slot, SlotKind.NORMAL, counts, True)
+    assert rows == []
+
+
+def test_build_requirementsは重複日をスキップ(fq_standard):
+    """``build_requirements`` は同じ日を2回指定しても二重に算出しないこと。"""
+    kids = _kids(("C1", AgeClass.INFANT, time(9, 0), time(11, 0)))
+    table = _build(kids, fq_standard, days=[DAY, DAY])
+    assert len(table.rows) == 1
+    assert table.rows[DAY]
+
+
+def test_祝日でis_bindingFalseの行は祝日テキストを含む(fq_standard):
+    """祝日の行には ``is_binding=False`` かつ basis に「祝日」テキストが入ること。"""
+    holiday = DAY
+    kids = _kids(("C1", AgeClass.INFANT, time(9, 0), time(11, 0)))
+    table = _build(kids, fq_standard, holidays={holiday})
+    rows = table.for_day(holiday)
+    assert rows
+    assert all(not r.is_binding for r in rows)
+    assert all("祝日" in r.basis for r in rows)
+
+
+def test_basis_textは延長緩和対象で代替措置文を含む():
+    """``late_care_relaxed=True`` の LATE 帯で代替措置の日本語が入ること。"""
+    from shiftai.domain import (
+        AgeClass,
+        AgeRatio,
+        SlotKind,
+        StaffingStandard,
+    )
+    from shiftai.standards import _basis_text
+
+    std = StaffingStandard(
+        name="緩和",
+        ratios={AgeClass.INFANT: AgeRatio(AgeClass.INFANT, 3.0, "ceil")},
+        late_care_relaxed=True,
+        late_care_min_qualified=1,
+    )
+    basis = _basis_text(std, AgeClass.INFANT, 4, 2, 1, SlotKind.LATE, True)
+    assert "代替措置" in basis
+
+
+def test_施設単位算出手法の祝日はbasisに祝日テキストが入る(fq_standard):
+    """施設単位算出手法（shared_basisあり）の祝日でも basis に「祝日」テキストが入ること。
+
+    _slot_requirements の shared_basis 分岐では _basis_text を呼ばないため、
+    行316 の ``row_basis.append(_HOLIDAY_TEXT)`` が動作することを保証する。
+    """
+    from dataclasses import replace
+
+    from shiftai import local_rules
+    from shiftai.domain import (
+        AgeClass,
+    )
+
+    base = local_rules.get_standard("全国基準（厚労省）")
+    fs = replace(
+        base,
+        headcount_mode="facility_formula",
+        headcount_extra=1,
+        qualified_mode="ratio",
+        min_qualified_ratio=0.5,
+        nurse_as_qualified_cap=1,
+    )
+    kids = _kids(("C1", AgeClass.INFANT, time(9, 0), time(11, 0)))
+    table = _build(kids, fs, holidays={DAY})
+    rows = table.for_day(DAY)
+    assert rows
+    assert all(not r.is_binding for r in rows)
+    assert all("祝日" in r.basis for r in rows)

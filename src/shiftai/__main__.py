@@ -20,6 +20,7 @@ Streamlit アプリの起動に加え、ブラウザ無しで完結するヘッ�
    3  ``--strict`` 指定時かつ要調整（WARNING）が 1 件以上
        （INFO だけの違反は 0 件として扱い、終了コード 3 にはしない）
        ``compliance`` では不適合または未確認がある場合に 3
+   4  求解前ショートフォールゲートで中止（``--force`` で続行可能）
 ===== ==========================================================
 """
 
@@ -63,6 +64,7 @@ from shiftai.domain import (
     StaffingStandard,
     ViolationSeverity,
     daterange,
+    japanese_weekday,
 )
 from shiftai.exporter import (
     _neutralize_formula_cells,
@@ -89,6 +91,7 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_BLOCKER = 2
 EXIT_WARNING = 3
+EXIT_SHORTFALL_GATE = 4
 
 _SAMPLE_NAMES = {
     "children": "children.csv",
@@ -435,6 +438,58 @@ def _sample_days(args: argparse.Namespace) -> list[date] | None:
     return list(daterange(first, last))
 
 
+def _supply_prescription(
+    gaps: Sequence[Any],
+) -> tuple[list[str], list[dict[str, Any]], dict[str, int]]:
+    """求解前の供給不足から「追加必要人員の目安」を逆算する。
+
+    日別に時間帯ごとの最大不足人数を「その日に追加すべき人数」の目安とする。
+    合計は不足日数 × 最大不足 の積算（人日）であり、フルタイム換算の目安である。
+    """
+    per_day: dict[date, dict[str, int]] = {}
+    for g in gaps:
+        # SupplyGap(gap_staff/gap_qualified) と SlotGap(shortfall_staff/shortfall_qualified)
+        # の両方を受け付ける。
+        staff_gap = int(getattr(g, "gap_staff", None) or getattr(g, "shortfall_staff", 0) or 0)
+        qualified_gap = int(
+            getattr(g, "gap_qualified", None) or getattr(g, "shortfall_qualified", 0) or 0
+        )
+        entry = per_day.setdefault(g.day, {"staff": 0, "qualified": 0})
+        entry["staff"] = max(entry["staff"], staff_gap)
+        entry["qualified"] = max(entry["qualified"], qualified_gap)
+    day_rows: list[dict[str, Any]] = [
+        {
+            "日付": day.isoformat(),
+            "曜日": japanese_weekday(day),
+            "追加必要人数": values["staff"],
+            "うち保育士": values["qualified"],
+        }
+        for day, values in sorted(per_day.items())
+    ]
+    totals = {
+        "days": len(day_rows),
+        "staff_days": sum(int(row["追加必要人数"]) for row in day_rows),
+        "qualified_days": sum(int(row["うち保育士"]) for row in day_rows),
+    }
+    lines = [
+        (
+            f"不足 {totals['days']} 日 / 合計 {totals['staff_days']} 人日"
+            f"（うち保育士 {totals['qualified_days']} 人日）の追加が必要です。"
+        ),
+        "日別の内訳は prescription.csv を参照（その日の最大不足 = 追加すべき人数の目安）。",
+    ]
+    return lines, day_rows, totals
+
+
+def _prescription_dataframe(day_rows: Sequence[dict[str, Any]]) -> Any:
+    import pandas as pd
+
+    columns = ["日付", "曜日", "追加必要人数", "うち保育士"]
+    if not day_rows:
+        return pd.DataFrame(columns=columns)
+    return pd.DataFrame.from_records(day_rows)
+
+
 def cmd_solve(args: argparse.Namespace) -> int:
     """ヘッドレスでシフトを自動作成する。"""
     children_path = args.children
@@ -552,6 +607,19 @@ def cmd_solve(args: argparse.Namespace) -> int:
         )
         for g in gaps[:5]:
             _echo(f"  - {g.describe()}")
+        prescription_lines, day_rows, _totals = _supply_prescription(gaps)
+        _echo("【処方箋】ハード制約を満たすには追加人員または需要の見直しが必要です。")
+        for line in prescription_lines:
+            _echo(f"  {line}")
+        gate_dir = Path(args.out)
+        gate_dir.mkdir(parents=True, exist_ok=True)
+        _write_csv(_prescription_dataframe(day_rows), gate_dir / "prescription.csv")
+        if not getattr(args, "force", False):
+            _error(
+                "求解を中止しました（求解前ショートフォールゲート）。"
+                "不足を承知の上で続行する場合は --force を付けてください。"
+            )
+            return EXIT_SHORTFALL_GATE
 
     if getattr(args, "mode", "weekly") == "monthly":
         from shiftai.monthly import MonthlySolveContext, solve_monthly_hierarchical
@@ -665,6 +733,16 @@ def cmd_solve(args: argparse.Namespace) -> int:
         )
         for line in ladder.messages():
             _echo(f"  {line}")
+
+    shortfall_gaps = [g for g in report.gaps if g.shortfall_staff or g.shortfall_qualified]
+    if shortfall_gaps:
+        prescription_lines, day_rows, _totals = _supply_prescription(shortfall_gaps)
+        _echo("")
+        _echo("【処方箋】結果に不足が含まれています。追加人員の目算は以下のとおりです。")
+        for line in prescription_lines:
+            _echo(f"  {line}")
+        Path(args.out).mkdir(parents=True, exist_ok=True)
+        _write_csv(_prescription_dataframe(day_rows), Path(args.out) / "prescription.csv")
 
     out_dir = Path(args.out)
     written: list[Path] = [
@@ -875,6 +953,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     solve.add_argument("--zip", action="store_true", help="成果物 ZIP も出力する")
     solve.add_argument("--strict", action="store_true", help="要調整があれば終了コード 3")
+    solve.add_argument(
+        "--force",
+        action="store_true",
+        help="求解前ショートフォールゲートを無視して不足を承知の上で続行する",
+    )
     solve.add_argument(
         "--patterns",
         default="",

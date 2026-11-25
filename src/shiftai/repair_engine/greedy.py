@@ -1,27 +1,34 @@
-"""Greedy assigner with 1-level backtrack for instant absence repair."""
+"""Greedy assigner with multi-slot tracking for instant absence repair."""
 
 from __future__ import annotations
 
 import logging
-from typing import Optional, Sequence
+from collections.abc import Sequence
+from dataclasses import replace
 
 from shiftai.domain import PairingRule
-from .candidates import ActionType, CandidateAction, CandidateEvaluator
+
+from .candidates import ActionType, CandidateAction, CandidateEvaluator, _parse_slot_label
 from .gap_scanner import SlotGap
 from .snapshot import DaySnapshot
 
 logger = logging.getLogger("shiftai.repair_engine.greedy")
 
 
+def _slot_duration_hours(slot_label: str) -> float:
+    parsed = _parse_slot_label(slot_label)
+    return parsed.hours if parsed is not None else 0.5
+
+
 class GreedyAssigner:
-    """決定論的・1段バックトラック付き貪欲リペア割当器"""
+    """決定論的貪欲リペア割当器"""
 
     @classmethod
     def assign(
         cls,
         snapshot: DaySnapshot,
         gaps: Sequence[SlotGap],
-        pairing_rules: Optional[Sequence[PairingRule]] = None,
+        pairing_rules: Sequence[PairingRule] | None = None,
         prefer_on_duty_extension: bool = True,
     ) -> tuple[dict[str, list[str]], list[SlotGap], list[str]]:
         """不足スロット群に対して候補アクションを貪欲に割り当てる。
@@ -41,77 +48,103 @@ class GreedyAssigner:
             key=lambda g: (-g.gap_qualified, -g.gap_total, g.slot_label),
         )
 
-        # 現在の勤務状況をトラッキングする作業用辞書
-        current_duty = {sid: list(s_list) for sid, s_list in snapshot.on_duty.items()}
+        # 現在の勤務状況・勤務時間を逐次トラッキング
+        current_duty: dict[str, list[str]] = {
+            sid: list(s_list) for sid, s_list in snapshot.on_duty.items()
+        }
+        current_hours: dict[str, float] = dict(snapshot.daily_worked_hours)
 
         for gap in sorted_gaps:
-            needed = gap.gap_total
-            if needed <= 0 and gap.gap_qualified > 0:
-                needed = 1
+            rem_total = max(0, gap.gap_total)
+            rem_qual = max(0, gap.gap_qualified)
+            slot_hours = _slot_duration_hours(gap.slot_label)
 
-            gap_filled = False
+            while rem_total > 0 or rem_qual > 0:
+                step_gap = replace(
+                    gap,
+                    gap_total=rem_total,
+                    gap_qualified=rem_qual,
+                )
+                chosen: CandidateAction | None = None
 
-            # Phase 1: 当日出勤中職員の勤務時間延長（最優先）
-            if prefer_on_duty_extension:
-                cands_ext: list[CandidateAction] = []
-                for sid in snapshot.on_duty:
-                    # すでにそのスロットに入っている場合はスキップ
-                    if gap.slot_label in current_duty.get(sid, []):
-                        continue
-                    action = CandidateEvaluator.evaluate(
-                        snapshot=snapshot,
-                        gap=gap,
-                        candidate_id=sid,
-                        slots_to_assign=[gap.slot_label],
-                        action_type=ActionType.EXTENSION,
-                        pairing_rules=pairing_rules,
-                    )
-                    if action:
-                        cands_ext.append(action)
+                # Phase 1: 当日出勤中職員の勤務時間延長（最優先）
+                if prefer_on_duty_extension:
+                    cands_ext: list[CandidateAction] = []
+                    for sid in snapshot.on_duty:
+                        if gap.slot_label in current_duty.get(sid, []):
+                            continue
+                        action = CandidateEvaluator.evaluate(
+                            snapshot=snapshot,
+                            gap=step_gap,
+                            candidate_id=sid,
+                            slots_to_assign=[gap.slot_label],
+                            action_type=ActionType.EXTENSION,
+                            pairing_rules=pairing_rules,
+                            daily_hours_override=current_hours,
+                            on_duty_override=current_duty,
+                        )
+                        if action:
+                            cands_ext.append(action)
+                    cands_ext.sort()
+                    if cands_ext:
+                        chosen = cands_ext[0]
 
-                cands_ext.sort()  # スコア降順・辞書順
-                if cands_ext:
-                    chosen = cands_ext[0]
-                    sid = chosen.staff_id
-                    assigned_slots.setdefault(sid, []).append(gap.slot_label)
-                    current_duty.setdefault(sid, []).append(gap.slot_label)
-                    action_logs.append(
-                        f"【延長】職員 {sid} をスロット {gap.slot_label} に延長配置 (スコア: {chosen.score:+.1f}, {', '.join(chosen.reasons)})"
-                    )
-                    gap_filled = True
+                # Phase 2: 延長で埋まらない場合、公休職員の応援出勤（ヘルプ）を開放
+                if chosen is None:
+                    cands_help: list[CandidateAction] = []
+                    for sid in snapshot.off_duty:
+                        if gap.slot_label in current_duty.get(sid, []):
+                            continue
+                        action = CandidateEvaluator.evaluate(
+                            snapshot=snapshot,
+                            gap=step_gap,
+                            candidate_id=sid,
+                            slots_to_assign=[gap.slot_label],
+                            action_type=ActionType.HELP_OFF_DUTY,
+                            pairing_rules=pairing_rules,
+                            daily_hours_override=current_hours,
+                            on_duty_override=current_duty,
+                        )
+                        if action:
+                            cands_help.append(action)
+                    cands_help.sort()
+                    if cands_help:
+                        chosen = cands_help[0]
 
-            # Phase 2: 延長で埋まらない場合、公休職員の応援出勤（ヘルプ）を開放
-            if not gap_filled:
-                cands_help: list[CandidateAction] = []
-                for sid in snapshot.off_duty:
-                    if gap.slot_label in current_duty.get(sid, []):
-                        continue
-                    action = CandidateEvaluator.evaluate(
-                        snapshot=snapshot,
-                        gap=gap,
-                        candidate_id=sid,
-                        slots_to_assign=[gap.slot_label],
-                        action_type=ActionType.HELP_OFF_DUTY,
-                        pairing_rules=pairing_rules,
-                    )
-                    if action:
-                        cands_help.append(action)
+                if chosen is None:
+                    break
 
-                cands_help.sort()  # スコア降順・辞書順
-                if cands_help:
-                    chosen = cands_help[0]
-                    sid = chosen.staff_id
-                    assigned_slots.setdefault(sid, []).append(gap.slot_label)
-                    current_duty.setdefault(sid, []).append(gap.slot_label)
-                    action_logs.append(
-                        f"【応援出勤】公休職員 {sid} をスロット {gap.slot_label} に応援割当 (スコア: {chosen.score:+.1f}, {', '.join(chosen.reasons)})"
-                    )
-                    gap_filled = True
+                sid = chosen.staff_id
+                assigned_slots.setdefault(sid, []).append(gap.slot_label)
+                current_duty.setdefault(sid, []).append(gap.slot_label)
+                current_hours[sid] = current_hours.get(sid, 0.0) + slot_hours
 
-            if not gap_filled:
-                unfilled_gaps.append(gap)
+                prefix = (
+                    "【延長】" if chosen.action_type == ActionType.EXTENSION else "【応援出勤】"
+                )
+                kind_desc = "延長配置" if chosen.action_type == ActionType.EXTENSION else "応援割当"
                 action_logs.append(
-                    f"【未充足】スロット {gap.slot_label} の穴埋め候補が見つかりませんでした（手動調整またはフォールバックが必要）"
+                    f"{prefix}職員 {sid} をスロット {gap.slot_label} に{kind_desc} "
+                    f"(スコア: {chosen.score:+.1f}, {', '.join(chosen.reasons)})"
+                )
+
+                rem_total = max(0, rem_total - 1)
+                if snapshot.is_qualified(sid):
+                    rem_qual = max(0, rem_qual - 1)
+
+            if rem_total > 0 or rem_qual > 0:
+                unfilled_gaps.append(
+                    replace(
+                        gap,
+                        have_total=gap.need_total - rem_total,
+                        have_qualified=gap.need_qualified - rem_qual,
+                        gap_total=rem_total,
+                        gap_qualified=rem_qual,
+                    )
+                )
+                action_logs.append(
+                    f"【未充足】スロット {gap.slot_label} の穴埋め候補が不足しています"
+                    f"（残不足: 総数{rem_total}名 / 保育士{rem_qual}名）"
                 )
 
         return assigned_slots, unfilled_gaps, action_logs

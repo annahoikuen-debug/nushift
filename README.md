@@ -23,7 +23,7 @@
 
 ### ライセンス
 
-本プロジェクトは **MIT License** のもとで公開されています。商用利用・カスタマイズを含め自由にご活用いただけます。詳細は [LICENSE](LICENSE) および [pyproject.toml](pyproject.toml) をご確認ください。
+**NuShift (`shiftai`) 本体**は **MIT License** のもとで公開されています。商用利用・カスタマイズを含め自由にご活用いただけます。詳細は [LICENSE](LICENSE) および [pyproject.toml](pyproject.toml) をご確認ください。（なお、`pyproject.toml` に `"Private :: Do Not Upload"` を設定しており PyPI での一般公開パッケージ配布は行わず、ソースおよびリポジトリ経由で提供しています。また連携対象の `open-hoikuict` 本体は商用プロプライエタリライセンスです。）
 
 ### 主な特長
 
@@ -62,8 +62,8 @@
    - ウィザード形式で園児数、職員条件、希望休をステップ順に入力可能。
    - ガントチャート表示、リアルタイムの過不足（ギャップ）可視化、手動セル編集・ピン留め（固定保護）をサポート。
    - PWA Service Worker によるオフライン耐性と高速表示。
-7. **🧬 Timefold 協調数理最適化 & 3階層スコアリング (v0.7.1)**
-   - **Hard/Medium/Soft 3階層スコアリング (`HardMediumSoftScore`)**: 法令違反ゼロ（Hard）、配置不足ショートフォール最小化（Medium）、職員希望・公平性・人件費最適化（Soft）を厳密な辞書式順序で評価。
+7. **🧬 3階層スコアリング & LNS 協調最適化 (v0.8.1)**
+   - **Hard/Medium/Soft 3階層スコアリング (`HardMediumSoftScore`)**: 法令違反ゼロ（Hard）、配置不足ショートフォール最小化（Medium）、職員希望・公平性・人件費最適化（Soft）を厳密な辞書式順序で評価（Timefold の制約階層設計思想を取り入れた MILP + LAHC 実装）。
    - **過剰制約計画 (Overconstrained Planning & Shortfall Capture)**: 人員不足時でも求解不能（Infeasible）に陥らず、不足コマ数（Mediumペナルティ）を最小化しながら最大限充足された安全なシフトを生成。
    - **スコア説明と制約起訴 (Score Explanation & Indictment)**: 各制約がどの職員・日付・時間帯にどれだけのペナルティを与えたかを一覧追跡（UIタブで要因別グラフィカル表示）。
    - **局所探索の多様化 (LAHC / SwapMove / ChangeMove)**: 遅延受容山登り法（Late Acceptance Hill Climbing）により、局所最適解から脱出して高品質な解を探索。
@@ -82,9 +82,9 @@
 
 | 項目 | Project A: open-hoikuict | Project B: NuShift (本プロジェクト) |
 | :--- | :--- | :--- |
-| **形態** | 総合保育ICTプラットフォーム (FastAPI Webアプリ) | シフト自動作成エンジン (Streamlit デスクトップUI) |
-| **ライセンス** | 商用プロプライエタリ (全権利保持) | **MIT License (オープンソース)** |
-| **バージョン** | **v0.8.1 (nusoft v0.8.1)** | **v0.8.1 (nusoft v0.8.1)** |
+| **形態** | 総合保育ICTプラットフォーム (FastAPI Webアプリ / 単一園オールインワン公式サポート) | シフト自動作成エンジン (Streamlit デスクトップUI / MIT コアエンジン) |
+| **ライセンス** | 商用プロプライエタリ (全権利保持) | **MIT License (オープンソース・PyPI非公開)** |
+| **バージョン** | **v0.8.2 (open-hoikuict v0.8.2)** | **v0.8.1 (NuShift / shiftai v0.8.1)** |
 | **主な用途** | 園児台帳・登降園・連絡帳・請求・シフト・監査ログ | シフト自動作成・労基法チェック・給与シミュレーション |
 | **ブランド** | nusoft | nusoft (NuShift) |
 

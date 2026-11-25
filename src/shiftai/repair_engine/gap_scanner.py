@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
 
-from shiftai.domain import RequirementTable, Slot
+from shiftai.domain import RequirementTable
+
 from .snapshot import DaySnapshot
 
 
@@ -21,7 +21,7 @@ class SlotGap:
     gap_total: int
     gap_qualified: int
     require_leader: bool = False
-    class_id: Optional[str] = None
+    class_id: str | None = None
 
     @property
     def is_critical(self) -> bool:
@@ -42,24 +42,39 @@ class SlotGapScanner:
         gaps: list[SlotGap] = []
         target_date = snapshot.day
 
-        # requirements.slots または rows から走査
         req_slots = requirements.slots if hasattr(requirements, "slots") else ()
-        req_rows = getattr(requirements, "rows", {}).get(target_date, [])
-        req_by_slot = {r.slot.label if hasattr(r, "slot") else str(r): r for r in req_rows}
+        req_rows = (
+            requirements.for_day(target_date)
+            if hasattr(requirements, "for_day")
+            else getattr(requirements, "rows", {}).get(target_date, [])
+        )
+
+        # rows 側をスロットラベルで年齢クラス横断合算（mock/簡易表フォールバック用）
+        rows_by_label: dict[str, tuple[int, int]] = {}
+        for r in req_rows:
+            s_lbl = r.slot.label if hasattr(r, "slot") else str(r)
+            n_st = int(getattr(r, "needed_staff", 0))
+            n_ql = int(getattr(r, "needed_qualified", 0))
+            prev_st, prev_ql = rows_by_label.get(s_lbl, (0, 0))
+            rows_by_label[s_lbl] = (prev_st + n_st, prev_ql + n_ql)
+
+        has_req_methods = hasattr(requirements, "needed_staff") and hasattr(
+            requirements, "needed_qualified"
+        )
 
         for slot_obj in req_slots:
             s_label = slot_obj.label if hasattr(slot_obj, "label") else str(slot_obj)
-            req_item = req_by_slot.get(s_label)
+            if has_req_methods and hasattr(slot_obj, "start"):
+                need_total = int(requirements.needed_staff(target_date, slot_obj))
+                need_qualified = int(requirements.needed_qualified(target_date, slot_obj))
+            else:
+                need_total, need_qualified = rows_by_label.get(s_label, (0, 0))
 
-            need_total = getattr(req_item, "total", 2) if req_item else 2
-            need_qualified = getattr(req_item, "qualified", 1) if req_item else 1
+            if need_total <= 0 and need_qualified <= 0:
+                continue
 
             # 現時点で出勤している職員数（欠勤者は snapshot.on_duty から除外済み）
-            on_duty_staff = [
-                sid
-                for sid, s_list in snapshot.on_duty.items()
-                if s_label in s_list
-            ]
+            on_duty_staff = [sid for sid, s_list in snapshot.on_duty.items() if s_label in s_list]
             have_total = len(on_duty_staff)
             have_qualified = sum(1 for sid in on_duty_staff if snapshot.is_qualified(sid))
 

@@ -249,3 +249,88 @@ def test_欠損値があっても落ちない():
     result = importers.convert(frame, "codemon")
     assert len(result.frame) == 1
     assert result.frame.iloc[0]["園児ID"] == ""
+
+
+# ---------------------------------------------------------------------------
+# 未カバーのエッジケース（カバレッジ向上のため追加）
+# ---------------------------------------------------------------------------
+
+
+def test_era_dateは無効な月でNone():
+    """_era_date は範囲外の月で ValueError を握り潰して None を返すこと。"""
+    from shiftai.importers import _era_date
+
+    assert _era_date("令和13年1月1日") is None
+    assert _era_date("平成99年12月31日") is None
+
+
+def test_age_yearsは年だけの表記で桁を抽出する():
+    """_age_years は「3才」のような年だけの表記で数字を抽出すること。"""
+    from shiftai.importers import _age_years
+
+    assert _age_years("3才") == "3"
+    assert _age_years("5歳") == "5"
+
+
+def test_age_yearsはブール値で0():
+    """_age_years は bool 型を 0 とすること。"""
+    from shiftai.importers import _age_years
+
+    assert _age_years(True) == "0"
+    assert _age_years(False) == "0"
+
+
+def test_age_yearsは整数値でクランプ():
+    """_age_years は int 値を 0-5 にクランプすること。"""
+    from shiftai.importers import _age_years
+
+    assert _age_years(0) == "0"
+    assert _age_years(3) == "3"
+    assert _age_years(100) == "5"
+    assert _age_years(-1) == "0"
+
+
+def test_age_yearsはNaNで0():
+    """_age_years は NaN float を 0 とすること。"""
+    from shiftai.importers import _age_years
+
+    assert _age_years(float("nan")) == "0"
+
+
+def test_age_yearsは数字だけの文字列でクランプ():
+    """_age_years は数字だけの文字列を 0-5 にクランプすること。"""
+    from shiftai.importers import _age_years
+
+    assert _age_years("7") == "5"
+    assert _age_years("2") == "2"
+
+
+def test_convertはプロファイルデフォルトを適用する():
+    """convert は profile.defaults をレコードに適用すること（setdefault パス）。"""
+    frame = pd.DataFrame(
+        [
+            {
+                "園児コード": "A001",
+                "園児氏名": "テスト",
+                "年齢": "3",
+                "利用日": "2026/9/28",
+                "登園予定時刻": "8:30",
+                "降園予定時刻": "16:30",
+                "欠席": "なし",
+            }
+        ]
+    )
+    result = importers.convert(frame, "codemon")
+    # defaults から「短時間保育」等が設定されていることを確認
+    row = result.frame.iloc[0]
+    assert "短時間保育" in row.index
+
+
+def test_valueは通常のスカラー値をそのまま返す():
+    """_value は通常のスカラー値をそのまま返すこと。"""
+    import pandas as pd
+
+    from shiftai.importers import _value
+
+    s = pd.Series([10, 20, 30])
+    assert _value(s, 1) == 20

@@ -6,9 +6,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import date, time as dt_time
-from typing import Any, Iterable, Mapping, Optional, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import date, timedelta
+from typing import Any
 
 from shiftai.domain import CellState, Contract, Role, StaffMember, StaffPreferences
 
@@ -25,8 +26,8 @@ class DaySnapshot:
     contracts: dict[str, Contract]
     preferences: dict[str, StaffPreferences]
     consecutive_workdays: dict[str, int]  # 前日までの連勤数
-    daily_worked_hours: dict[str, float]  # 当日の確定勤務時間数（スロット数 * 0.5h）
-    assigned_classes: dict[str, Optional[str]]  # staff_id -> 担当クラスID
+    daily_worked_hours: dict[str, float]  # 当日の確定勤務時間数
+    assigned_classes: dict[str, str | None]  # staff_id -> 担当クラスID
 
     def is_qualified(self, staff_id: str) -> bool:
         """保育士資格（または有資格者）を保有しているか"""
@@ -34,8 +35,7 @@ class DaySnapshot:
         if not member:
             return False
         return any(
-            r in (Role.HOIKUSHI, Role.YOUCHUIN, Role.KANGSHI)
-            or "保育士" in str(r)
+            r in (Role.HOIKUSHI, Role.YOUCHUIN, Role.KANGSHI) or "保育士" in str(r)
             for r in member.roles
         )
 
@@ -44,7 +44,19 @@ class DaySnapshot:
         member = self.staff_map.get(staff_id)
         if not member:
             return False
-        return getattr(member, "can_lead", False) or any("主任" in str(r) or "リーダー" in str(r) for r in member.roles)
+        return getattr(member, "can_lead", False) or any(
+            "主任" in str(r) or "リーダー" in str(r) for r in member.roles
+        )
+
+
+def _count_prior_consecutive_days(worked_dates: set[date], target_date: date) -> int:
+    """target_date 直前日までの連続勤務日数を計算する。"""
+    streak = 0
+    cursor = target_date - timedelta(days=1)
+    while cursor in worked_dates:
+        streak += 1
+        cursor -= timedelta(days=1)
+    return streak
 
 
 class SnapshotIndex:
@@ -56,8 +68,8 @@ class SnapshotIndex:
         target_date: date,
         staff: Sequence[StaffMember],
         absent_staff_ids: Iterable[str],
-        contracts: Optional[Mapping[str, Contract]] = None,
-        preferences: Optional[Mapping[str, StaffPreferences]] = None,
+        contracts: Mapping[str, Contract] | None = None,
+        preferences: Mapping[str, StaffPreferences] | None = None,
         granularity_min: int = 30,
     ) -> DaySnapshot:
         """確定解から当日スナップショットを高速構築する。"""
@@ -66,27 +78,44 @@ class SnapshotIndex:
         contracts_map = {str(s.staff_id): s.contract for s in staff}
         if contracts:
             contracts_map.update({str(k): v for k, v in contracts.items()})
-        prefs_map = {str(s.staff_id): preferences.get(str(s.staff_id)) for s in staff} if preferences else {}
+        prefs_map = (
+            {str(s.staff_id): preferences.get(str(s.staff_id)) for s in staff}
+            if preferences
+            else {}
+        )
 
-        on_duty_slots: dict[str, list[str]] = {}
-        for s in staff:
-            on_duty_slots[str(s.staff_id)] = []
+        on_duty_slots: dict[str, list[str]] = {str(s.staff_id): [] for s in staff}
+        worked_dates_by_staff: dict[str, set[date]] = {str(s.staff_id): set() for s in staff}
 
         # existing_assignments のパース
-        for item in existing_assignments:
-            # ShiftAssignment オブジェクトの場合
-            if hasattr(item, "staff_id") and hasattr(item, "day"):
-                sid = str(item.staff_id)
-                d = item.day
-                sl = getattr(getattr(item, "slot", None), "label", str(getattr(item, "slot", "")))
-                st = getattr(item, "state", None)
-                if d == target_date and sid not in absent_set:
-                    if st in (CellState.WORK, CellState.BREAK):
-                        on_duty_slots.setdefault(sid, []).append(sl)
-            # (staff_id, day, slot) 形式のタプルまたは辞書キーの場合
-            elif isinstance(item, tuple) and len(item) >= 3:
-                sid, d, sl = str(item[0]), item[1], str(item[2])
-                if d == target_date and sid not in absent_set:
+        # 辞書形式で渡された場合は (sid, day, slot) -> CellState のみ実勤務を抽出
+        is_mapping = isinstance(existing_assignments, Mapping)
+        items = existing_assignments.items() if is_mapping else existing_assignments
+
+        for entry in items:
+            if is_mapping:
+                key, st = entry
+                if not (isinstance(key, tuple) and len(key) >= 3):
+                    continue
+                sid, d, sl = str(key[0]), key[1], str(key[2])
+                if st not in (CellState.WORK, CellState.BREAK):
+                    continue
+            elif hasattr(entry, "staff_id") and hasattr(entry, "day"):
+                sid = str(entry.staff_id)
+                d = entry.day
+                sl = getattr(getattr(entry, "slot", None), "label", str(getattr(entry, "slot", "")))
+                st = getattr(entry, "state", None)
+                if st not in (CellState.WORK, CellState.BREAK):
+                    continue
+            elif isinstance(entry, tuple) and len(entry) >= 3:
+                sid, d, sl = str(entry[0]), entry[1], str(entry[2])
+            else:
+                continue
+
+            if sl not in ("休", "公休", "OFF", "all") and "-" in sl:
+                if d < target_date:
+                    worked_dates_by_staff.setdefault(sid, set()).add(d)
+                elif d == target_date and sid not in absent_set:
                     on_duty_slots.setdefault(sid, []).append(sl)
 
         # 出勤者と公休者の分類
@@ -98,26 +127,24 @@ class SnapshotIndex:
         for sid, slots in on_duty_slots.items():
             if sid in absent_set:
                 continue
-            # スロットが空でなく、"休" や "OFF" 以外の実勤務があるか
-            work_slots = [
-                s for s in slots if s not in ("休", "公休", "OFF", "all") and "-" in s
-            ]
+            work_slots = sorted(
+                {s for s in slots if s not in ("休", "公休", "OFF", "all") and "-" in s}
+            )
             if work_slots:
-                work_slots.sort()
                 on_duty[sid] = work_slots
                 daily_hours[sid] = len(work_slots) * slot_hours
             else:
                 off_duty_list.append(sid)
                 daily_hours[sid] = 0.0
 
-        # クラス担当
-        assigned_classes = {
-            str(s.staff_id): getattr(s, "assigned_class_id", None)
+        assigned_classes = {str(s.staff_id): getattr(s, "assigned_class_id", None) for s in staff}
+
+        consecutive_workdays = {
+            str(s.staff_id): _count_prior_consecutive_days(
+                worked_dates_by_staff.get(str(s.staff_id), set()), target_date
+            )
             for s in staff
         }
-
-        # 連勤数の初期概算（当日が連勤制限に抵触しないか評価用）
-        consecutive_workdays = {str(s.staff_id): 1 for s in staff}
 
         return DaySnapshot(
             day=target_date,

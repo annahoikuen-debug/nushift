@@ -2584,12 +2584,18 @@ def _best_effort(
 
     warm_start_applied_count = 0
     if warm_assignments:
-        warm_start_applied_count = apply_warm_start(soft, tuple(payload.requirements.slots), warm_assignments)
+        warm_start_applied_count = apply_warm_start(
+            soft, tuple(payload.requirements.slots), warm_assignments
+        )
         stats["warm_start_applied"] = warm_start_applied_count > 0
         stats["warm_start_vars"] = warm_start_applied_count
-        print(f"[DEBUG _best_effort] warm_start_applied_count={warm_start_applied_count}, warm_assignments_len={len(warm_assignments)}")
+        print(
+            f"[DEBUG _best_effort] warm_start_applied_count={warm_start_applied_count}, warm_assignments_len={len(warm_assignments)}"
+        )
     else:
-        print(f"[DEBUG _best_effort] NO warm_assignments! payload.warm_start={payload.warm_start}, payload.warm_start_assignments is None={payload.warm_start_assignments is None}")
+        print(
+            f"[DEBUG _best_effort] NO warm_assignments! payload.warm_start={payload.warm_start}, payload.warm_start_assignments is None={payload.warm_start_assignments is None}"
+        )
 
     left = budget - (perf_counter() - started)
     # 残り時間がわずかなら MIP スタート（CBC の MST 書き出し＋読み込み）の

@@ -405,7 +405,9 @@ def _render_score_explanation(result: SolveResult, day: date) -> None:
     c1.metric(
         "Hard スコア (適法性)",
         f"{score.hard_score}",
-        delta="完全適法 (BLOCKER 0)" if score.hard_score == 0 else f"{abs(score.hard_score)} 件違反",
+        delta="完全適法 (BLOCKER 0)"
+        if score.hard_score == 0
+        else f"{abs(score.hard_score)} 件違反",
         delta_color="normal" if score.hard_score == 0 else "inverse",
     )
     c2.metric(
@@ -424,7 +426,9 @@ def _render_score_explanation(result: SolveResult, day: date) -> None:
     )
 
     # 過剰制約（Overconstrained Shortfall）の明示
-    shortfalls = result.overconstrained_shortfalls or result.stats.get("overconstrained_shortfalls", [])
+    shortfalls = result.overconstrained_shortfalls or result.stats.get(
+        "overconstrained_shortfalls", []
+    )
     if shortfalls:
         st.error(
             f"⚠️ 【要ヘルプ・外部派遣】人員・有資格者が不足しているスロットが {len(shortfalls)} 件あります。"

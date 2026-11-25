@@ -29,6 +29,7 @@ from shiftai.__main__ import (
     EXIT_BLOCKER,
     EXIT_ERROR,
     EXIT_OK,
+    EXIT_SHORTFALL_GATE,
     EXIT_WARNING,
     main,
     resolve_exit_code,
@@ -346,3 +347,79 @@ def test_seedで同じ入力なら同じ出力になる(tmp_path) -> None:
         return (out / "shift.csv").read_text(encoding="utf-8-sig")
 
     assert run("a", "7") == run("b", "7"), "同じ seed で再現性が保たれること"
+
+
+# --- 求解前ショートフォールゲート（R-G1〜R-G3） ------------------------------
+
+_GATE_DAY = "2026-12-01"
+
+
+def _deficit_input(tmp_path: Path) -> tuple[Path, Path]:
+    """2歳児2名(2名ルールで必要2名)に対し職員1名という供給不足の入力を作る。"""
+    sample = tmp_path / "sample"
+    assert main(["sample", "--out", str(sample), "--days", "1"]) == EXIT_OK
+    children = tmp_path / "children.csv"
+    staff = tmp_path / "staff.csv"
+    children.write_text(
+        "園児ID,氏名,年齢,登園日,登園時刻,降園時刻,短時間保育,欠席,欠席理由,早朝保育,延長保育,備考\n"
+        f"C001,検証 いち,0,{_GATE_DAY},08:00,17:00,false,false,,false,false,\n"
+        f"C002,検証 に,0,{_GATE_DAY},08:00,17:00,false,false,,false,false,\n",
+        encoding="utf-8-sig",
+    )
+    staff.write_text(
+        "職員ID,氏名,資格（主）,資格（副）,雇用形態,週契約時間,1日契約時間,月間最小時間,"
+        "月間最大時間,週最大出勤日数,最大連続勤務日数,最早始業,最遅終業,能力タグ,36協定,変形労働制,備考\n"
+        "S01,検証職員,保育士,,正職員,40,8,150,185,5,5,07:00,20:00,,,:,正職員（シフト勤務）\n",
+        encoding="utf-8-sig",
+    )
+    del sample
+    return children, staff
+
+
+def _gate_args(tmp_path: Path, children: Path, staff: Path, *, force: bool) -> list[str]:
+    args = [
+        "solve",
+        "--children",
+        str(children),
+        "--staff",
+        str(staff),
+        "--out",
+        str(tmp_path / "out"),
+        "--time-limit",
+        "10",
+        "--start",
+        _GATE_DAY,
+        "--end",
+        _GATE_DAY,
+    ]
+    if force:
+        args.append("--force")
+    return args
+
+
+def test_供給不足時は求解前にゲートで中止し4を返す(tmp_path, capsys) -> None:
+    """需要>供給が確定している入力では、ソルバーを起動せず 4 で中止する。"""
+    children, staff = _deficit_input(tmp_path)
+    code = main(_gate_args(tmp_path, children, staff, force=False))
+    captured = capsys.readouterr()
+    out = tmp_path / "out"
+    assert code == EXIT_SHORTFALL_GATE
+    assert "求解前ショートフォールゲート" in captured.out + captured.err
+    assert (out / "prescription.csv").exists()
+    text = (out / "prescription.csv").read_text(encoding="utf-8-sig")
+    assert "追加必要人数" in text
+    assert not (out / "shift.csv").exists(), "ゲート中止時はシフト成果物を出さないこと"
+
+
+def test_供給不足でもforce指定なら求解を続行する(tmp_path) -> None:
+    """``--force`` で不足を承知の上で求解し、成果物と終了コードを返す。"""
+    children, staff = _deficit_input(tmp_path)
+    out = tmp_path / "out"
+    code = main(_gate_args(tmp_path, children, staff, force=True))
+    assert (out / "shift.csv").exists(), "force 時は成果物を出すこと"
+    assert (out / "prescription.csv").exists(), "処方箋は force 時も残すこと"
+    assert code in (EXIT_OK, EXIT_BLOCKER, EXIT_WARNING, EXIT_ERROR)
+
+
+def test_ゲート終了コードの定数が4である() -> None:
+    assert EXIT_SHORTFALL_GATE == 4
