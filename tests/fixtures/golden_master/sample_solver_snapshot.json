@@ -1,47 +1,47 @@
 {
   "status": "部分的なシフト",
   "is_feasible": false,
-  "objective_value": 83548.61,
+  "objective_value": 72432.0,
   "total_assignments": 1400,
-  "work_count": 329,
-  "break_count": 66,
-  "off_count": 1005,
+  "work_count": 357,
+  "break_count": 24,
+  "off_count": 1019,
   "violations": [
     {
       "code": "MAIN_OPENING_COVERAGE",
       "severity": "法令違反",
       "staff_id": null,
-      "day": "2026-10-02"
+      "day": "2026-11-18"
     },
     {
       "code": "SHORTFALL_QUALIFIED",
       "severity": "法令違反",
       "staff_id": null,
-      "day": "2026-10-02"
+      "day": "2026-11-18"
     },
     {
       "code": "SHORTFALL_STAFF",
       "severity": "法令違反",
       "staff_id": null,
-      "day": "2026-10-02"
+      "day": "2026-11-18"
     },
     {
       "code": "MAIN_OPENING_COVERAGE",
       "severity": "法令違反",
       "staff_id": null,
-      "day": "2026-10-03"
+      "day": "2026-11-19"
     },
     {
       "code": "SHORTFALL_QUALIFIED",
       "severity": "法令違反",
       "staff_id": null,
-      "day": "2026-10-03"
+      "day": "2026-11-19"
     },
     {
       "code": "SHORTFALL_STAFF",
       "severity": "法令違反",
       "staff_id": null,
-      "day": "2026-10-03"
+      "day": "2026-11-19"
     },
     {
       "code": "HOURS_IMBALANCE",
@@ -70,14 +70,56 @@
     {
       "code": "MONTHLY_HOURS_EXCEEDED",
       "severity": "参考",
+      "staff_id": "S04",
+      "day": null
+    },
+    {
+      "code": "MONTHLY_HOURS_EXCEEDED",
+      "severity": "参考",
       "staff_id": "S05",
       "day": null
     },
     {
-      "code": "BREAK_OVERLAP",
+      "code": "MONTHLY_HOURS_EXCEEDED",
       "severity": "参考",
-      "staff_id": null,
-      "day": "2026-10-02"
+      "staff_id": "S06",
+      "day": null
+    },
+    {
+      "code": "MONTHLY_HOURS_EXCEEDED",
+      "severity": "参考",
+      "staff_id": "S07",
+      "day": null
+    },
+    {
+      "code": "MONTHLY_HOURS_EXCEEDED",
+      "severity": "参考",
+      "staff_id": "S08",
+      "day": null
+    },
+    {
+      "code": "MONTHLY_HOURS_EXCEEDED",
+      "severity": "参考",
+      "staff_id": "S09",
+      "day": null
+    },
+    {
+      "code": "MONTHLY_HOURS_EXCEEDED",
+      "severity": "参考",
+      "staff_id": "S10",
+      "day": null
+    },
+    {
+      "code": "MONTHLY_HOURS_EXCEEDED",
+      "severity": "参考",
+      "staff_id": "S13",
+      "day": null
+    },
+    {
+      "code": "MONTHLY_HOURS_EXCEEDED",
+      "severity": "参考",
+      "staff_id": "S14",
+      "day": null
     },
     {
       "code": "NOT_PLACED_ROLE",

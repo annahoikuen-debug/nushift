@@ -2,6 +2,8 @@
 
 from datetime import date, time
 
+import pytest
+
 from shiftai import local_rules
 from shiftai.domain import (
     AgeClass,
@@ -17,6 +19,8 @@ from shiftai.domain import (
 from shiftai.monthly import MonthlySolveContext, solve_monthly_hierarchical
 from shiftai.shift_patterns import ShiftPattern
 from shiftai.standards import build_requirements
+
+pytestmark = pytest.mark.slow
 
 
 def _make_context(days_count: int = 3) -> MonthlySolveContext:

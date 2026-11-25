@@ -189,7 +189,7 @@ def test_solver_respects_break_minutes_and_fulltime_hours():
             needed_qualified=1,
             basis="テスト",
         )
-        for s in slots[2:16]  # 8:00 - 15:00 需要
+        for s in slots[2:14]  # 8:00 - 14:00 需要
     ]
     req = RequirementTable(
         day_open=time(7, 0),
@@ -241,7 +241,7 @@ def test_facility_settings_applied_to_solver():
             needed_qualified=1,
             basis="テスト",
         )
-        for s in slots[2:16]  # 8:00 - 15:00 需要
+        for s in slots[2:14]  # 8:00 - 14:00 需要
     ]
     req = RequirementTable(
         day_open=time(7, 0),

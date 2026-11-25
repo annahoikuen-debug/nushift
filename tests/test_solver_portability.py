@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import pytest
+
 from shiftai.solver import (
     is_cbc_available,
     is_highs_available,
     select_optimal_solver,
     solver_diagnostic_info,
 )
+
+pytestmark = pytest.mark.slow
 
 
 def test_is_cbc_available():

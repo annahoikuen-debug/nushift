@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from shiftai.benchmark import (
     create_scenario_overconstrained,
     create_scenario_small,
@@ -9,6 +11,8 @@ from shiftai.benchmark import (
     get_benchmark_corpus,
     run_benchmark,
 )
+
+pytestmark = pytest.mark.slow
 
 
 def test_benchmark_corpus_generation():

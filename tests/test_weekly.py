@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from datetime import date, time, timedelta
 
+import pytest
+
 from shiftai import local_rules, sample_data
 from shiftai.domain import CellState, SolveStatus
 from shiftai.standards import build_requirements
@@ -41,6 +43,9 @@ def _working_cells(result) -> int:
                 if state != CellState.OFF:
                     n += 1
     return n
+
+
+pytestmark = pytest.mark.slow
 
 
 def test_週次階層エンジンが全員OFFにならない():

@@ -674,9 +674,21 @@ def solve_monthly_hierarchical(
     else:
         overall_status = SolveStatus.PARTIAL
 
+    from shiftai.domain import ShiftAssignment
+
+    slot_map = {s.label: s for s in context.requirements.slots}
+    all_assignments = [
+        ShiftAssignment(staff_id=sid, day=sd.day, slot=slot_map[slot_label], state=cell)
+        for sd in all_shift_days
+        for sid, smap in sd.assignments.items()
+        for slot_label, cell in smap.items()
+        if slot_label in slot_map
+    ]
+
     res = SolveResult(
         status=overall_status,
         shift_days=all_shift_days,
+        assignments=all_assignments,
         violations=all_violations,
         messages=list(dict.fromkeys(all_messages)),
         stats={
