@@ -84,4 +84,8 @@ _audit_*.err
 # ---------------------------------------------------------------------------
 .mimocode/
 
+.review-loop/
+.pytest_cache_new/
+pytest_nushift_*.txt
+out_test_*/
 out_final/
