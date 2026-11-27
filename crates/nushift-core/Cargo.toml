@@ -1,0 +1,21 @@
+[package]
+name = "nushift-core"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance statutory rule validator and local search core for NuShift (PyO3 + WebAssembly)."
+license = "MIT"
+
+[lib]
+name = "nushift_core"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+python = ["dep:pyo3"]
+wasm = ["dep:wasm-bindgen"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+pyo3 = { version = "0.22", features = ["extension-module"], optional = true }
+wasm-bindgen = { version = "0.2", optional = true }

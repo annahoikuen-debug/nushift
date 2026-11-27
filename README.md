@@ -75,6 +75,10 @@
    - **サブセカンド即時 Re-plan (Micro Engine)**: 朝7時の突発病欠に対し、MILP起動をスキップして局所探索を直結（0.2〜0.5秒応答）し、確定シフト・ピン留めを完全保護。
    - **過剰制約自動診断サジェスト**: 不足コマの自動特定と「パート勤務延長」「希望休出勤打診」などの自然言語処方箋レポートを生成。
    - **分散ステートレスワーカー & KEDA オートスケーリング**: Web本体から重い数理最適化を完全分離し、Redisキュー長に応じた弾力的な 0〜20 Pods 自動スケール（Spot VM対応）をサポート。
+9. **🦀 Rust コア (`nushift-core`) ＋ FastAPI JSON API ＋ SPA 月間シフトエディタ (Phase 2 新設)**
+   - **Rust 計算・検証コア (`crates/nushift-core`)**: `statutory_rules` / ライブ検証を PyO3・WebAssembly 両対応で実装し、`rust_bridge.py` 経由で Python 環境へ透過統合（未ビルド時は純粋 Python へ安全フォールバック）。
+   - **`shiftai.api` (FastAPI JSON API)**: `GET /api/v1/health`、`GET /api/v1/sample-grid`、`POST /api/v1/validate-day` およびビルド済み SPA の配信を提供。
+   - **React + TypeScript 月間シフトエディタ (`frontend/`)**: 1クリック勤務記号切替（`早`/`日`/`遅`/`休`）、ピン留め、Undo、`IndexedDB` 自動永続化（リロード復元）、リアルタイム法令・実働時間チェックを実装。
 
 ---
 
