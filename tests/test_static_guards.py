@@ -163,6 +163,17 @@ def test_slow対象が実際に集められること() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _is_fastapi_route_handler(node: ast.FunctionDef) -> bool:
+    """FastAPI の @router.get / @app.post 等のルートハンドラはフレームワーク経由で呼ばれる。"""
+    http_methods = {"get", "post", "put", "delete", "patch", "options", "head", "api_route", "websocket"}
+    for dec in node.decorator_list:
+        if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute):
+            if dec.func.attr in http_methods and isinstance(dec.func.value, ast.Name):
+                if dec.func.value.id in {"router", "app"}:
+                    return True
+    return False
+
+
 def test_死んだ公開関数がない() -> None:
     """``src`` 内にも ``tests`` 内にも参照が無い公開関数が残っていないこと。"""
     # エントリポイント（streamlit_app.py / conftest.py）も参照元として数える
@@ -174,6 +185,8 @@ def test_死んだ公開関数がない() -> None:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in tree.body:
             if not isinstance(node, ast.FunctionDef) or node.name.startswith("_"):
+                continue
+            if _is_fastapi_route_handler(node):
                 continue
             calls = len(re.findall(rf"\b{re.escape(node.name)}\b", sources))
             if calls <= 1 and re.search(rf"\b{re.escape(node.name)}\b", tests) is None:
