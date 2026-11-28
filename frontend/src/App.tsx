@@ -13,28 +13,41 @@ export default function App() {
   const [grid, setGrid] = useState<GridState | null>(null);
   const [history, setHistory] = useState<GridState[]>([]);
   const [pinMode, setPinMode] = useState(false);
+  const [daysCount, setDaysCount] = useState<14 | 31>(14);
   const [statusText, setStatusText] = useState("読み込み中...");
 
   useEffect(() => {
     (async () => {
+      const injected = (window as unknown as { __NUSHIFT_INITIAL_GRID__?: GridState }).__NUSHIFT_INITIAL_GRID__;
+      if (injected) {
+        setGrid({ ...injected, updatedAt: new Date().toISOString() });
+        setStatusText("施設データ読込完了（自動保存ON）");
+        return;
+      }
       const saved = await loadDraft().catch(() => null);
       if (saved) {
         setGrid(saved);
         setStatusText(`ローカル復元済み (${new Date(saved.updatedAt).toLocaleTimeString()})`);
         return;
       }
-      await fetchSample();
+      await fetchSample(14);
     })();
   }, []);
 
-  async function fetchSample() {
-    setStatusText("サンプル読込中...");
-    const res = await fetch("/api/v1/sample-grid?days_count=14");
+  async function fetchSample(count: 14 | 31 = daysCount) {
+    setStatusText("シフトデータ読込中...");
+    const res = await fetch(`/api/v1/sample-grid?days_count=${count}`);
     const data = await res.json();
     const next: GridState = { ...data, updatedAt: new Date().toISOString() };
     setGrid(next);
     await saveDraft(next).catch(() => {});
-    setStatusText("初期データ読込完了（自動保存ON）");
+    setStatusText(`初期データ読込完了（${count}日表示・自動保存ON）`);
+  }
+
+  function handleDaysToggle() {
+    const nextCount: 14 | 31 = daysCount === 14 ? 31 : 14;
+    setDaysCount(nextCount);
+    fetchSample(nextCount);
   }
 
   function commit(next: GridState) {
@@ -87,7 +100,7 @@ export default function App() {
           <h1 style={{ margin: 0, fontSize: 20 }}>⚡ NuShift 月間シフトエディタ</h1>
           <div style={{ fontSize: 12, color: "#475569", marginTop: 4 }}>{statusText}</div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button onClick={handleUndo} disabled={!history.length} style={btnStyle}>↩ 元に戻す</button>
           <button
             onClick={() => setPinMode((v) => !v)}
@@ -95,7 +108,10 @@ export default function App() {
           >
             {pinMode ? "🔒 ピン留めモード中" : "🔒 ピン留め切替"}
           </button>
-          <button onClick={fetchSample} style={btnStyle}>↻ サンプルリセット</button>
+          <button onClick={handleDaysToggle} style={btnStyle}>
+            {daysCount === 14 ? "📅 31日（1ヶ月）表示へ" : "📅 14日表示へ"}
+          </button>
+          <button onClick={() => fetchSample(daysCount)} style={btnStyle}>↻ サンプルリセット</button>
         </div>
       </header>
 
@@ -160,6 +176,22 @@ export default function App() {
               );
             })}
           </tbody>
+          <tfoot>
+            <tr style={{ background: "#f8fafc", borderTop: "2px solid #cbd5e1", fontWeight: 700 }}>
+              <td style={{ padding: 8, color: "#334155" }}>日別 出勤人数計</td>
+              {grid.days.map((d) => {
+                const workingCount = grid.staff.filter((s) => (s.assignments[d] ?? "休") !== "休").length;
+                return (
+                  <td key={d} style={{ padding: "6px 4px", textAlign: "center", color: workingCount < 2 ? "#b91c1c" : "#0f172a" }}>
+                    {workingCount}名
+                  </td>
+                );
+              })}
+              <td colSpan={2} style={{ padding: 8, fontSize: 11, color: "#64748b", fontWeight: 400 }}>
+                ※ 2名未満の日が赤表示されます
+              </td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>

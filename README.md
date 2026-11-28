@@ -1,9 +1,9 @@
-# ⚡ NuShift (shiftai v0.8.1)
+# ⚡ NuShift (shiftai v0.9.0)
 
 > **保育のすべてをつなぎ、先生の時間をこどもたちへ**  
-> 職員配置基準連動型 数理最適化シフト自動作成エンジン（NuShift）と、直感的な Streamlit UI による保育園・こども園向け勤務シフト自動生成システム。
+> 職員配置基準連動型 数理最適化シフト自動作成エンジン（NuShift）と、直感的な Streamlit UI / React 月間シフトエディタによる保育園・こども園向け勤務シフト自動生成システム。
 
-[![Version](https://img.shields.io/badge/version-v0.8.1-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-v0.9.0-blue.svg)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.13-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](pyproject.toml)
