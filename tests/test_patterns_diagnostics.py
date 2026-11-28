@@ -227,7 +227,9 @@ def test_パターンを渡すと整列率が上がる(
     plain_counts = solver.pattern_breakdown(plain, DEFAULT_PATTERNS)
     aligned_counts = solver.pattern_breakdown(aligned, DEFAULT_PATTERNS)
     assert plain_counts is not None
-    assert sum(aligned_counts.values()) >= sum(plain_counts.values())
+    aligned_only = sum(v for k, v in aligned_counts.items() if k != "その他")
+    plain_only = sum(v for k, v in plain_counts.items() if k != "その他")
+    assert aligned_only >= plain_only
 
 
 @pytest.mark.slow
